@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="popup">
+      <h1 class="title">クリップを保存</h1>
+
+      <div class="field">
+        <label>ページ</label>
+        <div id="page" class="page">
+          <span id="pageTitle" class="page-title">取得中…</span>
+          <span id="pageUrl" class="page-url"></span>
+        </div>
+      </div>
+
+      <div class="field suggest-field">
+        <label>タグ</label>
+        <div id="tagBox" class="tag-box"></div>
+        <div class="suggest-wrap">
+          <input id="tagInput" type="text" placeholder="タグを入力してEnter" autocomplete="off" />
+          <div id="tagSuggest" class="suggest-list" hidden></div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>サムネイル</label>
+        <div id="thumbPreviewWrap" class="thumb-preview-wrap" hidden>
+          <img id="thumbPreview" class="thumb-preview" alt="" />
+        </div>
+        <div class="thumb-btn-row">
+          <button id="pickThumb" type="button" class="thumb-btn">🖼 スクショでサムネイルを選択</button>
+          <button id="thumbReset" type="button" class="thumb-btn ghost" hidden>↺ デフォルトに戻す</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>コメント</label>
+        <textarea id="comment" rows="3" placeholder="メモを入力…"></textarea>
+      </div>
+
+      <div class="field">
+        <label>カテゴリ</label>
+        <input id="category" type="text" list="categoryList" placeholder="カテゴリ名" autocomplete="off" />
+        <datalist id="categoryList"></datalist>
+      </div>
+
+      <label class="fav">
+        <input id="favorite" type="checkbox" /> お気に入りに追加
+      </label>
+
+      <button id="save" class="save">保存</button>
+
+      <div id="status" class="status" hidden></div>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

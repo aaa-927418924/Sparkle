@@ -1,0 +1,1092 @@
+/* Figma: AIリファレンス保存アプリ / ホーム */
+.home-page {
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: #f4f3ee;
+}
+
+.home-page .layout {
+  --home-bg: #fff8f3;
+  --home-sidebar: #fff;
+  --home-surface: rgba(244, 243, 238, 0.2);
+  --home-text: #3f3f3f;
+  --home-muted: #6b6a64;
+  --home-border: #b1ada1;
+  --home-accent: #cc6d48;
+  --home-card: #d9d9d9;
+  --home-active: rgba(255, 255, 255, 0.25);
+  min-height: 100vh;
+  background: var(--home-bg);
+}
+
+html[data-theme="dark"] .home-page {
+  background: #18181b;
+}
+
+html[data-theme="dark"] .home-page .layout {
+  --home-bg: #18181b;
+  --home-sidebar: #232327;
+  --home-surface: rgba(244, 243, 238, 0.2);
+  --home-text: #f4f3ee;
+  --home-muted: #b1ada1;
+  --home-border: #8f8a80;
+  --home-accent: #d77a50;
+  --home-card: #d9d9d9;
+  --home-active: #d9d9d9;
+}
+
+.home-page .sidebar {
+  width: 100px;
+  flex: 0 0 100px;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  height: 100vh;
+  padding: 23px 15px 28px;
+  gap: 20px;
+  border-radius: 0;
+  background: var(--home-sidebar);
+  box-shadow: -1px 4px 7.6px rgba(0, 0, 0, 0.25);
+  box-sizing: border-box;
+}
+
+.home-page .side-btn,
+.home-page .theme-toggle {
+  width: 70px;
+  height: 70px;
+  flex: 0 0 70px;
+  border-radius: 12px;
+}
+
+.home-page .side-btn:hover,
+.home-page .theme-toggle:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.home-page .side-btn.active {
+  background: var(--home-active);
+  color: var(--home-accent);
+  box-shadow: inset -1px 4px 4px rgba(0, 0, 0, 0.16);
+}
+
+.home-page .side-btn.active .icon-nav {
+  width: 42px;
+  height: 42px;
+  filter: invert(49%) sepia(32%) saturate(1240%) hue-rotate(331deg) brightness(89%) contrast(88%);
+}
+
+.home-page .side-btn:not(.active) .icon-nav {
+  width: 36px;
+  height: 36px;
+}
+
+.home-page .theme-toggle-track {
+  width: 22px;
+  height: 34px;
+  border-radius: 12px;
+}
+
+.home-page .theme-toggle-thumb {
+  width: 16px;
+  height: 16px;
+  left: 3px;
+  top: 3px;
+}
+
+.home-page .theme-toggle-thumb-moon,
+.home-page .theme-toggle-thumb-sun {
+  width: 11px;
+  height: 11px;
+}
+
+html[data-theme="dark"] .home-page .theme-toggle-thumb {
+  top: 15px;
+}
+
+.home-page .main {
+  width: calc(100% - 100px);
+  min-width: 0;
+  margin-left: 100px;
+  padding: 61px 50px 80px 52px;
+  box-sizing: border-box;
+}
+
+.home-page .sticky-header {
+  margin: -61px -50px 0 -52px;
+  padding: 61px 50px 0 52px;
+}
+
+.home-page .sticky-header::before {
+  background: linear-gradient(to right, transparent, color-mix(in srgb, var(--home-sidebar) 65%, transparent));
+}
+
+.home-page .topbar {
+  gap: 24px;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.home-page .search-wrap {
+  flex: 1 1 680px;
+  width: 100%;
+  max-width: 1293px;
+  min-width: 320px;
+}
+
+.home-page .search-liquid {
+  height: 86px;
+  border: 1px solid var(--home-border);
+  border-radius: 133px;
+  background: var(--home-surface);
+  box-sizing: border-box;
+}
+
+.home-page .search-liquid:focus-within {
+  border-color: var(--home-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--home-accent) 22%, transparent);
+}
+
+.home-page .search-liquid .search {
+  height: 84px;
+  box-sizing: border-box;
+  padding: 0 38px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--home-text);
+  font-family: "SF Pro Display", "Segoe UI Light", system-ui, sans-serif;
+  font-size: clamp(26px, 2.2vw, 36px);
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  z-index: 32;
+}
+
+.home-page .search-liquid .search::placeholder {
+  color: var(--home-text);
+  opacity: 0.92;
+}
+
+.home-page .search-liquid .search:focus {
+  border: 10;
+  box-shadow: none;
+}
+
+.home-page #favOnly,
+.home-page #addLocalBtn,
+.home-page .sort-trigger {
+  color: var(--home-text);
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.78;
+}
+
+.home-page #favOnly:hover,
+.home-page #addLocalBtn:hover,
+.home-page .sort-select:focus .sort-trigger,
+.home-page .sort-select.open .sort-trigger {
+  color: var(--home-accent);
+}
+
+.home-page .sort-select {
+  min-width: 186px;
+}
+
+.home-page .sort-label {
+  text-underline-offset: 6px;
+}
+
+.home-page .heading-row {
+  min-height: 0;
+  margin: 0 0 15px;
+}
+
+.home-page .categories,
+.home-page #categories {
+  gap: 10px;
+  margin: 0 0 28px;
+}
+
+.home-page .cat-btn {
+  padding: 7px 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--home-text);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.home-page .cat-btn:hover {
+  border-color: var(--home-border);
+  color: var(--home-accent);
+  background: rgba(244, 243, 238, 0.16);
+}
+
+.home-page .cat-btn.active {
+  border-color: var(--home-border);
+  background: var(--home-surface);
+  color: var(--home-accent);
+}
+
+.home-page .section-heading {
+  display: none;
+}
+
+.home-page .grid {
+  column-count: 5;
+  column-gap: 72px;
+}
+
+.home-page .card {
+  margin-bottom: 56px;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.home-page .card:hover {
+  transform: translateY(-2px);
+  box-shadow: none;
+}
+
+.home-page .card.selected {
+  outline: 2px solid var(--home-accent);
+  outline-offset: 5px;
+  box-shadow: none;
+}
+
+.home-page .card-img,
+.home-page .card-ph {
+  border-radius: 0;
+  background: var(--home-card);
+}
+
+.home-page .card-ph {
+  min-height: 220px;
+  color: #77736d;
+}
+
+.home-page .card::after {
+  display: none;
+}
+
+.home-page .card-caption {
+  padding: 14px 0 0;
+}
+
+.home-page .card-caption::before {
+  display: none;
+}
+
+.home-page .card-caption .card-title {
+  color: var(--home-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.home-page .card-caption .card-comment {
+  color: var(--home-muted);
+}
+
+.home-page .tags {
+  padding: 10px 0 0;
+}
+
+.home-page .tag-chip {
+  border-color: color-mix(in srgb, var(--home-border) 70%, transparent);
+  color: var(--home-muted);
+  background: transparent;
+}
+
+.home-page .tag-chip:hover {
+  border-color: var(--home-accent);
+  background: color-mix(in srgb, var(--home-accent) 14%, transparent);
+  color: var(--home-accent);
+}
+
+.home-page .card-actions {
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  box-sizing: border-box;
+}
+
+.home-page .act-btn,
+.home-page .fav-btn {
+  width: 36px;
+  height: 36px;
+  background: rgba(244, 243, 238, 0.84);
+  color: #3f3f3f;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.home-page .act-btn:hover,
+.home-page .fav-btn:hover {
+  background: #fff;
+}
+
+.home-page .fav-btn.on {
+  color: var(--home-accent);
+}
+
+@media (max-width: 820px) {
+  .home-page .card-actions {
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    gap: 6px;
+  }
+}
+
+.home-page .empty {
+  color: var(--home-muted);
+}
+
+@media (max-width: 1500px) {
+  .home-page .grid {
+    column-gap: 36px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .home-page .main {
+    padding-left: 40px;
+    padding-right: 32px;
+  }
+
+  .home-page .sticky-header {
+    margin-left: -40px;
+    margin-right: -32px;
+    padding-left: 40px;
+    padding-right: 32px;
+  }
+
+  .home-page .grid {
+    column-count: 4;
+  }
+}
+
+@media (max-width: 820px) {
+  .home-page .sidebar {
+    width: 76px;
+    flex-basis: 76px;
+    padding-left: 3px;
+    padding-right: 3px;
+  }
+
+  .home-page .main {
+    width: calc(100% - 76px);
+    margin-left: 76px;
+    padding: 34px 22px 60px 28px;
+  }
+
+  .home-page .sticky-header {
+    margin: -34px -22px 0 -28px;
+    padding: 34px 22px 0 28px;
+  }
+
+  .home-page .topbar {
+    flex-wrap: wrap;
+    gap: 12px 18px;
+  }
+
+  .home-page .search-wrap {
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .home-page .search-liquid,
+  .home-page .search-liquid .search {
+    height: 68px;
+  }
+
+  .home-page .grid {
+    column-count: 3;
+    column-gap: 24px;
+  }
+}
+
+@media (max-width: 560px) {
+  .home-page .grid {
+    column-count: 2;
+  }
+
+  .home-page .search-liquid .search {
+    padding: 0 24px;
+  }
+}
+
+@media (max-width: 380px) {
+  .home-page .grid {
+    column-count: 1;
+  }
+}
+ 
+/* Keep the home shell aligned with the shared pages while preserving the
+   Figma-inspired clip grid and card spacing above. */
+.home-page .sidebar {
+  width: 56px;
+  flex: 0 0 56px;
+  left: 8px;
+  top: 8px;
+  bottom: 8px;
+  height: calc(100vh - 16px);
+  padding: 10px 0;
+  gap: 6px;
+  border-radius: 14px;
+}
+
+.home-page .side-btn,
+.home-page .theme-toggle {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 10px;
+}
+
+.home-page .icon-nav {
+  width: 20px;
+  height: 20px;
+}
+
+.home-page .theme-toggle .track {
+  width: 20px;
+  height: 28px;
+}
+
+.home-page .theme-toggle .thumb {
+  width: 14px;
+  height: 14px;
+}
+
+.home-page .main {
+  width: auto;
+  margin-left: 0;
+  padding: 22px 28px 60px 84px;
+}
+
+.home-page .sticky-header {
+  margin: -22px -28px 0 -84px;
+  padding: 22px 28px 0 84px;
+}
+
+.home-page .topbar {
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.home-page .search-wrap {
+  max-width: none;
+}
+
+.home-page .search-liquid {
+  height: 44px;
+  border-radius: 22px;
+}
+
+.home-page .search-liquid .search {
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 22px;
+  font-size: 15px;
+}
+
+html[data-theme="dark"] .home-page .act-btn,
+html[data-theme="dark"] .home-page .fav-btn {
+  background: rgba(24, 24, 27, 0.9);
+}
+
+html[data-theme="dark"] .home-page .act-btn:hover,
+html[data-theme="dark"] .home-page .fav-btn:hover {
+  background: #18181b;
+}
+
+@media (max-width: 820px) {
+  .home-page .sidebar {
+    width: 56px;
+    flex-basis: 56px;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .home-page .main {
+    width: auto;
+    margin-left: 0;
+    padding: 22px 20px 60px 84px;
+  }
+
+  .home-page .sticky-header {
+    margin: -22px -20px 0 -84px;
+    padding: 22px 20px 0 84px;
+  }
+
+  .home-page .topbar {
+    gap: 12px;
+  }
+
+  .home-page .search-wrap {
+    min-width: 160px;
+  }
+}
+
+/* Match the shared sidebar icon and theme-toggle dimensions as well. */
+.home-page .side-btn.active .icon-nav,
+.home-page .side-btn:not(.active) .icon-nav {
+  width: 20px;
+  height: 20px;
+}
+
+.home-page .theme-toggle-track {
+  width: 20px;
+  height: 28px;
+  border-radius: 10px;
+}
+
+.home-page .theme-toggle-thumb {
+  width: 14px;
+  height: 14px;
+  left: 3px;
+  top: 3px;
+}
+
+.home-page .theme-toggle-thumb-sun,
+.home-page .theme-toggle-thumb-moon {
+  width: 10px;
+  height: 10px;
+}
+
+html[data-theme="dark"] .home-page .theme-toggle-thumb {
+  top: 11px;
+}
+
+/* Hide scrollbars on the home document without disabling scrolling. */
+html:has(body.home-page),
+body.home-page,
+body.home-page .layout,
+body.home-page .sidebar,
+body.home-page .search-suggest {
+  scrollbar-width: none;
+}
+
+html:has(body.home-page)::-webkit-scrollbar,
+body.home-page::-webkit-scrollbar,
+body.home-page .layout::-webkit-scrollbar,
+body.home-page .sidebar::-webkit-scrollbar,
+body.home-page .search-suggest::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Keep the focused search surface above its dimming overlay. */
+.home-page .search-wrap {
+  position: relative;
+  z-index: 31;
+}
+
+.home-page .search-suggest {
+  z-index: 32;
+}
+
+/* Home upload dialog: restrained surface, clear hierarchy, and soft motion. */
+.home-page #uploadModal {
+  background: rgba(63, 63, 63, 0.24);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.home-page #uploadModal.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.home-page #uploadModal .modal-box.wide {
+  width: min(680px, 100%);
+  max-height: min(760px, calc(100vh - 40px));
+  padding: 28px;
+  border: 1px solid rgba(177, 173, 161, 0.82);
+  border-radius: 20px;
+  background: #f4f3ee;
+  color: #3f3f3f;
+  box-shadow: 0 24px 64px rgba(24, 24, 27, 0.22);
+  opacity: 0;
+  transform: translateY(10px) scale(0.985);
+  transition: opacity 180ms ease, transform 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.home-page #uploadModal.is-open .modal-box.wide {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.home-page #uploadModal .modal-title {
+  margin-bottom: 22px;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.home-page #uploadModal .upload-drop-zone {
+  min-height: 132px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin-bottom: 20px;
+  padding: 28px 24px;
+  border: 1px dashed #b1ada1;
+  border-radius: 14px;
+  background: rgba(217, 217, 217, 0.32);
+  color: #6b6a64;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.home-page #uploadModal .upload-drop-zone:hover,
+.home-page #uploadModal .upload-drop-zone:focus-visible {
+  border-color: #cc6d48;
+  background: rgba(204, 109, 72, 0.08);
+  color: #3f3f3f;
+}
+
+.home-page #uploadModal .upload-drop-zone p {
+  font-size: 14px;
+  line-height: 1.7;
+  letter-spacing: 0.01em;
+}
+
+.home-page #uploadModal .upload-file-list {
+  max-height: min(300px, 38vh);
+  padding: 4px 0;
+  border-top: 1px solid rgba(177, 173, 161, 0.72);
+  border-bottom: 1px solid rgba(177, 173, 161, 0.72);
+}
+
+.home-page #uploadModal .upload-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.2fr) minmax(160px, 2fr) minmax(90px, 0.8fr) 28px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom-color: rgba(177, 173, 161, 0.55);
+}
+
+.home-page #uploadModal .upload-row:last-child {
+  border-bottom: 0;
+}
+
+.home-page #uploadModal .upload-name {
+  padding-top: 0;
+  color: #3f3f3f;
+}
+
+.home-page #uploadModal .upload-row-taginput,
+.home-page #uploadModal .upload-row-cat,
+.home-page #uploadModal .modal-input {
+  border-color: #b1ada1;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.36);
+  color: #3f3f3f;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.home-page #uploadModal .upload-row-taginput:focus,
+.home-page #uploadModal .upload-row-cat:focus,
+.home-page #uploadModal .modal-input:focus {
+  border-color: #cc6d48;
+  background: rgba(255, 255, 255, 0.64);
+  box-shadow: 0 0 0 3px rgba(204, 109, 72, 0.14);
+}
+
+.home-page #uploadModal .upload-remove {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: #6b6a64;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.home-page #uploadModal .upload-remove:hover,
+.home-page #uploadModal .upload-remove:focus-visible {
+  background: rgba(204, 109, 72, 0.1);
+  color: #cc6d48;
+}
+
+.home-page #uploadModal .modal-actions {
+  align-items: center;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(177, 173, 161, 0.72);
+}
+
+.home-page #uploadModal .modal-btn {
+  min-height: 40px;
+  padding: 9px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.home-page #uploadModal .modal-btn:active {
+  transform: scale(0.96);
+}
+
+.home-page #uploadModal .modal-btn.ghost {
+  border-color: #b1ada1;
+  background: transparent;
+  color: #6b6a64;
+}
+
+.home-page #uploadModal .modal-btn.ghost:hover,
+.home-page #uploadModal .modal-btn.ghost:focus-visible {
+  border-color: #cc6d48;
+  background: rgba(204, 109, 72, 0.08);
+  color: #cc6d48;
+}
+
+.home-page #uploadModal #uploadSave {
+  border: 1px solid #cc6d48;
+  background: #cc6d48;
+  color: #fff;
+}
+
+.home-page #uploadModal #uploadSave:hover,
+.home-page #uploadModal #uploadSave:focus-visible {
+  background: #b85f3e;
+  border-color: #b85f3e;
+}
+
+html[data-theme="dark"] .home-page #uploadModal {
+  background: rgba(0, 0, 0, 0.52);
+}
+
+html[data-theme="dark"] .home-page #uploadModal .modal-box.wide {
+  border-color: #514f4a;
+  background: #232327;
+  color: #f4f3ee;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42);
+}
+
+html[data-theme="dark"] .home-page #uploadModal .upload-drop-zone {
+  border-color: #8f8a80;
+  background: rgba(255, 255, 255, 0.035);
+  color: #b1ada1;
+}
+
+html[data-theme="dark"] .home-page #uploadModal .upload-drop-zone:hover,
+html[data-theme="dark"] .home-page #uploadModal .upload-drop-zone:focus-visible {
+  border-color: #d77a50;
+  background: rgba(215, 122, 80, 0.12);
+  color: #f4f3ee;
+}
+
+html[data-theme="dark"] .home-page #uploadModal .upload-file-list,
+html[data-theme="dark"] .home-page #uploadModal .modal-actions {
+  border-color: rgba(143, 138, 128, 0.56);
+}
+
+html[data-theme="dark"] .home-page #uploadModal .upload-row {
+  border-bottom-color: rgba(143, 138, 128, 0.42);
+}
+
+html[data-theme="dark"] .home-page #uploadModal .upload-name {
+  color: #f4f3ee;
+}
+
+html[data-theme="dark"] .home-page #uploadModal .upload-row-taginput,
+html[data-theme="dark"] .home-page #uploadModal .upload-row-cat,
+html[data-theme="dark"] .home-page #uploadModal .modal-input {
+  border-color: #8f8a80;
+  background: rgba(24, 24, 27, 0.72);
+  color: #f4f3ee;
+}
+
+html[data-theme="dark"] .home-page #uploadModal .upload-row-taginput:focus,
+html[data-theme="dark"] .home-page #uploadModal .upload-row-cat:focus,
+html[data-theme="dark"] .home-page #uploadModal .modal-input:focus {
+  border-color: #d77a50;
+  background: #18181b;
+  box-shadow: 0 0 0 3px rgba(215, 122, 80, 0.18);
+}
+
+html[data-theme="dark"] .home-page #uploadModal .upload-remove {
+  color: #b1ada1;
+}
+
+html[data-theme="dark"] .home-page #uploadModal .upload-remove:hover,
+html[data-theme="dark"] .home-page #uploadModal .upload-remove:focus-visible {
+  background: rgba(215, 122, 80, 0.14);
+  color: #d77a50;
+}
+
+html[data-theme="dark"] .home-page #uploadModal .modal-btn.ghost {
+  border-color: #8f8a80;
+  color: #b1ada1;
+}
+
+html[data-theme="dark"] .home-page #uploadModal .modal-btn.ghost:hover,
+html[data-theme="dark"] .home-page #uploadModal .modal-btn.ghost:focus-visible {
+  border-color: #d77a50;
+  background: rgba(215, 122, 80, 0.12);
+  color: #d77a50;
+}
+
+html[data-theme="dark"] .home-page #uploadModal #uploadSave {
+  border-color: #d77a50;
+  background: #d77a50;
+  color: #18181b;
+}
+
+html[data-theme="dark"] .home-page #uploadModal #uploadSave:hover,
+html[data-theme="dark"] .home-page #uploadModal #uploadSave:focus-visible {
+  background: #c56d49;
+  border-color: #c56d49;
+}
+
+@media (max-width: 640px) {
+  .home-page #uploadModal .modal-box.wide {
+    padding: 22px;
+  }
+
+  .home-page #uploadModal .upload-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .home-page #uploadModal .upload-remove {
+    align-self: flex-end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-page #uploadModal,
+  .home-page #uploadModal .modal-box.wide {
+    transition: none;
+  }
+
+  .home-page #uploadModal .modal-btn,
+  .home-page #uploadModal .upload-drop-zone,
+  .home-page #uploadModal .upload-row-taginput,
+  .home-page #uploadModal .upload-row-cat,
+  .home-page #uploadModal .modal-input {
+    transition: none;
+  }
+}
+
+/* Scroll-state chrome: actions fade away and the search field takes their space. */
+.home-page .topbar {
+  gap: 12px;
+  transition: gap 240ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.home-page .topbar > #favOnly,
+.home-page .topbar > #addLocalBtn,
+.home-page .topbar > .sort-select {
+  flex: 0 1 auto;
+  max-width: 260px;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 1;
+  transform: translateX(0);
+  transition: max-width 240ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 160ms ease,
+    transform 240ms cubic-bezier(0.2, 0, 0, 1),
+    padding 240ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.home-page .search-wrap {
+  min-width: 0;
+}
+
+.home-page .sticky-header.scrolled .topbar {
+  gap: 0;
+}
+
+.home-page .sticky-header.scrolled .topbar > #favOnly,
+.home-page .sticky-header.scrolled .topbar > #addLocalBtn,
+.home-page .sticky-header.scrolled .topbar > .sort-select {
+  max-width: 0;
+  opacity: 0;
+  transform: translateX(8px);
+  padding-left: 0;
+  padding-right: 0;
+  pointer-events: none;
+}
+
+.home-page .sticky-header::after,
+.home-page .sticky-header.scrolled::after {
+  display: none;
+  content: none;
+  height: 0;
+  opacity: 0;
+  background: transparent;
+}
+
+.home-page .sticky-header.scrolled {
+  box-shadow: none;
+}
+
+/* Let the compact sidebar leave the reading area, while keeping a slim hover target. */
+.home-page .sidebar {
+  transition: transform 240ms cubic-bezier(0.2, 0, 0, 1), opacity 180ms ease;
+}
+
+.home-page.page-scrolled .sidebar {
+  transform: translateX(-48px);
+  opacity: 0.12;
+}
+
+.home-page.page-scrolled .sidebar:hover,
+.home-page.page-scrolled .sidebar:focus-within {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+/* Empty upload state: do not reserve a blank list or draw a separator. */
+.home-page #uploadModal:not(.has-upload-files) .upload-file-list {
+  display: none;
+}
+
+.home-page #uploadModal:not(.has-upload-files) .modal-actions {
+  margin-top: 4px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+@media (max-width: 820px) {
+  .home-page .search-wrap {
+    min-width: 160px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-page .topbar,
+  .home-page .topbar > #favOnly,
+  .home-page .topbar > #addLocalBtn,
+  .home-page .topbar > .sort-select,
+  .home-page .sidebar {
+    transition: none;
+  }
+}
+
+/* The file-list border is the only separator needed above the actions. */
+.home-page #uploadModal .modal-actions {
+  border-top: 0;
+}
+
+/* Keep a slightly larger transparent hover target beside the hidden sidebar. */
+.home-page .sidebar {
+  overflow: visible;
+}
+
+.home-page.page-scrolled .sidebar::before {
+  content: "";
+  position: absolute;
+  top: -14px;
+  right: -26px;
+  bottom: -14px;
+  left: -10px;
+  z-index: 1;
+}
+
+.home-page.page-scrolled .sidebar > .side-btn,
+.home-page.page-scrolled .sidebar > .theme-toggle {
+  position: relative;
+  z-index: 2;
+}
+
+/* Rounded clip thumbnails on the Figma home grid. */
+.home-page .card-img,
+.home-page .card-ph {
+  border-radius: 14px;
+}
+
+/* Keep the focused search surface opaque so the dimming overlay cannot show through it. */
+.home-page .search-liquid {
+  background: var(--home-sidebar);
+}
+
+/* Edit dialog refinements for empty thumbnails and removable tag chips. */
+.home-page #editThumbPlaceholder {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--home-muted);
+  background: color-mix(in srgb, var(--home-border) 18%, transparent);
+}
+
+.home-page #editModal .tag-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 0;
+}
+
+.home-page #editModal .tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 5px 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--home-border) 70%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--home-accent) 10%, transparent);
+  color: var(--home-muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.home-page #editModal .tag button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--home-muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.home-page #editModal .tag button:hover,
+.home-page #editModal .tag button:focus-visible {
+  background: color-mix(in srgb, var(--home-accent) 18%, transparent);
+  color: var(--home-accent);
+}
+
+/* Sort dropdown must remain visible outside its compact scroll-state box. */
+.home-page .topbar > .sort-select {
+  overflow: visible;
+}
+
+.home-page .sticky-header.scrolled .topbar > .sort-select {
+  overflow: hidden;
+}
+
+.home-page .sort-dropdown,
+.home-page .sort-dropdown.open {
+  transition: opacity 180ms ease,
+    transform 240ms cubic-bezier(0.2, 0, 0, 1);
+}
+/* Keep sort menu inside the viewport when the trigger is near the right edge. */
+.home-page .sort-dropdown {
+  left: auto;
+  right: 0;
+  transform-origin: top right;
+}

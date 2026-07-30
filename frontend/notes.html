@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clips — タスク・メモ</title>
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="notes-figma.css?v=notes-ui-20260730-checkbox-v7" />
+    <script>(function(){var t=localStorage.getItem("theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark")})()</script>
+  </head>
+  <body class="notes-page">
+    <div class="layout">
+      <nav class="sidebar">
+        <a class="side-btn" title="ホーム" data-nav="home" href="index.html"><img class="icon icon-nav" src="icons/home.svg" alt="ホーム" /></a>
+        <a class="side-btn active" title="メモ" data-nav="memo" href="notes.html"><img class="icon icon-nav" src="icons/memo.svg" alt="メモ" /></a>
+        <a class="side-btn" title="プロジェクト" data-nav="projects" href="projects.html"><img class="icon icon-nav" src="icons/project.svg" alt="プロジェクト" /></a>
+        <div class="side-spacer"></div>
+        <button class="theme-toggle" title="テーマ切替" data-theme-toggle>
+          <div class="theme-toggle-track">
+            <div class="theme-toggle-thumb">
+              <svg class="theme-toggle-thumb-sun" viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5 13 13M3 13l1.5-1.5M11.5 4.5 13 3"/></svg>
+              <svg class="theme-toggle-thumb-moon" viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M12.5 8.5A5.5 5.5 0 0 1 7 3a5.5 5.5 0 1 0 5.5 5.5z"/></svg>
+            </div>
+          </div>
+        </button>
+        <button class="side-btn" title="設定" data-nav="settings"><img class="icon icon-nav" src="icons/settings.svg" alt="設定" /></button>
+      </nav>
+
+      <main class="main notes-main">
+        <div class="topbar">
+          <h1 class="heading">タスク・メモ</h1>
+          <button id="newNote" class="fav-only active">＋ 新規メモ</button>
+        </div>
+
+        <div id="statusTabs" class="categories status-tabs"></div>
+
+        <div class="two-col">
+          <!-- 蟾ｦ: 繧ｿ繧ｹ繧ｯ -->
+          <section class="task-panel">
+            <h2 class="panel-title">タスクリスト</h2>
+            <ul id="taskList" class="task-list"></ul>
+            <div id="taskEmpty" class="task-empty" hidden>タスクはまだありません</div>
+            <form id="taskAdd" class="task-add">
+              <input id="taskInput" type="text" placeholder="＋ タスクを追加 (Enter)" autocomplete="off" />
+            </form>
+          </section>
+
+          <!-- 蜿ｳ: 繝｡繝｢ -->
+          <section class="memo-col">
+            <div id="memoGrid" class="memo-grid"></div>
+            <div id="memoEmpty" class="empty" hidden>
+              <div class="empty-ill"><img class="icon icon-empty" src="icons/memo.svg" alt="" /></div>
+              <p class="empty-msg">メモはまだありません</p>
+              <p class="empty-sub">「新規メモ」から作成できます。</p>
+            </div>
+          </section>
+        </div>
+
+        <!-- 荳諡ｬ謫堺ｽ懊ヰ繝ｼ -->
+        <div id="batchBar" class="batch-bar">
+          <span id="batchCount" class="batch-count"></span>
+          <button id="batchDelBtn" class="modal-btn ghost" type="button" style="color:#db7a5c">削除</button>
+        </div>
+      </main>
+    </div>
+
+    <!-- 險ｭ螳壹Δ繝ｼ繝繝ｫ -->
+    <div id="settingsModal" class="modal" hidden>
+      <div class="modal-box wide">
+        <h2 class="modal-title">設定</h2>
+        <div class="settings-columns">
+          <div class="settings-col">
+            <h3 class="modal-sub">ホームの設定</h3>
+            <label class="setting-row column">
+              <span>ファイル保存方法</span>
+              <select id="fileSaveMethod" class="setting-select">
+                <option value="copy">アプリ内にコピー</option>
+                <option value="reference">元ファイルを参照</option>
+              </select>
+              <span id="fileSaveMethodDesc" class="file-save-desc">リンク切れの心配はありませんが、その分データ容量が増えます。</span>
+            </label>
+            <div class="setting-row">
+              <span>検索履歴</span>
+              <button id="clearSearchHistory" class="modal-btn ghost" type="button">すべて削除</button>
+            </div>
+          </div>
+          <div class="settings-col">
+            <h3 class="modal-sub">タスクの設定</h3>
+            <label class="setting-row">
+              <span>タスク作成時に同名の空メモを自動作成する</span>
+              <input type="checkbox" id="autoCreateNote" />
+            </label>
+            <label class="setting-row">
+              <span>最優先タスクをハイライトする</span>
+              <input type="checkbox" id="highlightTopPriority" />
+            </label>
+            <label class="setting-row column">
+              <span>完了したタスクを自動削除</span>
+              <select id="taskAutoDelete" class="setting-select">
+                <option value="3d">3日後</option>
+                <option value="1w">1週間後</option>
+                <option value="1m">1か月後</option>
+                <option value="never">自動削除しない</option>
+              </select>
+            </label>
+          </div>
+        
+          <div class="settings-col settings-data-col">
+            <h3 class="modal-sub">データ移行</h3>
+            <div class="setting-row column">
+              <span>データベース</span>
+              <div class="settings-data-actions">
+                <button id="dbExportBtn" class="modal-btn ghost" type="button">エクスポート</button>
+                <button id="dbImportBtn" class="modal-btn ghost" type="button">インポート</button>
+                <input id="dbImportFile" type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden />
+              </div>
+              <span class="file-save-desc">clips.dbとuploadsフォルダをZIPで移行できます。</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button id="settingsReset" class="modal-btn ghost" type="button">設定をすべてデフォルトに戻す</button>
+          <div class="modal-spacer"></div>
+          <button id="settingsClose" class="modal-btn">閉じる</button>
+        </div>
+      </div>
+    </div>
+    <!-- 繧ｿ繧ｹ繧ｯ邱ｨ髮・Δ繝ｼ繝繝ｫ -->
+    <div id="taskEditModal" class="modal" hidden>
+      <div class="modal-box">
+        <h2 class="modal-title">タスクを編集</h2>
+        <label class="modal-label" for="taskEditTitle">タイトル</label>
+        <input id="taskEditTitle" class="modal-input" type="text" autocomplete="off" />
+        <label class="modal-label" for="taskEditDue">期限</label>
+        <input id="taskEditDue" class="modal-input" type="date" />
+        <label class="modal-label">優先度</label>
+        <div id="taskEditStars" class="star-rating"></div>
+        <label class="modal-label" for="taskEditProject">プロジェクト</label>
+        <div class="project-select-row">
+          <input id="taskEditProject" list="taskEditProjectList" class="modal-input" autocomplete="off" placeholder="プロジェクトを選択…" />
+          <button id="taskEditProjectClear" type="button" class="project-clear" title="プロジェクトをクリア">×</button>
+        </div>
+        <datalist id="taskEditProjectList"></datalist>
+        <div class="modal-actions">
+          <button id="taskEditCancel" class="modal-btn ghost">キャンセル</button>
+          <button id="taskEditSave" class="modal-btn">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 繝｡繝｢邏蝉ｻ倥￠繝昴ャ繝励い繝・・ -->
+    <div id="linkModal" class="modal" hidden>
+      <div class="modal-box">
+        <h2 class="modal-title">メモを紐付け</h2>
+        <input id="linkSearch" class="modal-input" type="text" placeholder="メモを検索…" autocomplete="off" />
+        <ul id="linkList" class="clip-pick-list"></ul>
+        <div class="modal-actions">
+          <button id="linkCancel" class="modal-btn ghost">キャンセル</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="pins.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+    <script src="notes.js?v=notes-ui-20260730-checkbox-v8"></script>
+  </body>
+</html>
+
+
+
+
+
+
+
+
+

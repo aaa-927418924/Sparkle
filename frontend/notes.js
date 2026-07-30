@@ -249,7 +249,7 @@ function renderTasks() {
   els.taskList.querySelectorAll(".task-note").forEach((el) => {
     el.addEventListener("click", (e) => {
       e.stopPropagation();
-      location.href = `note-editor.html?id=${el.dataset.note}`;
+      location.href = `/Note?id=${el.dataset.note}`;
     });
   });
   els.taskList.querySelectorAll("[data-del]").forEach((btn) => {
@@ -502,7 +502,7 @@ function renderNotes() {
         toggleSelection(Number(card.dataset.id), "note", card);
         return;
       }
-      location.href = `note-editor.html?id=${card.dataset.id}`;
+      location.href = `/Note?id=${card.dataset.id}`;
     });
   });
   els.memoGrid.querySelectorAll(".clip-chip").forEach((el) => {
@@ -526,7 +526,7 @@ function renderNotes() {
 }
 
 els.newNote.addEventListener("click", () => {
-  location.href = "note-editor.html";
+  location.href = "/Note";
 });
 
 // --- 險ｭ螳壹Δ繝ｼ繝繝ｫ ---

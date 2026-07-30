@@ -1409,6 +1409,11 @@ textarea.modal-input {
   box-shadow: var(--shadow);
 }
 
+.memo-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .memo-clips {
   display: flex;
   flex-wrap: nowrap;

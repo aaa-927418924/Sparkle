@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, RedirectResponse
 
 from db import init_db
 from ai_export import request_export
@@ -33,6 +34,35 @@ app.include_router(router)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+def _frontend_page(filename: str) -> FileResponse:
+    return FileResponse(FRONTEND_DIR / filename, media_type="text/html")
+
+
+@app.get("/", include_in_schema=False)
+def root_page():
+    return RedirectResponse(url="/Home")
+
+
+@app.get("/Home", include_in_schema=False)
+def home_page():
+    return _frontend_page("index.html")
+
+
+@app.get("/Notes", include_in_schema=False)
+def notes_page():
+    return _frontend_page("notes.html")
+
+
+@app.get("/Projects", include_in_schema=False)
+def projects_page():
+    return _frontend_page("projects.html")
+
+
+@app.get("/Note", include_in_schema=False)
+def note_page():
+    return _frontend_page("note-editor.html")
 
 
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")

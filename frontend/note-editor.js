@@ -372,7 +372,7 @@ els.noteDelete.addEventListener("click", async () => {
   try {
     await api(`/notes/${state.noteId}`, { method: "DELETE" });
     clearNoteDraft();
-    location.href = "notes.html";
+    location.href = "/Notes";
   } catch (e) {
     alert("削除に失敗しました。");
   }
@@ -422,7 +422,7 @@ els.backLink.addEventListener("click", async (e) => {
     state.autoSaveTimer = null;
   }
   if (state.dirty) await autoSaveNote();
-  location.href = "notes.html";
+  location.href = "/Notes";
 });
 // ==================== Markdown ツールバー ====================
 

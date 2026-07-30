@@ -257,11 +257,13 @@ async function reloadDetail() {
     api(`/tasks?project_id=${pid}`),
     api(`/notes?project_id=${pid}`),
   ]);
+  if (state.currentProjectId !== pid) return;
   renderDetailClips(clips);
   renderDetailTasks(tasks);
   renderDetailMemos(notes);
 }
 function renderDetailClips(clips) {
+  els.detailClips.replaceChildren();
   els.detailClipsEmpty.hidden = clips.length > 0;
   els.detailClips.hidden = clips.length === 0;
   if (clips.length === 0) return;
@@ -332,6 +334,7 @@ async function loadTextPreview(el) {
 }
 
 function renderDetailTasks(tasks) {
+  els.detailTasks.replaceChildren();
   els.detailTasksEmpty.hidden = tasks.length > 0;
   els.detailTasks.hidden = tasks.length === 0;
   if (tasks.length === 0) return;
@@ -364,18 +367,17 @@ function renderDetailTasks(tasks) {
 }
 
 function renderDetailMemos(notes) {
+  els.detailMemos.replaceChildren();
   els.detailMemosEmpty.hidden = notes.length > 0;
   els.detailMemos.hidden = notes.length === 0;
   if (notes.length === 0) return;
   els.detailMemos.innerHTML = notes.map((n) => {
     const preview = (n.body || "").replace(/[#*`>\-\[\]]/g, "").slice(0, 120);
     return `
-      <div class="memo-card" data-note-id="${n.id}">
+      <div class="memo-card" data-note-id="${n.id}" role="link" tabindex="0" aria-label="${escapeHtml(n.title)}を開く">
         <button class="act-btn unlink-note-btn" data-id="${n.id}" title="紐づけ解除" style="position:absolute;top:8px;right:8px;opacity:0">✕</button>
-        <a href="note-editor.html?id=${n.id}" style="text-decoration:none;color:inherit">
-          <h3 class="memo-title">${escapeHtml(n.title)}</h3>
-          ${preview ? `<p class="memo-preview">${escapeHtml(preview)}</p>` : ""}
-        </a>
+        <h3 class="memo-title">${escapeHtml(n.title)}</h3>
+        ${preview ? `<p class="memo-preview">${escapeHtml(preview)}</p>` : ""}
       </div>
     `;
   }).join("");
@@ -386,6 +388,18 @@ function renderDetailMemos(notes) {
     });
   });
   els.detailMemos.querySelectorAll(".memo-card").forEach((card) => {
+    const openNote = () => {
+      window.location.assign(`/Note?id=${card.dataset.noteId}`);
+    };
+    card.addEventListener("click", (e) => {
+      if (e.target.closest(".unlink-note-btn")) return;
+      openNote();
+    });
+    card.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      openNote();
+    });
     card.addEventListener("mouseenter", () => { card.querySelector(".unlink-note-btn").style.opacity = "1"; });
     card.addEventListener("mouseleave", () => { card.querySelector(".unlink-note-btn").style.opacity = "0"; });
   });
@@ -603,7 +617,7 @@ function renderNoteLinked() {
   els.noteLinked.innerHTML = linked.map((n) => `
     <div class="pm-linked-item">
       <span class="item-title">${escapeHtml(n.title)}</span>
-      <a href="note-editor.html?id=${n.id}" class="item-meta" style="text-decoration:none">編集</a>
+      <a href="/Note?id=${n.id}" class="item-meta" style="text-decoration:none">編集</a>
       <button class="item-unlink" data-id="${n.id}" title="解除">✕</button>
     </div>
   `).join("");

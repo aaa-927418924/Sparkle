@@ -228,17 +228,17 @@ function showPinContextMenu(x, y, id, type) {
 async function openPinClip(id) {
   try {
     const data = await fetchPinData(id, "clip");
-    if (!data) { location.href = "index.html"; return; }
+    if (!data) { location.href = "/Home"; return; }
     const url = data.url || "";
     if (url.startsWith("local://")) {
       await fetch(`${API}/clips/${id}/open`, { method: "POST" });
     } else if (url) {
       window.open(url, "_blank", "noopener");
     } else {
-      location.href = "index.html";
+      location.href = "/Home";
     }
   } catch {
-    location.href = "index.html";
+    location.href = "/Home";
   }
 }
 
@@ -289,8 +289,8 @@ function renderSidebarPins() {
       const type = el.dataset.type;
       hideTooltip();
       if (type === "clip") openPinClip(id);
-      else if (type === "note") location.href = `note-editor.html?id=${id}`;
-      else if (type === "project") location.href = `projects.html?id=${id}`;
+      else if (type === "note") location.href = `/Note?id=${id}`;
+      else if (type === "project") location.href = `/Projects?id=${id}`;
     });
     el.addEventListener("contextmenu", (e) => {
       e.preventDefault();

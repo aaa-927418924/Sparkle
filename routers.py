@@ -54,6 +54,78 @@ from schemas import (
     TaskUpdate,
 )
 
+
+def _run_windows_forms_dialog(script: str) -> List[str]:
+    """Run a Windows Forms picker and return record-separator-delimited paths."""
+    if os.name != "nt":
+        raise RuntimeError("Windowsのファイル選択ダイアログは利用できません")
+
+    system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+    powershell = (
+        system_root
+        / "System32"
+        / "WindowsPowerShell"
+        / "v1.0"
+        / "powershell.exe"
+    )
+    try:
+        result = subprocess.run(
+            [
+                str(powershell),
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-STA",
+                "-Command",
+                script,
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except OSError as exc:
+        raise RuntimeError("Windows標準ダイアログを起動できませんでした") from exc
+
+    if result.returncode != 0:
+        detail = result.stderr.strip() or "Windows標準ダイアログがエラーを返しました"
+        raise RuntimeError(detail)
+    return [path for path in result.stdout.split("\x1e") if path]
+
+
+def _choose_files_with_windows_dialog() -> List[str]:
+    return _run_windows_forms_dialog(
+        r"""
+Add-Type -AssemblyName System.Windows.Forms
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$dialog = New-Object System.Windows.Forms.OpenFileDialog
+$dialog.Title = 'アップロードするファイルを選択'
+$dialog.Multiselect = $true
+$dialog.CheckFileExists = $true
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    [Console]::Write(($dialog.FileNames -join [char]30))
+}
+"""
+    )
+
+
+def _choose_directory_with_windows_dialog() -> Optional[str]:
+    paths = _run_windows_forms_dialog(
+        r"""
+Add-Type -AssemblyName System.Windows.Forms
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = 'バックアップの保存先を選択'
+$dialog.ShowNewFolderButton = $true
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    [Console]::Write($dialog.SelectedPath)
+}
+"""
+    )
+    return paths[0] if paths else None
+
+
 router = APIRouter()
 
 
@@ -1331,16 +1403,7 @@ _MAX_BACKUP_UNPACKED_BYTES = 4 * 1024 * 1024 * 1024
 def _choose_backup_directory() -> Optional[Path]:
     """Open the native Windows folder picker for the local desktop app."""
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        try:
-            selected = filedialog.askdirectory(title="バックアップの保存先を選択")
-        finally:
-            root.destroy()
+        selected = _choose_directory_with_windows_dialog()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"保存先ダイアログを開けませんでした: {exc}") from exc
     return Path(selected) if selected else None
@@ -1720,19 +1783,12 @@ def open_file_dialog():
     選択されたファイルの絶対パスとサイズを返す。
     ブラウザ側のFile System Access APIでは絶対パスを取得できないため、
     reference(元ファイル参照)モードではこちらを使う。
-    同一プロセス内でtkinterを直接呼ぶ(exe化してもsys.executableに依存しないため)。
+    Windows標準のファイル選択ダイアログを使うため、exe内のTkには依存しない。
     """
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        raw_paths = filedialog.askopenfilenames(title="アップロードするファイルを選択")
-        root.destroy()
+        raw_paths = _choose_files_with_windows_dialog()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"ダイアログを開けませんでした: {e}")
+        raise HTTPException(status_code=500, detail=f"ダイアログを開けませんでした: {e}") from e
 
     files = []
     for p in raw_paths:

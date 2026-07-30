@@ -27,7 +27,6 @@ py -3.13 -m PyInstaller --clean --noconfirm --onefile --noconsole --name AIClipS
   --hidden-import uvicorn.lifespan ^
   --hidden-import uvicorn.lifespan.on ^
   --hidden-import pystray._win32 ^
-  --collect-all tkinter ^
   app_entry.py
 
 if errorlevel 1 (

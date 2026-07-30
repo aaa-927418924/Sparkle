@@ -37,12 +37,15 @@ server_ref = {}
 
 def _show_error(message: str) -> None:
     try:
-        import tkinter as tk
-        from tkinter import messagebox
-        root = tk.Tk()
-        root.withdraw()
-        messagebox.showerror("AI Clip Save App", message)
-        root.destroy()
+        import ctypes
+
+        # MB_ICONERROR | MB_SETFOREGROUND
+        ctypes.windll.user32.MessageBoxW(
+            None,
+            message,
+            "AI Clip Save App",
+            0x10 | 0x10000,
+        )
     except Exception:
         pass
 
@@ -101,7 +104,7 @@ def _open_browser_when_ready() -> None:
     for _ in range(150):
         try:
             with socket.create_connection((HOST, PORT), timeout=0.5):
-                webbrowser.open(f"http://{HOST}:{PORT}")
+                webbrowser.open(f"http://{HOST}:{PORT}/Home")
                 return
         except OSError:
             time.sleep(0.2)
@@ -125,7 +128,7 @@ def _build_tray_icon():
     import pystray
 
     def _open_browser(icon, item):
-        webbrowser.open(f"http://{HOST}:{PORT}")
+        webbrowser.open(f"http://{HOST}:{PORT}/Home")
 
     def _toggle_autostart(icon, item):
         set_autostart_enabled(not is_autostart_enabled())
@@ -166,7 +169,7 @@ def main() -> None:
     try:
         if _is_app_server_running():
             # 既に起動中(二重起動) → ブラウザでウィンドウを開くだけ
-            webbrowser.open(f"http://{HOST}:{PORT}")
+            webbrowser.open(f"http://{HOST}:{PORT}/Home")
             return
         if _is_port_in_use():
             message = (

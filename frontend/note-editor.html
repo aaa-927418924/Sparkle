@@ -163,6 +163,19 @@
               <span class="file-save-desc">clips.dbとuploadsフォルダをZIPで移行できます。</span>
             </div>
           </div>
+<div class="settings-col settings-ai-col">
+          <h3 class="modal-sub">AI向けエクスポート</h3>
+          <label class="setting-row">
+            <span>AI向けMarkdownを自動更新</span>
+            <input type="checkbox" id="aiExportEnabled" aria-describedby="aiExportDesc" />
+          </label>
+          <span id="aiExportDesc" class="file-save-desc">保存先のMarkdownをClaudeのFileSystemMCPやOpenCodeなどから読み込めます。</span>
+          <div id="aiExportStatus" class="ai-export-status" role="status" aria-live="polite">状態を確認中…</div>
+          <div class="settings-data-actions">
+            <button id="aiExportNow" class="modal-btn ghost" type="button">今すぐ更新</button>
+            <button id="aiExportOpen" class="modal-btn ghost" type="button">フォルダを開く</button>
+          </div>
+        </div>
         </div>
         <div class="modal-actions">
           <button id="settingsReset" class="modal-btn ghost" type="button">設定をすべてデフォルトに戻す</button>

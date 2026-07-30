@@ -387,6 +387,7 @@ function loadSettingsValues() {
       .then((d) => { fsm.value = d.value || "copy"; updateFileSaveDesc?.(fsm.value); })
       .catch(() => {});
   }
+  loadAIExportSettings();
 }
 
 function updateFileSaveDesc(v) {
@@ -396,6 +397,38 @@ function updateFileSaveDesc(v) {
     ? "リンク切れの心配はありませんが、その分データ容量が増えます。"
     : "アップロードしたファイルの場所をそのまま参照します。";
 }
+function updateAIExportStatus(data) {
+  const pathEl = document.getElementById("aiExportDesc");
+  const statusEl = document.getElementById("aiExportStatus");
+  if (pathEl) pathEl.textContent = data?.path
+    ? `保存先: ${data.path}`
+    : "保存先を確認できません。";
+  if (!statusEl) return;
+  if (data?.last_error) statusEl.textContent = "更新に失敗しました。次回保存時に再試行します。";
+  else if (data?.enabled === false) statusEl.textContent = "自動更新はオフです。";
+  else if (data?.last_exported_at) statusEl.textContent = `最終更新: ${data.last_exported_at}`;
+  else statusEl.textContent = "まだ生成されていません。";
+}
+
+async function loadAIExportSettings() {
+  const toggle = document.getElementById("aiExportEnabled");
+  if (!toggle) return;
+  try {
+    const [settingRes, statusRes] = await Promise.all([
+      fetch("http://127.0.0.1:8000/settings/ai_export_enabled"),
+      fetch("http://127.0.0.1:8000/data/ai-export/status"),
+    ]);
+    if (settingRes.ok) {
+      const setting = await settingRes.json();
+      toggle.checked = setting.value !== "0";
+    }
+    if (statusRes.ok) updateAIExportStatus(await statusRes.json());
+  } catch {
+    const statusEl = document.getElementById("aiExportStatus");
+    if (statusEl) statusEl.textContent = "状態を確認できません。";
+  }
+}
+
 function initSettings() {
   // autoCreateNote
   const acn = document.getElementById("autoCreateNote");
@@ -429,6 +462,54 @@ function initSettings() {
       body: JSON.stringify({ value: fsm.value }),
     });
     if (typeof updateFileSaveDesc === "function") updateFileSaveDesc(fsm.value);
+  });
+// AI-friendly Markdown export
+  const aiToggle = document.getElementById("aiExportEnabled");
+  const aiNow = document.getElementById("aiExportNow");
+  const aiOpen = document.getElementById("aiExportOpen");
+  const aiApi = "http://127.0.0.1:8000";
+  if (aiToggle) aiToggle.addEventListener("change", async () => {
+    const next = aiToggle.checked;
+    try {
+      const res = await fetch(`${aiApi}/settings/ai_export_enabled`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: next ? "1" : "0" }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      loadAIExportSettings();
+    } catch {
+      aiToggle.checked = !next;
+      alert("AI向けMarkdownの設定を保存できませんでした。");
+    }
+  });
+  if (aiNow) aiNow.addEventListener("click", async () => {
+    const original = aiNow.textContent;
+    aiNow.disabled = true;
+    aiNow.textContent = "更新中…";
+    try {
+      const res = await fetch(`${aiApi}/data/ai-export`, { method: "POST", headers: { Accept: "application/json" } });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      updateAIExportStatus(data);
+    } catch (e) {
+      const statusEl = document.getElementById("aiExportStatus");
+      if (statusEl) statusEl.textContent = "更新に失敗しました。";
+      alert(`AI向けMarkdownを更新できませんでした。${e.message ? `\n${e.message}` : ""}`);
+    } finally {
+      aiNow.disabled = false;
+      aiNow.textContent = original;
+    }
+  });
+  if (aiOpen) aiOpen.addEventListener("click", async () => {
+    try {
+      const res = await fetch(`${aiApi}/data/ai-export/open`, { method: "POST", headers: { Accept: "application/json" } });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      updateAIExportStatus(data);
+    } catch (e) {
+      alert(`エクスポートフォルダを開けませんでした。${e.message ? `\n${e.message}` : ""}`);
+    }
   });
   // clearSearchHistory
   const csh = document.getElementById("clearSearchHistory");
@@ -465,6 +546,14 @@ function initSettings() {
         body: JSON.stringify({ value: "copy" }),
       });
       if (typeof updateFileSaveDesc === "function") updateFileSaveDesc("copy");
+    }
+const aiToggleReset = document.getElementById("aiExportEnabled");
+    if (aiToggleReset) {
+      aiToggleReset.checked = true;
+      fetch(`http://127.0.0.1:8000/settings/ai_export_enabled`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "1" }),
+      }).then(() => loadAIExportSettings()).catch(() => {});
     }
     document.dispatchEvent(new Event("highlightSettingChanged"));
   });

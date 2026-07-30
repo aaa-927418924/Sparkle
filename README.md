@@ -144,3 +144,19 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 - サーバーは PC ローカル (localhost) での利用を前提としている。
 - 将来 PyInstaller で単一 exe にまとめることを想定し、外部設定ファイルや
   複雑な依存関係を避け、DB パスもコード内で固定管理している。
+
+
+## AI向けMarkdownエクスポート
+
+設定で「AI向けMarkdownを自動更新」を有効にすると、データベースの変更後に次のフォルダへAIツール向けのMarkdownスナップショットを保存します。
+
+`%USERPROFILE%\Documents\AIClipSaveApp\ai-export\`
+
+主なファイルは次のとおりです。
+
+- `README.md` / `index.md`: 使い方と全体の入口
+- `all.md`: クリップ、メモ、タスク、プロジェクトをまとめた全文
+- `clips.md` / `notes.md` / `tasks.md` / `projects.md`: 種類別のデータ
+- `taxonomy.md`: カテゴリ、タグ、関連付けの一覧
+
+ClaudeのFileSystemMCPではこのフォルダを読み取り対象にし、OpenCodeでは同フォルダのMarkdownを参照させてください。通常のClaude、ChatGPT、Geminiでは、必要なMarkdownファイルをチャットへアップロードして利用できます。埋め込みベクトルやアプリ内部の絶対パスなど、AIに不要な内部情報は出力しません。

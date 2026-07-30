@@ -24,6 +24,7 @@ from sqlite3 import Connection
 
 from crud import get_or_create_category, get_or_create_tag
 from db import DB_PATH, get_connection, init_db
+from ai_export import export_now, get_status as get_ai_export_status, open_export_folder
 from paths import get_local_files_dir, get_uploads_dir
 from ffmpeg_bootstrap import get_ffmpeg_path
 from maintenance import (
@@ -974,6 +975,28 @@ def put_setting(key: str, payload: SettingValue, db: Connection = Depends(get_db
     )
     db.commit()
     return SettingValue(value=payload.value)
+
+
+@router.get("/data/ai-export/status")
+def ai_export_status():
+    return get_ai_export_status()
+
+
+@router.post("/data/ai-export")
+def ai_export_now():
+    try:
+        return export_now()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"AI向けMarkdownの生成に失敗しました: {exc}") from exc
+
+
+@router.post("/data/ai-export/open")
+def open_ai_export_folder():
+    try:
+        return open_export_folder()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"AI向けエクスポートフォルダを開けませんでした: {exc}") from exc
+
 
 # --- Database migration ---------------------------------------------------
 

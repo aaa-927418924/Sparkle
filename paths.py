@@ -48,6 +48,14 @@ def get_local_files_dir() -> Path:
     return d
 
 
+def get_ai_export_dir() -> Path:
+    """Return the human-readable export directory intended for AI tools."""
+    documents = Path.home() / "Documents"
+    d = documents / APP_NAME / "ai-export"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def get_resource_dir() -> Path:
     if is_frozen():
         return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from db import init_db
+from ai_export import request_export
 from routers import router
 from maintenance import run_maintenance
 from paths import get_uploads_dir, get_thumbnails_dir, get_local_files_dir, get_resource_dir
@@ -42,4 +43,5 @@ app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="fronte
 def _startup() -> None:
     init_db()
     run_maintenance()
+    request_export(0.1)
     ensure_ffmpeg_async()

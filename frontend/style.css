@@ -3231,3 +3231,13 @@ html[data-theme="dark"] #detailView .task-check input[type="checkbox"]:checked {
 .sidebar .side-btn.active .icon-nav {
   filter: invert(49%) sepia(32%) saturate(1240%) hue-rotate(331deg) brightness(89%) contrast(88%);
 }
+.settings-ai-col .file-save-desc,
+.ai-export-status {
+  overflow-wrap: anywhere;
+}
+.ai-export-status {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}

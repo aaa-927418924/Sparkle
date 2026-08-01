@@ -531,7 +531,7 @@ def main() -> None:
         webview.settings["ALLOW_DOWNLOADS"] = True
 
         window = webview.create_window(
-            "Clips",
+            "Sparkle",
             url=f"http://{HOST}:{PORT}/Home",
             width=1280,
             height=820,

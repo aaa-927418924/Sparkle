@@ -135,56 +135,75 @@
     });
   }
 
+  function isSmallSidebarGap(event, sidebar) {
+    const x = event.clientX;
+    const y = event.clientY;
+    return [...sidebar.querySelectorAll(".sidebar-titlebar, .side-btn, .sidebar-tools")].some((element) => {
+      const rect = element.getBoundingClientRect();
+      return x >= rect.left && x <= rect.right && y >= rect.top - 4 && y <= rect.bottom + 4;
+    });
+  }
+
+  function canStartSidebarDrag(event, sidebar) {
+    const target = event.target;
+    if (target?.closest?.("[data-window-action], .side-btn, .sidebar-tools, .window-controls")) return false;
+    if (target?.closest?.(".sidebar-titlebar, .side-spacer")) return true;
+    if (target !== sidebar) return false;
+    return !isSmallSidebarGap(event, sidebar);
+  }
+
+  function startWindowDrag(event) {
+    const api = window.pywebview?.api;
+    if (!api || typeof api.begin_window_drag !== "function" || typeof api.move_window !== "function") return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    const startScreenX = event.screenX;
+    const startScreenY = event.screenY;
+    const drag = { api, geometry: null, startScreenX, startScreenY };
+    activeDrag = drag;
+
+    const cleanup = () => {
+      if (activeDrag !== drag) return;
+      activeDrag = null;
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", cleanup);
+      window.removeEventListener("blur", cleanup);
+    };
+
+    const onMouseMove = (moveEvent) => {
+      if (activeDrag !== drag || !drag.geometry) return;
+      const x = drag.geometry.x + moveEvent.screenX - drag.startScreenX;
+      const y = drag.geometry.y + moveEvent.screenY - drag.startScreenY;
+      void drag.api.move_window(Math.round(x), Math.round(y));
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", cleanup);
+    window.addEventListener("blur", cleanup);
+
+    api.begin_window_drag(startScreenX, startScreenY).then((geometry) => {
+      if (activeDrag !== drag) return;
+      if (!geometry || typeof geometry.x !== "number") {
+        cleanup();
+        return;
+      }
+      drag.geometry = geometry;
+      if (geometry.restored) {
+        updateMaximizeButton(
+          document.querySelector('[data-window-action="toggle_maximize_window"]'),
+          false,
+        );
+      }
+    }).catch(cleanup);
+  }
+
   function installWindowDrag() {
-    document.querySelectorAll("[data-window-drag]").forEach((titlebar) => {
-      titlebar.addEventListener("mousedown", (event) => {
-        if (event.button !== 0) return;
-        if (event.target.closest?.("[data-window-action]")) return;
-
-        const api = window.pywebview?.api;
-        if (!api || typeof api.begin_window_drag !== "function" || typeof api.move_window !== "function") return;
-
-        event.preventDefault();
-        event.stopImmediatePropagation();
-
-        const startScreenX = event.screenX;
-        const startScreenY = event.screenY;
-        const drag = { api, geometry: null, startScreenX, startScreenY };
-        activeDrag = drag;
-
-        const cleanup = () => {
-          if (activeDrag !== drag) return;
-          activeDrag = null;
-          window.removeEventListener("mousemove", onMouseMove);
-          window.removeEventListener("mouseup", cleanup);
-          window.removeEventListener("blur", cleanup);
-        };
-
-        const onMouseMove = (moveEvent) => {
-          if (activeDrag !== drag || !drag.geometry) return;
-          const x = drag.geometry.x + moveEvent.screenX - drag.startScreenX;
-          const y = drag.geometry.y + moveEvent.screenY - drag.startScreenY;
-          void drag.api.move_window(Math.round(x), Math.round(y));
-        };
-
-        window.addEventListener("mousemove", onMouseMove);
-        window.addEventListener("mouseup", cleanup);
-        window.addEventListener("blur", cleanup);
-
-        api.begin_window_drag(startScreenX, startScreenY).then((geometry) => {
-          if (activeDrag !== drag) return;
-          if (!geometry || typeof geometry.x !== "number") {
-            cleanup();
-            return;
-          }
-          drag.geometry = geometry;
-          if (geometry.restored) {
-            updateMaximizeButton(
-              document.querySelector('[data-window-action="toggle_maximize_window"]'),
-              false,
-            );
-          }
-        }).catch(cleanup);
+    document.querySelectorAll(".sidebar").forEach((sidebar) => {
+      sidebar.addEventListener("mousedown", (event) => {
+        if (event.button !== 0 || !canStartSidebarDrag(event, sidebar)) return;
+        startWindowDrag(event);
       }, { capture: true });
     });
   }

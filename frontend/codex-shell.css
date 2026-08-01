@@ -710,6 +710,25 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   white-space: nowrap;
 }
 
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 8px;
+}
+
+.sidebar-brand-icon {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  flex: 0 0 18px;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 .window-controls {
   display: flex;
   align-items: center;

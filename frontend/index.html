@@ -6,17 +6,19 @@
     <title>Clips</title>
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="home-figma.css?v=home-ui-20260730-controls-v4" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260801-v1" />
     <script>
       (function () {
         var t = localStorage.getItem("theme");
-        if (t === "dark") document.documentElement.setAttribute("data-theme", "dark");
+        if (t !== "") document.documentElement.setAttribute("data-theme", "dark");
       })();
     </script>
     <script src="page-transition.js?v=sidebar-fade-20260730-v3"></script>
   </head>
   <body class="home-page">
+    <a class="skip-link" href="#mainContent">本文へ移動</a>
     <div class="layout">
-      <nav class="sidebar">
+      <nav class="sidebar" aria-label="メインナビゲーション">
         <a class="side-btn active" title="ホーム" data-nav="home" href="/Home">
           <img class="icon icon-nav" src="icons/home.svg" alt="ホーム" />
         </a>
@@ -27,7 +29,7 @@
           <img class="icon icon-nav" src="icons/project.svg" alt="プロジェクト" />
         </a>
         <div class="side-spacer"></div>
-        <button class="theme-toggle" title="テーマ切替" data-theme-toggle>
+        <button class="theme-toggle" title="テーマ切替" aria-label="テーマ切替" data-theme-toggle>
           <div class="theme-toggle-track">
             <div class="theme-toggle-thumb">
               <svg class="theme-toggle-thumb-sun" viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
@@ -45,7 +47,7 @@
         </button>
       </nav>
 
-      <main class="main">
+      <main id="mainContent" class="main">
         <div class="sticky-header" id="stickyHeader">
           <div class="topbar">
             <div class="search-wrap" id="searchWrap">
@@ -265,5 +267,6 @@
     <script src="pins.js?v=home-ui-20260729-theme-v1"></script>
     <script src="search-history.js"></script>
     <script src="app.js?v=home-ui-20260729-theme-v1"></script>
+    <script src="codex-shell.js?v=codex-shell-20260801-v1"></script>
   </body>
 </html>

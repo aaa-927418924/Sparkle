@@ -2,32 +2,40 @@
 setlocal
 cd /d "%~dp0"
 
-echo Installing dependencies...
-py -3.13 -m pip install -r requirements.txt
-py -3.13 -m pip install pyinstaller
-if errorlevel 1 (
+set "VENV_DIR="
+if exist "%~dp0.venv313\Scripts\python.exe" set "VENV_DIR=%~dp0.venv313"
+if not defined VENV_DIR if exist "%~dp0.venv\Scripts\python.exe" set "VENV_DIR=%~dp0.venv"
+
+if not defined VENV_DIR (
   echo.
-  echo Dependency installation failed.
+  echo No project virtual environment was found. Expected .venv313 or .venv.
+  echo.
+  pause
+  exit /b 1
+)
+
+set "PYTHON=%VENV_DIR%\Scripts\python.exe"
+set "PYINSTALLER=%VENV_DIR%\Scripts\pyinstaller.exe"
+
+if not exist "%PYTHON%" (
+  echo.
+  echo The selected virtual environment is missing its Python executable.
+  echo.
+  pause
+  exit /b 1
+)
+
+if not exist "%PYINSTALLER%" (
+  echo.
+  echo PyInstaller was not found in the selected virtual environment.
+  echo Install project dependencies and PyInstaller before building.
   pause
   exit /b 1
 )
 
 echo.
 echo Building exe from a clean PyInstaller cache...
-py -3.13 -m PyInstaller --clean --noconfirm --onefile --noconsole --name AIClipSaveApp ^
-  --add-data "frontend;frontend" ^
-  --hidden-import uvicorn.logging ^
-  --hidden-import uvicorn.loops ^
-  --hidden-import uvicorn.loops.auto ^
-  --hidden-import uvicorn.protocols ^
-  --hidden-import uvicorn.protocols.http ^
-  --hidden-import uvicorn.protocols.http.auto ^
-  --hidden-import uvicorn.protocols.websockets ^
-  --hidden-import uvicorn.protocols.websockets.auto ^
-  --hidden-import uvicorn.lifespan ^
-  --hidden-import uvicorn.lifespan.on ^
-  --hidden-import pystray._win32 ^
-  app_entry.py
+"%PYINSTALLER%" --clean --noconfirm AIClipSaveApp.spec
 
 if errorlevel 1 (
   echo.

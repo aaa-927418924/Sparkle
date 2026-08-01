@@ -10,8 +10,7 @@ import sys
 import threading
 import time
 import traceback
-from urllib.request import urlopen
-import webbrowser
+from urllib.request import Request, urlopen
 from pathlib import Path
 
 from paths import get_app_data_dir, is_frozen
@@ -33,6 +32,8 @@ RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 APP_REG_NAME = "AIClipSaveApp"
 
 server_ref = {}
+window_ref = {}
+exit_requested = threading.Event()
 
 
 def _show_error(message: str) -> None:
@@ -56,6 +57,35 @@ def _get_exe_path() -> str:
     return str(Path(__file__).resolve())
 
 
+def _has_webview2_runtime() -> bool:
+    """Return whether the Evergreen WebView2 Runtime is installed."""
+    if os.name != "nt":
+        return False
+
+    try:
+        import winreg
+
+        locations = (
+            (winreg.HKEY_LOCAL_MACHINE,
+             r"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"),
+            (winreg.HKEY_CURRENT_USER,
+             r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"),
+            (winreg.HKEY_LOCAL_MACHINE,
+             r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"),
+        )
+        for hive, subkey in locations:
+            try:
+                with winreg.OpenKey(hive, subkey, 0, winreg.KEY_READ) as key:
+                    version, _ = winreg.QueryValueEx(key, "pv")
+                if version and str(version) != "0.0.0.0":
+                    return True
+            except (FileNotFoundError, OSError):
+                continue
+    except Exception:
+        return False
+    return False
+
+
 def is_autostart_enabled() -> bool:
     try:
         import winreg
@@ -71,7 +101,13 @@ def set_autostart_enabled(enabled: bool) -> None:
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
             if enabled:
-                winreg.SetValueEx(key, APP_REG_NAME, 0, winreg.REG_SZ, f'"{_get_exe_path()}"')
+                winreg.SetValueEx(
+                    key,
+                    APP_REG_NAME,
+                    0,
+                    winreg.REG_SZ,
+                    f'"{_get_exe_path()}" --hidden',
+                )
             else:
                 try:
                     winreg.DeleteValue(key, APP_REG_NAME)
@@ -85,6 +121,8 @@ def _run_server() -> None:
     try:
         import uvicorn
         from main import app  # FastAPI アプリ本体
+
+        app.state.desktop_activate = _activate_window
 
         # noconsoleビルドでは標準入出力がNoneになり得るため、
         # Uvicornの既定ログ設定を使わず、アプリ側のファイルログだけを使う。
@@ -100,19 +138,67 @@ def _run_server() -> None:
         raise
 
 
-def _open_browser_when_ready() -> None:
+def _wait_for_server() -> bool:
     for _ in range(150):
         try:
-            with socket.create_connection((HOST, PORT), timeout=0.5):
-                webbrowser.open(f"http://{HOST}:{PORT}/Home")
-                return
-        except OSError:
+            with urlopen(f"http://{HOST}:{PORT}/health", timeout=0.5) as response:
+                if response.status == 200 and b'"ok"' in response.read(256):
+                    return True
+        except Exception:
             time.sleep(0.2)
     try:
         with LOG_PATH.open("a", encoding="utf-8") as log:
-            log.write("\nサーバーが起動せず、ブラウザを開けませんでした。\n")
+            log.write("\nサーバーが起動せず、ネイティブウィンドウを開けませんでした。\n")
     except Exception:
         pass
+    return False
+
+
+def _activate_window() -> None:
+    window = window_ref.get("window")
+    if window is None:
+        return
+    try:
+        window.restore()
+    except Exception:
+        pass
+    try:
+        window.show()
+    except Exception:
+        pass
+
+    # pywebview exposes the native handle after the window is shown.  Bringing
+    # it to the foreground makes the tray and second-launch paths feel native.
+    try:
+        native = window.native
+        handle = getattr(native, "Handle", None)
+        if handle is not None:
+            try:
+                hwnd = int(handle)
+            except (TypeError, ValueError):
+                hwnd = int(handle.ToInt64())
+            import ctypes
+
+            ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+
+
+def _stop_server() -> None:
+    server = server_ref.get("server")
+    if server is not None:
+        server.should_exit = True
+
+
+def _on_window_closing(window) -> bool:
+    if exit_requested.is_set():
+        return True
+    try:
+        window.hide()
+    except Exception:
+        pass
+    return False
 
 def _build_tray_image():
     from PIL import Image, ImageDraw
@@ -127,17 +213,25 @@ def _build_tray_image():
 def _build_tray_icon():
     import pystray
 
-    def _open_browser(icon, item):
-        webbrowser.open(f"http://{HOST}:{PORT}/Home")
+    def _open_window(icon, item):
+        _activate_window()
 
     def _toggle_autostart(icon, item):
         set_autostart_enabled(not is_autostart_enabled())
 
     def _exit_app(icon, item):
+        exit_requested.set()
+        _stop_server()
+        window = window_ref.get("window")
+        if window is not None:
+            try:
+                window.destroy()
+            except Exception:
+                pass
         icon.stop()
 
     menu = pystray.Menu(
-        pystray.MenuItem("ブラウザで開く", _open_browser, default=True),
+        pystray.MenuItem("ウィンドウを開く", _open_window, default=True),
         pystray.MenuItem(
             "PC起動時に自動起動",
             _toggle_autostart,
@@ -158,6 +252,15 @@ def _is_app_server_running() -> bool:
         return False
 
 
+def _activate_existing_app() -> bool:
+    try:
+        request = Request(f"http://{HOST}:{PORT}/app/activate", method="POST")
+        with urlopen(request, timeout=1.0) as response:
+            return response.status in (200, 204)
+    except Exception:
+        return False
+
+
 def _is_port_in_use() -> bool:
     probe = socket.socket()
     try:
@@ -168,8 +271,8 @@ def _is_port_in_use() -> bool:
 def main() -> None:
     try:
         if _is_app_server_running():
-            # 既に起動中(二重起動) → ブラウザでウィンドウを開くだけ
-            webbrowser.open(f"http://{HOST}:{PORT}/Home")
+            # 既に起動中(二重起動) → 既存のネイティブウィンドウを前面表示
+            _activate_existing_app()
             return
         if _is_port_in_use():
             message = (
@@ -184,17 +287,58 @@ def main() -> None:
             _show_error(message)
             return
 
-        threading.Thread(target=_run_server, daemon=True).start()
-        threading.Thread(target=_open_browser_when_ready, daemon=True).start()
+        if not _has_webview2_runtime():
+            _show_error(
+                "Microsoft Edge WebView2 Runtimeが見つかりません。\n"
+                "Windows用のWebView2 Runtimeをインストールしてから、もう一度起動してください。\n\n"
+                "https://developer.microsoft.com/microsoft-edge/webview2/"
+            )
+            return
+
+        server_thread = threading.Thread(target=_run_server, daemon=True)
+        server_thread.start()
+        if not _wait_for_server():
+            _show_error(f"サーバーが起動しませんでした。\n詳細: {LOG_PATH}")
+            return
+
+        try:
+            import webview
+        except Exception as exc:
+            _stop_server()
+            _show_error(
+                "ネイティブウィンドウの依存関係を読み込めませんでした。\n"
+                f"{exc}\n\n詳細: {LOG_PATH}"
+            )
+            return
+
+        webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
+        webview.settings["ALLOW_DOWNLOADS"] = True
+
+        window = webview.create_window(
+            "AI Clip Save",
+            url=f"http://{HOST}:{PORT}/Home",
+            width=1280,
+            height=820,
+            min_size=(960, 640),
+            resizable=True,
+            text_select=True,
+            zoomable=True,
+            background_color="#202020",
+            hidden="--hidden" in sys.argv[1:],
+        )
+        window_ref["window"] = window
+        window.events.closing += _on_window_closing
 
         icon = _build_tray_icon()
-        icon.run()  # 「終了」が押されるまでここでブロックする(メインスレッド)
+        tray_thread = threading.Thread(target=icon.run, daemon=True)
+        tray_thread.start()
 
-        server = server_ref.get("server")
-        if server is not None:
-            server.should_exit = True
-        time.sleep(0.3)
-        os._exit(0)
+        webview.start(debug=not is_frozen())
+
+        exit_requested.set()
+        _stop_server()
+        icon.stop()
+        server_thread.join(timeout=2.0)
     except Exception:
         err = traceback.format_exc()
         try:

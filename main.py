@@ -1,6 +1,6 @@
 """FastAPI entrypoint for the local clip-save backend."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
@@ -34,6 +34,15 @@ app.include_router(router)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/app/activate", include_in_schema=False)
+def activate_app() -> Response:
+    """Bring the already-running desktop window to the foreground."""
+    callback = getattr(app.state, "desktop_activate", None)
+    if callable(callback):
+        callback()
+    return Response(status_code=204)
 
 
 def _frontend_page(filename: str) -> FileResponse:

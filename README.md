@@ -1,18 +1,18 @@
-# AI Clip Save API (backend)
+# AI Clip Save App
 
-個人用クリップ保存アプリのバックエンド。Chrome 拡張から送られた Web ページ情報
-(URL・コメント・タグ・カテゴリ) を SQLite に保存し、Pinterest 風 UI から
-一覧・検索できるようにするための CRUD API のみを提供する。
-
-フロントエンド・拡張機能・AI 検索機能は含まない (将来の拡張ステップで別途実装)。
+個人用クリップ保存アプリ。Chrome 拡張から送られた Web ページ情報
+(URL・コメント・タグ・カテゴリ) を SQLite に保存し、Windows ネイティブウィンドウから
+一覧・検索・メモ・プロジェクト管理を行う。
 
 ## 技術スタック
 
 - Python 3.10+
 - FastAPI
 - SQLite (ファイルベース、追加インストール不要)
-- uvicorn (開発用サーバー)
+- uvicorn (内蔵ローカルサーバー)
 - pydantic
+- pywebview + WebView2 (Windows デスクトップウィンドウ)
+- pystray (タスクトレイ)
 
 将来 fastembed による自然言語検索・タグ提案を追加することを想定し、
 `clips` テーブルに `embedding` (BLOB) カラムをあらかじめ用意している。
@@ -20,15 +20,18 @@
 ## ファイル構成
 
 ```
-db.py        SQLite 接続・スキーマ定義 (DB ファイルはプロジェクト直下の clips.db)
+db.py        SQLite 接続・スキーマ定義 (DB ファイルはアプリデータ内の clips.db)
 schemas.py   Pydantic のリクエスト/レスポンス定義
 crud.py      カテゴリ・タグの get_or_create ヘルパー (将来拡張用)
 routers.py   API エンドポイント定義
 main.py      FastAPI アプリ起動・DB 初期化
+app_entry.py Windows用の内蔵ウィンドウ・タスクトレイ起動
+frontend/    クリップ、メモ、プロジェクトの画面
 requirements.txt
 ```
 
-DB ファイルのパスは `db.py` の冒頭 `DB_PATH` で一元管理している。
+DB・アップロードファイルは `%APPDATA%\AIClipSaveApp` に保存する。
+パスの決定は `paths.py`、DBファイルの参照は `db.py` の `DB_PATH` で一元管理している。
 
 ## セットアップ
 
@@ -38,7 +41,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-## 起動
+## 開発用起動
 
 ```powershell
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
@@ -47,6 +50,35 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 起動時に自動で `clips.db` が作成 (テーブル初期化) される。
 ブラウザで http://127.0.0.1:8000/docs を開くと Swagger UI で API 仕様を
 確認・試行できる。
+
+## Windows アプリとして起動
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python app_entry.py
+```
+
+または `start.bat` をダブルクリックすると、`dist\AIClipSaveApp.exe` があれば exe版、
+無ければ仮想環境のソース版を起動する。
+
+アプリは `127.0.0.1:8000` のローカルサーバーを内蔵ウィンドウで表示する。
+ウィンドウを閉じるとタスクトレイへ隠れ、トレイメニューから再表示または終了できる。
+2 回起動した場合は、新しいウィンドウを増やさず既存のウィンドウを前面に表示する。
+
+Windows の Microsoft Edge WebView2 Runtime が必要。通常の Windows 11 環境では
+既にインストールされていることが多く、未導入の場合は Microsoft の WebView2 Runtime
+をインストールしてから起動する。
+
+## exe ビルド
+
+依存パッケージと PyInstaller を仮想環境へインストールしたあと、次を実行する。
+
+```powershell
+.\build_exe.bat
+```
+
+`dist\AIClipSaveApp.exe` に単一 exe が生成される。ビルドスクリプトはプロジェクト内の
+`.venv313` を優先し、無ければ `.venv` を使用する。
 
 ## Tailscale経由でスマホから使う場合
 
@@ -167,8 +199,8 @@ tailscale serve --tcp=8000 tcp://127.0.0.1:8000 off
 ## 備考
 
 - サーバーは PC ローカル (localhost) での利用を前提としている。
-- 将来 PyInstaller で単一 exe にまとめることを想定し、外部設定ファイルや
-  複雑な依存関係を避け、DB パスもコード内で固定管理している。
+- 外部設定ファイルや複雑な依存関係を避け、単一 exe にまとめてもデータを
+  アプリ本体の外へ保存できる構成にしている。
 
 
 ## AI向けMarkdownエクスポート

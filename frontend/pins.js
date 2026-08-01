@@ -651,6 +651,7 @@ function initPinSettings() {
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
   localStorage.setItem("theme", theme);
+  updateThemeButton();
   document.dispatchEvent(new Event("themechange"));
 }
 
@@ -659,18 +660,29 @@ function toggleTheme() {
   applyTheme(isDark ? "" : "dark");
 }
 
+function updateThemeButton() {
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+  document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(isDark));
+  });
+}
+
 // Init theme from localStorage
 (function initTheme() {
   const saved = localStorage.getItem("theme");
-  if (saved === "dark") document.documentElement.setAttribute("data-theme", "dark");
+  if (saved !== "") document.documentElement.setAttribute("data-theme", "dark");
   // 初回読み込み時のトランジションを抑止
-  requestAnimationFrame(() => document.documentElement.classList.add("theme-ready"));
+  requestAnimationFrame(() => {
+    document.documentElement.classList.add("theme-ready");
+    updateThemeButton();
+  });
 })();
 
 // Attach toggle handler
 document.addEventListener("DOMContentLoaded", () => {
   const btn = document.querySelector("[data-theme-toggle]");
   if (btn) btn.addEventListener("click", toggleTheme);
+  updateThemeButton();
 });
 
 // ---- Init ----

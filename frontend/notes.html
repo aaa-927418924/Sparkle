@@ -6,17 +6,19 @@
     <title>Clips — タスク・メモ</title>
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="notes-figma.css?v=notes-ui-20260730-checkbox-v7" />
-    <script>(function(){var t=localStorage.getItem("theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark")})()</script>
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260801-v1" />
+    <script>(function(){var t=localStorage.getItem("theme");if(t!=="")document.documentElement.setAttribute("data-theme","dark")})()</script>
     <script src="page-transition.js?v=sidebar-fade-20260730-v3"></script>
   </head>
   <body class="notes-page">
+    <a class="skip-link" href="#mainContent">本文へ移動</a>
     <div class="layout">
-      <nav class="sidebar">
+      <nav class="sidebar" aria-label="メインナビゲーション">
         <a class="side-btn" title="ホーム" data-nav="home" href="/Home"><img class="icon icon-nav" src="icons/home.svg" alt="ホーム" /></a>
         <a class="side-btn active" title="メモ" data-nav="memo" href="/Notes"><img class="icon icon-nav" src="icons/memo.svg" alt="メモ" /></a>
         <a class="side-btn" title="プロジェクト" data-nav="projects" href="/Projects"><img class="icon icon-nav" src="icons/project.svg" alt="プロジェクト" /></a>
         <div class="side-spacer"></div>
-        <button class="theme-toggle" title="テーマ切替" data-theme-toggle>
+        <button class="theme-toggle" title="テーマ切替" aria-label="テーマ切替" data-theme-toggle>
           <div class="theme-toggle-track">
             <div class="theme-toggle-thumb">
               <svg class="theme-toggle-thumb-sun" viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5 13 13M3 13l1.5-1.5M11.5 4.5 13 3"/></svg>
@@ -27,7 +29,7 @@
         <button class="side-btn" title="設定" data-nav="settings"><img class="icon icon-nav" src="icons/settings.svg" alt="設定" /></button>
       </nav>
 
-      <main class="main notes-main">
+      <main id="mainContent" class="main notes-main">
         <div class="topbar">
           <h1 class="heading">タスク・メモ</h1>
           <button id="newNote" class="fav-only active">＋ 新規メモ</button>
@@ -177,6 +179,7 @@
     <script src="pins.js"></script>
     <script src="vendor/marked.min.js?v=12.0.0"></script>
     <script src="notes.js?v=notes-ui-20260730-checkbox-v8"></script>
+    <script src="codex-shell.js?v=codex-shell-20260801-v1"></script>
   </body>
 </html>
 

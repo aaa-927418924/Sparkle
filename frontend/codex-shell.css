@@ -730,7 +730,7 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   min-width: 18px;
   flex: 0 0 18px;
   object-fit: contain;
-  filter: brightness(0) invert(1);
+  filter: none;
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;

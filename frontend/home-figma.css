@@ -274,7 +274,7 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
 }
 
 .home-page .card-caption {
-  padding: 14px 0 0;
+  padding: 14px 10px 0;
 }
 
 .home-page .card-caption::before {
@@ -292,7 +292,7 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
 }
 
 .home-page .tags {
-  padding: 10px 0 0;
+  padding: 10px;
 }
 
 .home-page .tag-chip {
@@ -975,6 +975,45 @@ html[data-theme="dark"] .home-page #uploadModal #uploadSave:focus-visible {
   .home-page .topbar > .sort-select,
   .home-page .sidebar {
     transition: none;
+  }
+}
+
+/* Keep compact controls inside their row and abbreviate labels instead of
+   letting text escape the control bounds. */
+@media (max-width: 820px) {
+  .home-page .topbar > #favOnly,
+  .home-page .topbar > #addLocalBtn,
+  .home-page .topbar > .sort-select {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 220px;
+    white-space: nowrap;
+  }
+
+  .home-page .topbar > #favOnly,
+  .home-page .topbar > #addLocalBtn {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .home-page .topbar > .sort-select {
+    min-width: 0;
+    overflow: visible;
+  }
+
+  .home-page .topbar > .sort-select .sort-trigger,
+  .home-page .topbar > .sort-select .sort-label {
+    min-width: 0;
+  }
+
+  .home-page .topbar > .sort-select .sort-trigger {
+    overflow: hidden;
+  }
+
+  .home-page .topbar > .sort-select .sort-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

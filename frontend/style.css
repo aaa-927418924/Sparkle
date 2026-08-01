@@ -60,9 +60,9 @@ html:not(.theme-ready) *::after {
 [data-theme="dark"] .side-btn.active .icon-nav {
   filter: none;
 }
-/* ダークテーマ：選択中のモード切替テキストは黒色 */
-[data-theme="dark"] .mode-btn.active {
-  color: #000;
+/* ダークテーマ：選択中のモード切替テキストは白色 */
+[data-theme="dark"] .note-editor-page .mode-btn.active {
+  color: #fff;
 }
 /* ダークテーマ：accent 色ボタンのテキストは黒色（保存・閉じる・新規作成など） */
 [data-theme="dark"] .modal-btn:not(.ghost) {
@@ -1746,6 +1746,29 @@ textarea.modal-input {
 
 .editor-preview {
   overflow-y: auto;
+}
+
+/* ノート編集画面はスクロール自体を保ちつつ、スクロールバーだけ隠す。 */
+.note-editor-document,
+.note-editor-page,
+.note-editor-page .editor-textarea,
+.note-editor-page .editor-preview,
+.note-editor-page .clip-picker,
+.note-editor-page .clip-pick-list,
+.note-editor-page .modal-box {
+  scrollbar-width: none;
+}
+
+.note-editor-document::-webkit-scrollbar,
+.note-editor-page::-webkit-scrollbar,
+.note-editor-page .editor-textarea::-webkit-scrollbar,
+.note-editor-page .editor-preview::-webkit-scrollbar,
+.note-editor-page .clip-picker::-webkit-scrollbar,
+.note-editor-page .clip-pick-list::-webkit-scrollbar,
+.note-editor-page .modal-box::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .editor-clips {

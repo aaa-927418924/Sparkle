@@ -102,7 +102,8 @@ html[data-theme="dark"] .notes-page {
 
 .notes-page .topbar {
   min-height: 36px;
-  margin-bottom: 8px;
+  margin-bottom: 16px;
+  gap: 16px;
   align-items: center;
 }
 
@@ -135,7 +136,7 @@ html[data-theme="dark"] .notes-page {
   display: flex;
   gap: 10px;
   height: 28px;
-  margin: 0 0 8px;
+  margin: 0;
   align-items: flex-start;
 }
 
@@ -157,7 +158,7 @@ html[data-theme="dark"] .notes-page {
 }
 
 .notes-page .two-col {
-  height: calc(100% - 80px);
+  height: calc(100% - 52px);
   min-height: 0;
   grid-template-columns: minmax(270px, 340px) minmax(0, 1fr);
   gap: 34px;

@@ -154,8 +154,33 @@ def _target_has_user_data(path: Path) -> bool:
     if not path.exists():
         return False
     allowed_runtime_files = {"app.log", "stdio.log"}
+    # Normal startup may create these empty upload buckets before migration.
+    allowed_upload_dirs = {"local", "thumbnails"}
+
+    def is_empty_directory(directory: Path) -> bool:
+        try:
+            return directory.is_dir() and not any(directory.iterdir())
+        except OSError:
+            return False
+
+    def is_runtime_upload_directory(directory: Path) -> bool:
+        if not directory.is_dir():
+            return False
+        try:
+            children = list(directory.iterdir())
+        except OSError:
+            return False
+        return all(
+            child.is_dir()
+            and child.name in allowed_upload_dirs
+            and is_empty_directory(child)
+            for child in children
+        )
+
     for child in path.iterdir():
         if child.name in allowed_runtime_files and child.is_file():
+            continue
+        if child.name == "uploads" and is_runtime_upload_directory(child):
             continue
         return True
     return False

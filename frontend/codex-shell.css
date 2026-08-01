@@ -670,14 +670,14 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   width: 240px;
   flex: 0 0 240px;
   box-sizing: border-box;
-  left: 12px;
-  top: 12px;
-  bottom: 12px;
-  height: calc(100vh - 24px);
+  left: 0;
+  top: 0;
+  bottom: 0;
+  height: 100vh;
   padding: 14px 12px;
   align-items: stretch;
   gap: 4px;
-  border-radius: 18px;
+  border-radius: 0;
 }
 
 .sidebar .side-btn,
@@ -734,6 +734,14 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   opacity: 0.78;
 }
 
+/* Keep the home feed's legacy icon rules aligned with the shared sidebar. */
+.home-page .side-btn.active .icon-nav,
+.home-page .side-btn:not(.active) .icon-nav {
+  width: 16px;
+  height: 16px;
+  flex-basis: 16px;
+}
+
 .sidebar .side-btn:focus-visible,
 .home-page .side-btn:focus-visible,
 .notes-page .side-btn:focus-visible,
@@ -784,7 +792,10 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   justify-content: flex-end;
   gap: 4px;
   width: 100%;
+  box-sizing: border-box;
   margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 
 .sidebar .theme-toggle,

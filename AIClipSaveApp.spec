@@ -5,7 +5,7 @@ a = Analysis(
     ['app_entry.py'],
     pathex=[],
     binaries=[],
-    datas=[('frontend', 'frontend'), ('icon.svg', '.')],
+    datas=[('frontend', 'frontend'), ('Icon.png', '.')],
     hiddenimports=['uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan', 'uvicorn.lifespan.on', 'pystray._win32', 'webview.platforms.winforms', 'webview.platforms.edgechromium'],
     hookspath=[],
     hooksconfig={},

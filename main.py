@@ -17,7 +17,7 @@ get_thumbnails_dir()
 get_local_files_dir()
 
 FRONTEND_DIR = get_resource_dir() / "frontend"
-BRAND_ICON_PATH = get_resource_dir() / "icon.svg"
+BRAND_ICON_PATH = get_resource_dir() / "Icon.png"
 
 app = FastAPI(title="AI Clip Save API", version="0.1.0")
 
@@ -50,9 +50,9 @@ def _frontend_page(filename: str) -> FileResponse:
     return FileResponse(FRONTEND_DIR / filename, media_type="text/html")
 
 
-@app.get("/icon.svg", include_in_schema=False)
+@app.get("/icon.png", include_in_schema=False)
 def brand_icon() -> FileResponse:
-    return FileResponse(BRAND_ICON_PATH, media_type="image/svg+xml")
+    return FileResponse(BRAND_ICON_PATH, media_type="image/png")
 
 
 @app.get("/", include_in_schema=False)

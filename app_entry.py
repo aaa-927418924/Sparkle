@@ -395,11 +395,12 @@ class NativeWindowApi:
 
     @staticmethod
     def close_window() -> None:
-        exit_requested.set()
-        _stop_server()
         window = window_ref.get("window")
         if window is not None:
-            window.destroy()
+            try:
+                window.hide()
+            except Exception:
+                pass
 
 
 def _on_window_closing(window) -> bool:

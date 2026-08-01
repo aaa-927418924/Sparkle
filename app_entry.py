@@ -16,7 +16,17 @@ from pathlib import Path
 from paths import get_app_data_dir, is_frozen
 
 HOST = "127.0.0.1"
-PORT = 8000
+
+
+def _get_port() -> int:
+    try:
+        port = int(os.environ.get("AICLIP_PORT", "8000"))
+    except (TypeError, ValueError):
+        return 8000
+    return port if 1 <= port <= 65535 else 8000
+
+
+PORT = _get_port()
 LOG_PATH = get_app_data_dir() / "app.log"
 STDIO_LOG_PATH = get_app_data_dir() / "stdio.log"
 
@@ -166,9 +176,25 @@ def _get_native_window_handle(window):
         if handle is None:
             return None
         try:
-            return int(handle)
+            handle = int(handle)
         except (TypeError, ValueError, OverflowError):
-            return int(handle.ToInt64())
+            handle = int(handle.ToInt64())
+        return handle or None
+    except Exception:
+        return None
+
+
+def _get_window_geometry(window, restored: bool = False):
+    if window is None:
+        return None
+    try:
+        return {
+            "x": int(window.x),
+            "y": int(window.y),
+            "width": int(window.width),
+            "height": int(window.height),
+            "restored": restored,
+        }
     except Exception:
         return None
 
@@ -197,7 +223,8 @@ def _enable_native_resize(window) -> None:
 
         hwnd = ctypes.c_void_p(handle)
         style = int(get_window_long(hwnd, -16))
-        style |= 0x00040000  # WS_THICKFRAME / WS_SIZEBOX
+        style &= ~0x00C00000  # WS_CAPTION
+        style |= 0x00040000 | 0x00020000 | 0x00010000 | 0x00080000  # THICKFRAME | MIN/MAXBOX | SYSMENU
         set_window_long(hwnd, -16, style)
 
         user32.SetWindowPos.argtypes = [
@@ -284,7 +311,15 @@ class NativeWindowApi:
     @staticmethod
     def restore_window_for_drag() -> bool:
         window = window_ref.get("window")
-        if window is None or not window_state["maximized"]:
+        if window is None:
+            return False
+
+        is_maximized = window_state["maximized"]
+        try:
+            is_maximized = is_maximized or "maximized" in str(window.state).lower()
+        except Exception:
+            pass
+        if not is_maximized:
             return False
 
         try:
@@ -293,6 +328,36 @@ class NativeWindowApi:
             return False
         window_state["maximized"] = False
         return True
+
+    @staticmethod
+    def begin_window_drag():
+        window = window_ref.get("window")
+        if window is None:
+            return None
+        restored = NativeWindowApi.restore_window_for_drag()
+        return _get_window_geometry(window, restored=restored)
+
+    @staticmethod
+    def move_window(x: int, y: int) -> None:
+        window = window_ref.get("window")
+        if window is not None:
+            window.move(int(x), int(y))
+
+    @staticmethod
+    def begin_window_resize():
+        window = window_ref.get("window")
+        if window is None:
+            return None
+        restored = NativeWindowApi.restore_window_for_drag()
+        return _get_window_geometry(window, restored=restored)
+
+    @staticmethod
+    def resize_window(width: int, height: int, x: int, y: int) -> None:
+        window = window_ref.get("window")
+        if window is None:
+            return
+        window.move(int(x), int(y))
+        window.resize(int(width), int(height))
 
     @staticmethod
     def close_window() -> None:
@@ -315,6 +380,7 @@ def _on_window_closing(window) -> bool:
 
 def _configure_native_window() -> None:
     _enable_native_resize(window_ref.get("window"))
+
 
 def _build_tray_image():
     from PIL import Image, ImageDraw
@@ -359,7 +425,7 @@ def _build_tray_icon():
 
 
 def _is_app_server_running() -> bool:
-    """Return True only when port 8000 is serving this application."""
+    """Return True only when the configured port is serving this application."""
     try:
         with urlopen(f"http://{HOST}:{PORT}/health", timeout=1.0) as response:
             body = response.read(256)
@@ -438,7 +504,7 @@ def main() -> None:
             min_size=(960, 640),
             resizable=True,
             frameless=True,
-            easy_drag=True,
+            easy_drag=False,
             text_select=True,
             zoomable=True,
             background_color="#202020",

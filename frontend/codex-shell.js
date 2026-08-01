@@ -106,6 +106,9 @@
 })();
 
 (() => {
+  let activeDrag = null;
+  let activeResize = null;
+
   function updateMaximizeButton(button, maximized) {
     if (!button || typeof maximized !== "boolean") return;
     const label = maximized ? "元に戻す" : "最大化";
@@ -132,39 +135,156 @@
     });
   }
 
-  async function restoreMaximizedWindowForDrag(event) {
-    if (!event.isPrimary || event.button !== 0) return;
-    if (event.target.closest?.("[data-window-action]")) return;
+  function installWindowDrag() {
+    document.querySelectorAll("[data-window-drag]").forEach((titlebar) => {
+      titlebar.addEventListener("mousedown", (event) => {
+        if (event.button !== 0) return;
+        if (event.target.closest?.("[data-window-action]")) return;
 
+        const api = window.pywebview?.api;
+        if (!api || typeof api.begin_window_drag !== "function" || typeof api.move_window !== "function") return;
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        const startScreenX = event.screenX;
+        const startScreenY = event.screenY;
+        const drag = { api, geometry: null, startScreenX, startScreenY };
+        activeDrag = drag;
+
+        const cleanup = () => {
+          if (activeDrag !== drag) return;
+          activeDrag = null;
+          window.removeEventListener("mousemove", onMouseMove);
+          window.removeEventListener("mouseup", cleanup);
+          window.removeEventListener("blur", cleanup);
+        };
+
+        const onMouseMove = (moveEvent) => {
+          if (activeDrag !== drag || !drag.geometry) return;
+          const x = drag.geometry.x + moveEvent.screenX - drag.startScreenX;
+          const y = drag.geometry.y + moveEvent.screenY - drag.startScreenY;
+          void drag.api.move_window(Math.round(x), Math.round(y));
+        };
+
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", cleanup);
+        window.addEventListener("blur", cleanup);
+
+        api.begin_window_drag().then((geometry) => {
+          if (activeDrag !== drag) return;
+          if (!geometry || typeof geometry.x !== "number") {
+            cleanup();
+            return;
+          }
+          drag.geometry = geometry;
+          if (geometry.restored) {
+            updateMaximizeButton(
+              document.querySelector('[data-window-action="toggle_maximize_window"]'),
+              false,
+            );
+          }
+        }).catch(cleanup);
+      }, { capture: true });
+    });
+  }
+
+  function resizeWindowFromPointer(event, direction) {
     const api = window.pywebview?.api;
-    if (!api || typeof api.restore_window_for_drag !== "function") return;
+    if (!api || typeof api.begin_window_resize !== "function" || typeof api.resize_window !== "function") return;
 
-    try {
-      const restored = await api.restore_window_for_drag();
-      if (restored) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    const startScreenX = event.screenX;
+    const startScreenY = event.screenY;
+    const resize = { api, direction, geometry: null, startScreenX, startScreenY };
+    activeResize = resize;
+
+    const cleanup = () => {
+      if (activeResize !== resize) return;
+      activeResize = null;
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", cleanup);
+      window.removeEventListener("blur", cleanup);
+    };
+
+    const onMouseMove = (moveEvent) => {
+      if (activeResize !== resize || !resize.geometry) return;
+
+      const deltaX = moveEvent.screenX - resize.startScreenX;
+      const deltaY = moveEvent.screenY - resize.startScreenY;
+      const minimumWidth = 960;
+      const minimumHeight = 640;
+      let { x, y, width, height } = resize.geometry;
+
+      if (direction.includes("w")) {
+        const nextWidth = Math.max(minimumWidth, resize.geometry.width - deltaX);
+        x = resize.geometry.x + resize.geometry.width - nextWidth;
+        width = nextWidth;
+      } else if (direction.includes("e")) {
+        width = Math.max(minimumWidth, resize.geometry.width + deltaX);
+      }
+
+      if (direction.includes("n")) {
+        const nextHeight = Math.max(minimumHeight, resize.geometry.height - deltaY);
+        y = resize.geometry.y + resize.geometry.height - nextHeight;
+        height = nextHeight;
+      } else if (direction.includes("s")) {
+        height = Math.max(minimumHeight, resize.geometry.height + deltaY);
+      }
+
+      void resize.api.resize_window(Math.round(width), Math.round(height), Math.round(x), Math.round(y));
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", cleanup);
+    window.addEventListener("blur", cleanup);
+
+    api.begin_window_resize().then((geometry) => {
+      if (activeResize !== resize) return;
+      if (!geometry || typeof geometry.x !== "number") {
+        cleanup();
+        return;
+      }
+      resize.geometry = geometry;
+      if (geometry.restored) {
         updateMaximizeButton(
           document.querySelector('[data-window-action="toggle_maximize_window"]'),
           false,
         );
       }
-    } catch {
-      // Browser previews do not expose the native window API.
-    }
+    }).catch(cleanup);
   }
 
-  function installWindowDragRestore() {
-    document.querySelectorAll("[data-window-drag]").forEach((titlebar) => {
-      titlebar.addEventListener("pointerdown", restoreMaximizedWindowForDrag, { capture: true });
+  function installWindowResizeHandles() {
+    if (document.querySelector("[data-window-resize]")) return;
+
+    const directions = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
+    const fragment = document.createDocumentFragment();
+    directions.forEach((direction) => {
+      const handle = document.createElement("div");
+      handle.className = `window-resize-handle window-resize-${direction}`;
+      handle.dataset.windowResize = direction;
+      handle.setAttribute("aria-hidden", "true");
+      handle.addEventListener("mousedown", (event) => resizeWindowFromPointer(event, direction), { capture: true });
+      fragment.appendChild(handle);
     });
+    document.body.appendChild(fragment);
+  }
+
+  function installWindowInteraction() {
+    installWindowDrag();
+    installWindowResizeHandles();
   }
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
       installWindowControls();
-      installWindowDragRestore();
+      installWindowInteraction();
     }, { once: true });
   } else {
     installWindowControls();
-    installWindowDragRestore();
+    installWindowInteraction();
   }
 })();

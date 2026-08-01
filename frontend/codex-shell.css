@@ -762,6 +762,50 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   pointer-events: none;
 }
 
+.window-resize-handle {
+  position: fixed;
+  z-index: 2147483646;
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.window-resize-n,
+.window-resize-s {
+  left: 8px;
+  right: 8px;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.window-resize-n { top: 0; }
+.window-resize-s { bottom: 0; }
+
+.window-resize-e,
+.window-resize-w {
+  top: 8px;
+  bottom: 8px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.window-resize-e { right: 0; }
+.window-resize-w { left: 0; }
+
+.window-resize-ne,
+.window-resize-nw,
+.window-resize-se,
+.window-resize-sw {
+  width: 8px;
+  height: 8px;
+}
+
+.window-resize-ne { top: 0; right: 0; cursor: nesw-resize; }
+.window-resize-nw { top: 0; left: 0; cursor: nwse-resize; }
+.window-resize-se { right: 0; bottom: 0; cursor: nwse-resize; }
+.window-resize-sw { left: 0; bottom: 0; cursor: nesw-resize; }
+
 .sidebar .side-btn,
 .home-page .side-btn,
 .notes-page .side-btn,

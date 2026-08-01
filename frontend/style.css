@@ -2750,7 +2750,7 @@ html[data-theme="dark"] #detailView .task-check input[type="checkbox"]:checked {
   justify-content: flex-start;
   gap: 6px;
   padding: 0 8px;
-  overflow: hidden;
+  overflow: visible;
   cursor: grab;
   transition: background 0.12s;
   flex-shrink: 0;
@@ -2764,10 +2764,31 @@ html[data-theme="dark"] #detailView .task-check input[type="checkbox"]:checked {
   opacity: 0.4;
 }
 
-.pin-item.pin-over {
-  background: var(--accent-soft);
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+.pin-item.pin-drop-before,
+.pin-item.pin-drop-after {
+  background: transparent;
+}
+
+.pin-item.pin-drop-before::before,
+.pin-item.pin-drop-after::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--text);
+  box-shadow: 0 0 7px rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.pin-item.pin-drop-before::before {
+  top: -2px;
+}
+
+.pin-item.pin-drop-after::after {
+  bottom: -2px;
 }
 
 .icon-pin {

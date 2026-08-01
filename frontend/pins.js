@@ -324,7 +324,6 @@ function renderSidebarPins() {
     el.addEventListener("dragstart", (e) => { dragJustStarted = true; onPinDragStart.call(el, e); });
     el.addEventListener("dragenter", onPinDragEnter);
     el.addEventListener("dragover", onPinDragOver);
-    el.addEventListener("dragleave", onPinDragLeave);
     el.addEventListener("drop", onPinDrop);
     el.addEventListener("dragend", (e) => { dragJustStarted = false; onPinDragEnd.call(el, e); });
     el.addEventListener("mouseenter", () => {
@@ -353,8 +352,33 @@ function renderSidebarPins() {
 // ---- Drag Reorder ----
 
 let dragSrcEl = null;
+let pinDropTargetEl = null;
+let pinDropBefore = false;
+
+function clearPinDropPosition() {
+  document.querySelectorAll(".pin-drop-before, .pin-drop-after, .pin-over").forEach((el) => {
+    el.classList.remove("pin-drop-before", "pin-drop-after", "pin-over");
+  });
+  pinDropTargetEl = null;
+  pinDropBefore = false;
+}
+
+function setPinDropPosition(target, event) {
+  if (target === dragSrcEl) {
+    clearPinDropPosition();
+    return;
+  }
+  const rect = target.getBoundingClientRect();
+  const before = event.clientY < rect.top + rect.height / 2;
+  if (pinDropTargetEl === target && pinDropBefore === before) return;
+  clearPinDropPosition();
+  target.classList.add(before ? "pin-drop-before" : "pin-drop-after");
+  pinDropTargetEl = target;
+  pinDropBefore = before;
+}
 
 function onPinDragStart(e) {
+  clearPinDropPosition();
   dragSrcEl = this;
   e.dataTransfer.effectAllowed = "move";
   e.dataTransfer.setData("text/plain", "");
@@ -363,32 +387,34 @@ function onPinDragStart(e) {
 
 function onPinDragEnter(e) {
   e.preventDefault();
-  if (this !== dragSrcEl) this.classList.add("pin-over");
+  setPinDropPosition(this, e);
 }
 
 function onPinDragOver(e) {
   e.preventDefault();
   e.dataTransfer.dropEffect = "move";
-}
-
-function onPinDragLeave() {
-  this.classList.remove("pin-over");
+  setPinDropPosition(this, e);
 }
 
 function onPinDrop(e) {
   e.preventDefault();
-  this.classList.remove("pin-over");
-  if (this === dragSrcEl) return;
+  const target = pinDropTargetEl === this ? pinDropTargetEl : this;
+  const before = pinDropTargetEl === this
+    ? pinDropBefore
+    : e.clientY < this.getBoundingClientRect().top + this.getBoundingClientRect().height / 2;
+  clearPinDropPosition();
+  if (target === dragSrcEl || !dragSrcEl) return;
   const pins = getPins();
   const fromIdx = pins.findIndex((p) =>
     p.id === Number(dragSrcEl.dataset.id) && p.type === dragSrcEl.dataset.type
   );
   const toIdx = pins.findIndex((p) =>
-    p.id === Number(this.dataset.id) && p.type === this.dataset.type
+    p.id === Number(target.dataset.id) && p.type === target.dataset.type
   );
   if (fromIdx === -1 || toIdx === -1) return;
   const [moved] = pins.splice(fromIdx, 1);
-  pins.splice(toIdx, 0, moved);
+  const insertIdx = toIdx + (before ? 0 : 1);
+  pins.splice(fromIdx < insertIdx ? insertIdx - 1 : insertIdx, 0, moved);
   pins.forEach((p, i) => (p.order = i));
   savePins(pins);
   renderSidebarPins();
@@ -397,7 +423,7 @@ function onPinDrop(e) {
 
 function onPinDragEnd() {
   this.classList.remove("pin-dragging");
-  document.querySelectorAll(".pin-over").forEach((el) => el.classList.remove("pin-over"));
+  clearPinDropPosition();
   dragSrcEl = null;
 }
 

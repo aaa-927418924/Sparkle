@@ -32,6 +32,17 @@ function isPinned(id, type) {
   return getPins().some((p) => p.id === id && p.type === type);
 }
 
+function syncPinButtonStates() {
+  const pins = getPins();
+  document.querySelectorAll("[data-pin][data-pin-type]").forEach((button) => {
+    const id = Number(button.dataset.pin);
+    const type = button.dataset.pinType;
+    const pinned = pins.some((pin) => pin.id === id && pin.type === type);
+    button.classList.toggle("on", pinned);
+    button.title = pinned ? "ピン止めを解除" : "ピン止め";
+  });
+}
+
 function togglePin(id, type) {
   if (isPinned(id, type)) removePin(id, type);
   else addPin(id, type);
@@ -263,6 +274,7 @@ function showPinContextMenu(x, y, id, type) {
   // Remove action
   ctxMenuEl.querySelector(".pin-ctx-item").addEventListener("click", () => {
     removePin(id, type);
+    syncPinButtonStates();
     hideCtxMenu();
     renderSidebarPins();
     notifyPinChange();

@@ -1,4 +1,4 @@
-const API = "http://127.0.0.1:8000";
+const API = window.location.origin;
 const AUTO_KEY = "autoCreateNoteOnTask";
 const HIGHLIGHT_KEY = "highlightTopPriority";
 
@@ -686,6 +686,6 @@ loadAll().catch((e) => {
   els.memoEmpty.hidden = false;
   els.memoEmpty.querySelector(".empty-msg").textContent = "バックエンドに接続できません";
   els.memoEmpty.querySelector(".empty-sub").textContent =
-    "サーバー (127.0.0.1:8000) を起動してください。";
+    `サーバー (${API}) を起動してください。`;
 });
 

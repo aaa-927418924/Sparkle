@@ -3246,3 +3246,23 @@ html[data-theme="dark"] #detailView .task-check input[type="checkbox"]:checked {
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* Brief, non-blocking entrance used only after sidebar navigation. */
+@keyframes sidebar-page-enter {
+  from {
+    opacity: 0.72;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html.sidebar-page-enter .layout {
+    animation-name: sidebar-page-enter;
+    animation-duration: 100ms;
+    animation-timing-function: ease-out;
+    animation-fill-mode: both;
+  }
+}

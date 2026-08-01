@@ -1,3 +1,4 @@
+const API_ROOT = window.location.origin;
 const PIN_KEY = "pins";
 const PIN_MAX = 10;
 // API is defined by each page's main script (app.js/notes.js/projects.js)
@@ -374,7 +375,7 @@ function loadSettingsValues() {
   const tad = document.getElementById("taskAutoDelete");
   if (tad && !tad.dataset.loaded) {
     tad.dataset.loaded = "1";
-    fetch(`http://127.0.0.1:8000/settings/task_auto_delete`)
+    fetch(`${API_ROOT}/settings/task_auto_delete`)
       .then((r) => r.ok ? r.json() : { value: "1w" })
       .then((d) => { tad.value = d.value || "1w"; })
       .catch(() => { tad.value = "1w"; });
@@ -382,7 +383,7 @@ function loadSettingsValues() {
   const fsm = document.getElementById("fileSaveMethod");
   if (fsm && !fsm.dataset.loaded) {
     fsm.dataset.loaded = "1";
-    fetch(`http://127.0.0.1:8000/settings/file_save_method`)
+    fetch(`${API_ROOT}/settings/file_save_method`)
       .then((r) => r.ok ? r.json() : { value: "copy" })
       .then((d) => { fsm.value = d.value || "copy"; updateFileSaveDesc?.(fsm.value); })
       .catch(() => {});
@@ -415,8 +416,8 @@ async function loadAIExportSettings() {
   if (!toggle) return;
   try {
     const [settingRes, statusRes] = await Promise.all([
-      fetch("http://127.0.0.1:8000/settings/ai_export_enabled"),
-      fetch("http://127.0.0.1:8000/data/ai-export/status"),
+      fetch(`${API_ROOT}/settings/ai_export_enabled`),
+      fetch(`${API_ROOT}/data/ai-export/status`),
     ]);
     if (settingRes.ok) {
       const setting = await settingRes.json();
@@ -445,18 +446,18 @@ function initSettings() {
   // taskAutoDelete
   const tad = document.getElementById("taskAutoDelete");
   if (tad) tad.addEventListener("change", () => {
-    fetch(`http://127.0.0.1:8000/settings/task_auto_delete`, {
+    fetch(`${API_ROOT}/settings/task_auto_delete`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ value: tad.value }),
     }).then((r) => {
-      if (r.ok) fetch(`http://127.0.0.1:8000/maintenance/cleanup`, { method: "POST" });
+      if (r.ok) fetch(`${API_ROOT}/maintenance/cleanup`, { method: "POST" });
     }).catch(() => alert("自動削除設定の保存に失敗しました。"));
   });
   // fileSaveMethod
   const fsm = document.getElementById("fileSaveMethod");
   if (fsm) fsm.addEventListener("change", () => {
-    fetch(`http://127.0.0.1:8000/settings/file_save_method`, {
+    fetch(`${API_ROOT}/settings/file_save_method`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ value: fsm.value }),
@@ -467,7 +468,7 @@ function initSettings() {
   const aiToggle = document.getElementById("aiExportEnabled");
   const aiNow = document.getElementById("aiExportNow");
   const aiOpen = document.getElementById("aiExportOpen");
-  const aiApi = "http://127.0.0.1:8000";
+  const aiApi = API_ROOT;
   if (aiToggle) aiToggle.addEventListener("change", async () => {
     const next = aiToggle.checked;
     try {
@@ -533,15 +534,15 @@ function initSettings() {
     // backend settings
     const tad = document.getElementById("taskAutoDelete");
     if (tad) { tad.value = "1w";
-      fetch(`http://127.0.0.1:8000/settings/task_auto_delete`, {
+      fetch(`${API_ROOT}/settings/task_auto_delete`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value: "1w" }),
-      }).then((r) => { if (r.ok) fetch(`http://127.0.0.1:8000/maintenance/cleanup`, { method: "POST" }); }).catch(() => {});
+      }).then((r) => { if (r.ok) fetch(`${API_ROOT}/maintenance/cleanup`, { method: "POST" }); }).catch(() => {});
     }
     const fsm = document.getElementById("fileSaveMethod");
     if (fsm) {
       fsm.value = "copy";
-      fetch(`http://127.0.0.1:8000/settings/file_save_method`, {
+      fetch(`${API_ROOT}/settings/file_save_method`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value: "copy" }),
       });
@@ -550,7 +551,7 @@ function initSettings() {
 const aiToggleReset = document.getElementById("aiExportEnabled");
     if (aiToggleReset) {
       aiToggleReset.checked = true;
-      fetch(`http://127.0.0.1:8000/settings/ai_export_enabled`, {
+      fetch(`${API_ROOT}/settings/ai_export_enabled`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value: "1" }),
       }).then(() => loadAIExportSettings()).catch(() => {});
@@ -561,7 +562,7 @@ const aiToggleReset = document.getElementById("aiExportEnabled");
   const dbExport = document.getElementById("dbExportBtn");
   const dbImport = document.getElementById("dbImportBtn");
   const dbImportFile = document.getElementById("dbImportFile");
-  const dbApi = "http://127.0.0.1:8000";
+  const dbApi = API_ROOT;
 
   if (dbExport) dbExport.addEventListener("click", async () => {
     const original = dbExport.textContent;

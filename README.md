@@ -48,6 +48,31 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ブラウザで http://127.0.0.1:8000/docs を開くと Swagger UI で API 仕様を
 確認・試行できる。
 
+## Tailscale経由でスマホから使う場合
+
+サーバー本体は安全のため `127.0.0.1:8000` で待ち受けたまま、Tailscale Serveで
+Tailscale内だけにTCP転送する。
+
+1. PCでAIClipSaveAppを起動する。
+2. PCで次を実行する。
+
+```powershell
+tailscale serve --bg --tcp=8000 tcp://127.0.0.1:8000
+```
+
+3. スマホで、Tailscale管理画面に表示されるPCのデバイス名を使い、次を開く。
+
+```text
+http://<PCのデバイス名>.<tailnet名>.ts.net:8000/Home
+```
+
+このポートは通常のHTTPなので、URLは `https://` ではなく `http://` で開く。
+設定確認は `tailscale serve status`、この転送だけの停止は次で行える。
+
+```powershell
+tailscale serve --tcp=8000 tcp://127.0.0.1:8000 off
+```
+
 ## データモデル
 
 - **clips**: id, url, title, thumbnail_url, comment, category_id(FK), is_favorite, embedding(BLOB), created_at

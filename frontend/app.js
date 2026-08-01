@@ -1,4 +1,4 @@
-const API = "http://127.0.0.1:8000";
+const API = window.location.origin;
 
 const state = {
   clips: [],
@@ -1402,7 +1402,7 @@ loadAll()
   els.empty.hidden = false;
   els.empty.querySelector(".empty-msg").textContent = "バックエンドに接続できません";
   els.empty.querySelector(".empty-sub").textContent =
-    "サーバー(127.0.0.1:8000)を起動してください。";
+    `サーバー(${API})を起動してください。`;
 });
 
 // タブが再びアクティブになったら一覧を自動更新

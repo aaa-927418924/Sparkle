@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
@@ -1575,8 +1575,6 @@ def trigger_cleanup():
 
 # --- Uploads -------------------------------------------------------------
 
-BASE_URL = "http://127.0.0.1:8000"
-
 _MIME_EXT = {
     "image/png": "png",
     "image/jpeg": "jpg",
@@ -1599,7 +1597,7 @@ class ThumbnailUploadOut(BaseModel):
 
 
 @router.post("/uploads/thumbnail", response_model=ThumbnailUploadOut)
-def upload_thumbnail(payload: ThumbnailUploadIn):
+def upload_thumbnail(payload: ThumbnailUploadIn, request: Request):
     match = _DATA_URL_RE.match(payload.data_url.strip())
     if not match:
         raise HTTPException(status_code=400, detail="Invalid data URL format")
@@ -1621,7 +1619,8 @@ def upload_thumbnail(payload: ThumbnailUploadIn):
     filename = f"{uuid.uuid4().hex}.{ext}"
     (THUMBNAILS_DIR / filename).write_bytes(raw)
 
-    return ThumbnailUploadOut(url=f"{BASE_URL}/uploads/thumbnails/{filename}")
+    base_url = str(request.base_url).rstrip("/")
+    return ThumbnailUploadOut(url=f"{base_url}/uploads/thumbnails/{filename}")
 
 
 # --- Local files -----------------------------------------------------------

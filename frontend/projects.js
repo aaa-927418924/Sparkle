@@ -1,4 +1,4 @@
-const API = "http://127.0.0.1:8000";
+const API = window.location.origin;
 const TASK_PROJECT_ONLY_KEY = "taskProjectOnly";
 
 const state = {

@@ -132,9 +132,39 @@
     });
   }
 
+  async function restoreMaximizedWindowForDrag(event) {
+    if (!event.isPrimary || event.button !== 0) return;
+    if (event.target.closest?.("[data-window-action]")) return;
+
+    const api = window.pywebview?.api;
+    if (!api || typeof api.restore_window_for_drag !== "function") return;
+
+    try {
+      const restored = await api.restore_window_for_drag();
+      if (restored) {
+        updateMaximizeButton(
+          document.querySelector('[data-window-action="toggle_maximize_window"]'),
+          false,
+        );
+      }
+    } catch {
+      // Browser previews do not expose the native window API.
+    }
+  }
+
+  function installWindowDragRestore() {
+    document.querySelectorAll("[data-window-drag]").forEach((titlebar) => {
+      titlebar.addEventListener("pointerdown", restoreMaximizedWindowForDrag, { capture: true });
+    });
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", installWindowControls, { once: true });
+    document.addEventListener("DOMContentLoaded", () => {
+      installWindowControls();
+      installWindowDragRestore();
+    }, { once: true });
   } else {
     installWindowControls();
+    installWindowDragRestore();
   }
 })();

@@ -155,6 +155,74 @@ def _wait_for_server() -> bool:
     return False
 
 
+def _get_native_window_handle(window):
+    if window is None:
+        return None
+    try:
+        native = window.native
+        handle = getattr(native, "Handle", None)
+        if handle is None:
+            handle = getattr(native, "handle", None)
+        if handle is None:
+            return None
+        try:
+            return int(handle)
+        except (TypeError, ValueError, OverflowError):
+            return int(handle.ToInt64())
+    except Exception:
+        return None
+
+
+def _enable_native_resize(window) -> None:
+    """Restore the Windows sizing frame that frameless pywebview removes."""
+    if os.name != "nt":
+        return
+
+    handle = _get_native_window_handle(window)
+    if handle is None:
+        return
+
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        pointer_size = ctypes.sizeof(ctypes.c_void_p)
+        long_type = ctypes.c_longlong if pointer_size == 8 else ctypes.c_long
+        get_window_long = user32.GetWindowLongPtrW if pointer_size == 8 else user32.GetWindowLongW
+        set_window_long = user32.SetWindowLongPtrW if pointer_size == 8 else user32.SetWindowLongW
+        get_window_long.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        get_window_long.restype = long_type
+        set_window_long.argtypes = [ctypes.c_void_p, ctypes.c_int, long_type]
+        set_window_long.restype = long_type
+
+        hwnd = ctypes.c_void_p(handle)
+        style = int(get_window_long(hwnd, -16))
+        style |= 0x00040000  # WS_THICKFRAME / WS_SIZEBOX
+        set_window_long(hwnd, -16, style)
+
+        user32.SetWindowPos.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_uint,
+        ]
+        user32.SetWindowPos.restype = ctypes.c_int
+        user32.SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            0x0001 | 0x0002 | 0x0004 | 0x0020,  # NOSIZE | NOMOVE | NOZORDER | FRAMECHANGED
+        )
+    except Exception:
+        pass
+
+
 def _activate_window() -> None:
     window = window_ref.get("window")
     if window is None:
@@ -171,13 +239,8 @@ def _activate_window() -> None:
     # pywebview exposes the native handle after the window is shown.  Bringing
     # it to the foreground makes the tray and second-launch paths feel native.
     try:
-        native = window.native
-        handle = getattr(native, "Handle", None)
-        if handle is not None:
-            try:
-                hwnd = int(handle)
-            except (TypeError, ValueError):
-                hwnd = int(handle.ToInt64())
+        hwnd = _get_native_window_handle(window)
+        if hwnd is not None:
             import ctypes
 
             ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
@@ -219,6 +282,19 @@ class NativeWindowApi:
         return window_state["maximized"]
 
     @staticmethod
+    def restore_window_for_drag() -> bool:
+        window = window_ref.get("window")
+        if window is None or not window_state["maximized"]:
+            return False
+
+        try:
+            window.restore()
+        except Exception:
+            return False
+        window_state["maximized"] = False
+        return True
+
+    @staticmethod
     def close_window() -> None:
         exit_requested.set()
         _stop_server()
@@ -235,6 +311,10 @@ def _on_window_closing(window) -> bool:
     except Exception:
         pass
     return False
+
+
+def _configure_native_window() -> None:
+    _enable_native_resize(window_ref.get("window"))
 
 def _build_tray_image():
     from PIL import Image, ImageDraw
@@ -372,7 +452,7 @@ def main() -> None:
         tray_thread = threading.Thread(target=icon.run, daemon=True)
         tray_thread.start()
 
-        webview.start(debug=not is_frozen())
+        webview.start(_configure_native_window, debug=not is_frozen())
 
         exit_requested.set()
         _stop_server()

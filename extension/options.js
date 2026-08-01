@@ -1,4 +1,4 @@
-// AI Clip Save - options page
+// Sparkle - options page
 
 document.getElementById("shortcutsLink").addEventListener("click", (e) => {
   e.preventDefault();

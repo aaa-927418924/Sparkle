@@ -1,7 +1,7 @@
 """アプリの保存先パスを解決するユーティリティ。
 
 - get_app_data_dir(): 書き込み可能なデータ保存先(DB・アップロードファイル等)。
-  Windowsでは %APPDATA%\\AIClipSaveApp、それ以外では ~/.aiclipsaveapp を使う。
+  Windowsでは %APPDATA%\\Sparkle、それ以外では ~/.sparkle を使う。
 - get_resource_dir(): 読み取り専用の同梱リソース(frontend等)の場所。
   PyInstallerでexe化されている場合は展開先(_MEIPASS)、
   通常のpython実行時はプロジェクトディレクトリを返す。
@@ -13,7 +13,9 @@ import os
 import sys
 from pathlib import Path
 
-APP_NAME = "AIClipSaveApp"
+APP_NAME = "Sparkle"
+LEGACY_APP_NAME = "AIClipSaveApp"
+LEGACY_DISPLAY_NAME = "AI Clip Save App"
 
 
 def is_frozen() -> bool:
@@ -56,6 +58,23 @@ def get_ai_export_dir() -> Path:
     return d
 
 
+def _named_app_data_dir(name: str) -> Path:
+    appdata = os.getenv("APPDATA")
+    if appdata:
+        return Path(appdata) / name
+    return Path.home() / f".{name.lower()}"
+
+
+def get_legacy_app_data_dir() -> Path:
+    """Return the former application's data directory without creating it."""
+    return _named_app_data_dir(LEGACY_APP_NAME)
+
+
+def get_legacy_ai_export_dir() -> Path:
+    """Return the former Markdown export directory without creating it."""
+    return Path.home() / "Documents" / LEGACY_APP_NAME / "ai-export"
+
+
 def get_resource_dir() -> Path:
     if is_frozen():
         return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
@@ -66,28 +85,3 @@ def get_exe_dir() -> Path:
     if is_frozen():
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
-
-
-def migrate_legacy_data_if_needed() -> None:
-    """旧バージョン(プロジェクトフォルダ/exeの隣にclips.db・uploadsを
-    保存していた頃)のデータを、初回のみappdataにコピーする。
-    既にappdata側にDBがある場合や、旧データが無い場合は何もしない。
-    """
-    new_base = get_app_data_dir()
-    new_db = new_base / "clips.db"
-    if new_db.exists():
-        return
-
-    legacy_base = get_exe_dir()
-    legacy_db = legacy_base / "clips.db"
-    if not legacy_db.is_file():
-        return
-
-    import shutil
-    try:
-        shutil.copy2(legacy_db, new_db)
-        legacy_uploads = legacy_base / "uploads"
-        if legacy_uploads.is_dir():
-            shutil.copytree(legacy_uploads, new_base / "uploads", dirs_exist_ok=True)
-    except Exception:
-        pass

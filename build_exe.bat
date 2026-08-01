@@ -35,7 +35,7 @@ if not exist "%PYINSTALLER%" (
 
 echo.
 echo Building exe from a clean PyInstaller cache...
-"%PYINSTALLER%" --clean --noconfirm AIClipSaveApp.spec
+"%PYINSTALLER%" --clean --noconfirm Sparkle.spec
 
 if errorlevel 1 (
   echo.
@@ -45,5 +45,5 @@ if errorlevel 1 (
 )
 
 echo.
-echo Done: dist\AIClipSaveApp.exe
+echo Done: dist\Sparkle.exe
 pause

@@ -1,5 +1,7 @@
 """FastAPI entrypoint for the local clip-save backend."""
 
+import os
+
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -11,6 +13,7 @@ from routers import router
 from maintenance import run_maintenance
 from paths import get_uploads_dir, get_thumbnails_dir, get_local_files_dir, get_resource_dir
 from ffmpeg_bootstrap import ensure_ffmpeg_async
+from migration import get_migration_status, run_migration
 
 UPLOADS_DIR = get_uploads_dir()
 get_thumbnails_dir()
@@ -19,7 +22,7 @@ get_local_files_dir()
 FRONTEND_DIR = get_resource_dir() / "frontend"
 BRAND_ICON_PATH = get_resource_dir() / "Icon.png"
 
-app = FastAPI(title="AI Clip Save API", version="0.1.0")
+app = FastAPI(title="Sparkle API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,9 +35,32 @@ app.add_middleware(
 app.include_router(router)
 
 
+def _initialize_application_data() -> None:
+    if getattr(app.state, "data_initialized", False):
+        return
+    init_db()
+    run_maintenance()
+    request_export(0.1)
+    ensure_ffmpeg_async()
+    app.state.data_initialized = True
+
+
+@app.get("/migration/status", include_in_schema=False)
+def migration_status():
+    return get_migration_status()
+
+
+@app.post("/migration/run", include_in_schema=False)
+def migration_run():
+    result = run_migration(os.environ.get("SPARKLE_EXECUTABLE"))
+    if result.get("ok"):
+        _initialize_application_data()
+    return result
+
+
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "app": "Sparkle"}
 
 
 @app.post("/app/activate", include_in_schema=False)
@@ -65,6 +91,11 @@ def home_page():
     return _frontend_page("index.html")
 
 
+@app.get("/Migration", include_in_schema=False)
+def migration_page():
+    return _frontend_page("migration.html")
+
+
 @app.get("/Notes", include_in_schema=False)
 def notes_page():
     return _frontend_page("notes.html")
@@ -86,7 +117,7 @@ app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="fronte
 
 @app.on_event("startup")
 def _startup() -> None:
-    init_db()
-    run_maintenance()
-    request_export(0.1)
-    ensure_ffmpeg_async()
+    if get_migration_status().get("required"):
+        app.state.data_initialized = False
+        return
+    _initialize_application_data()

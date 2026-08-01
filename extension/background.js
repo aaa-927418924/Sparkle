@@ -1,4 +1,4 @@
-// AI Clip Save - background service worker
+// Sparkle - background service worker
 // スクリーンショットによるサムネイル選択を仲介する。
 
 let _pendingOpenPopup = false;

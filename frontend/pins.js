@@ -659,7 +659,7 @@ const aiToggleReset = document.getElementById("aiExportEnabled");
       try { data = await res.json(); } catch {}
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
       if (!data.cancelled) {
-        alert(`バックアップを保存しました。\n${data.filename || "AIClipSaveApp-backup.zip"}`);
+        alert(`バックアップを保存しました。\n${data.filename || "Sparkle-backup.zip"}`);
       }
     } catch (e) {
       alert(`バックアップのエクスポートに失敗しました。${e.message ? `\n${e.message}` : ""}`);
@@ -682,7 +682,7 @@ const aiToggleReset = document.getElementById("aiExportEnabled");
       dbImport.textContent = "展開中…";
       try {
         const form = new FormData();
-        form.append("file", file, file.name || "AIClipSaveApp-backup.zip");
+        form.append("file", file, file.name || "Sparkle-backup.zip");
         const res = await fetch(`${dbApi}/data/import-backup`, {
           method: "POST",
           body: form,

@@ -2,7 +2,7 @@
 
 import sqlite3
 
-from paths import get_app_data_dir, migrate_legacy_data_if_needed
+from paths import get_app_data_dir
 
 DB_PATH = get_app_data_dir() / "clips.db"
 
@@ -25,7 +25,7 @@ class TrackedConnection(sqlite3.Connection):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._aiclipsave_dirty = False
+        self._sparkle_dirty = False
 
     @staticmethod
     def _is_write(sql: str) -> bool:
@@ -34,23 +34,23 @@ class TrackedConnection(sqlite3.Connection):
 
     def execute(self, sql, parameters=()):
         if self._is_write(sql):
-            self._aiclipsave_dirty = True
+            self._sparkle_dirty = True
         return super().execute(sql, parameters)
 
     def executemany(self, sql, seq_of_parameters):
         if self._is_write(sql):
-            self._aiclipsave_dirty = True
+            self._sparkle_dirty = True
         return super().executemany(sql, seq_of_parameters)
 
     def executescript(self, sql_script):
         if any(self._is_write(statement) for statement in sql_script.split(";")):
-            self._aiclipsave_dirty = True
+            self._sparkle_dirty = True
         return super().executescript(sql_script)
 
     def commit(self):
-        was_dirty = self._aiclipsave_dirty
+        was_dirty = self._sparkle_dirty
         super().commit()
-        self._aiclipsave_dirty = False
+        self._sparkle_dirty = False
         if was_dirty:
             from ai_export import request_export
 
@@ -58,7 +58,7 @@ class TrackedConnection(sqlite3.Connection):
 
     def rollback(self):
         super().rollback()
-        self._aiclipsave_dirty = False
+        self._sparkle_dirty = False
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS categories (
@@ -163,7 +163,6 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    migrate_legacy_data_if_needed()
     with get_connection() as conn:
         conn.executescript(_SCHEMA)
         _migrate(conn)

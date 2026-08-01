@@ -2,8 +2,8 @@
 setlocal
 cd /d "%~dp0"
 
-if exist "%~dp0dist\AIClipSaveApp.exe" (
-  start "" "%~dp0dist\AIClipSaveApp.exe"
+if exist "%~dp0dist\Sparkle.exe" (
+  start "" "%~dp0dist\Sparkle.exe"
   exit /b 0
 )
 

@@ -267,9 +267,9 @@ def _build_snapshot(connection: sqlite3.Connection, snapshot_id: str, generated_
     count_lines = "\n".join(f"- {label}: {count}" for label, count in counts.items())
     index_md = (
         header
-        + "# AIClipSaveApp データインデックス\n\n"
+        + "# Sparkle データインデックス\n\n"
         + f"生成日時: {generated_at}\n\n"
-        + "このフォルダはAIClipSaveAppの読み取り用Markdownスナップショットです。"
+        + "このフォルダはSparkleの読み取り用Markdownスナップショットです。"
         "まずこのファイルを読み、必要に応じて個別ファイルを参照してください。\n\n"
         + "## 件数\n"
         + count_lines
@@ -282,7 +282,7 @@ def _build_snapshot(connection: sqlite3.Connection, snapshot_id: str, generated_
     )
     readme_md = (
         header
-        + "# AIClipSaveApp AIエクスポート\n\n"
+        + "# Sparkle AIエクスポート\n\n"
         + "このフォルダには、AIが読み取るためのMarkdown形式のデータが保存されています。\n\n"
         + "- SQLiteデータベース本体は含まれていません。\n"
         + "- ローカルファイルの絶対パスなど、アプリ内部の技術情報は含まれていません。\n"
@@ -291,7 +291,7 @@ def _build_snapshot(connection: sqlite3.Connection, snapshot_id: str, generated_
     )
     all_md = (
         header
-        + "# AIClipSaveApp 全データ\n\n"
+        + "# Sparkle 全データ\n\n"
         + f"生成日時: {generated_at}\n\n"
         + "\n\n---\n\n".join((clips_md, notes_md, tasks_md, projects_md, taxonomy_md))
     )

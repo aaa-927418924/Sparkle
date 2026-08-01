@@ -13,6 +13,7 @@ import traceback
 from urllib.request import Request, urlopen
 from pathlib import Path
 
+from migration import get_migration_status
 from paths import get_app_data_dir, get_resource_dir, is_frozen
 
 HOST = "127.0.0.1"
@@ -20,7 +21,7 @@ HOST = "127.0.0.1"
 
 def _get_port() -> int:
     try:
-        port = int(os.environ.get("AICLIP_PORT", "8000"))
+        port = int(os.environ.get("SPARKLE_PORT", "8000"))
     except (TypeError, ValueError):
         return 8000
     return port if 1 <= port <= 65535 else 8000
@@ -39,7 +40,7 @@ if sys.stdout is None or sys.stderr is None:
     sys.stderr = _stream
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-APP_REG_NAME = "AIClipSaveApp"
+APP_REG_NAME = "Sparkle"
 
 server_ref = {}
 window_ref = {}
@@ -55,7 +56,7 @@ def _show_error(message: str) -> None:
         ctypes.windll.user32.MessageBoxW(
             None,
             message,
-            "AI Clip Save App",
+            "Sparkle",
             0x10 | 0x10000,
         )
     except Exception:
@@ -402,6 +403,17 @@ class NativeWindowApi:
             except Exception:
                 pass
 
+    @staticmethod
+    def exit_application() -> None:
+        exit_requested.set()
+        _stop_server()
+        window = window_ref.get("window")
+        if window is not None:
+            try:
+                window.destroy()
+            except Exception:
+                pass
+
 
 def _on_window_closing(window) -> bool:
     if exit_requested.is_set():
@@ -465,7 +477,7 @@ def _build_tray_icon():
         ),
         pystray.MenuItem("終了", _exit_app),
     )
-    return pystray.Icon("AIClipSaveApp", _build_tray_image(), "AI Clip Save App", menu)
+    return pystray.Icon("Sparkle", _build_tray_image(), "Sparkle", menu)
 
 
 def _is_app_server_running() -> bool:
@@ -473,7 +485,7 @@ def _is_app_server_running() -> bool:
     try:
         with urlopen(f"http://{HOST}:{PORT}/health", timeout=1.0) as response:
             body = response.read(256)
-            return response.status == 200 and b'"status"' in body and b'"ok"' in body
+            return response.status == 200 and b'"status"' in body and b'"ok"' in body and b'"app":"Sparkle"' in body
     except Exception:
         return False
 
@@ -496,6 +508,7 @@ def _is_port_in_use() -> bool:
 
 def main() -> None:
     try:
+        migration_required = bool(get_migration_status().get("required"))
         if _is_app_server_running():
             # 既に起動中(二重起動) → 既存のネイティブウィンドウを前面表示
             _activate_existing_app()
@@ -503,7 +516,7 @@ def main() -> None:
         if _is_port_in_use():
             message = (
                 f"ポート {PORT} が別のアプリに使用されています。\n"
-                f"AIClipSaveAppを起動する前に、ポート {PORT} を使用しているアプリを終了してください。\n\n"
+                f"Sparkleを起動する前に、ポート {PORT} を使用しているアプリを終了してください。\n\n"
                 f"詳細: {LOG_PATH}"
             )
             try:
@@ -540,9 +553,12 @@ def main() -> None:
         webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
         webview.settings["ALLOW_DOWNLOADS"] = True
 
+        os.environ["SPARKLE_EXECUTABLE"] = _get_exe_path()
+        initial_page = "Migration" if migration_required else "Home"
+
         window = webview.create_window(
             "Sparkle",
-            url=f"http://{HOST}:{PORT}/Home",
+            url=f"http://{HOST}:{PORT}/{initial_page}",
             width=1280,
             height=820,
             min_size=(960, 640),
@@ -552,7 +568,7 @@ def main() -> None:
             text_select=True,
             zoomable=True,
             background_color="#202020",
-            hidden="--hidden" in sys.argv[1:],
+            hidden=("--hidden" in sys.argv[1:] and not migration_required),
             js_api=NativeWindowApi(),
         )
         window_ref["window"] = window

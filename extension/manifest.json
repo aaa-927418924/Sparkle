@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AI Clip Save",
+  "name": "Sparkle",
   "version": "0.1.0",
-  "description": "Save the current page to the local AI Clip Save backend.",
+  "description": "Save the current page to the local Sparkle backend.",
   "permissions": ["activeTab", "storage", "scripting"],
   "host_permissions": ["http://127.0.0.1:8000/*"],
   "background": {

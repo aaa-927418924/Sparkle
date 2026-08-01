@@ -1,4 +1,4 @@
-# AI Clip Save App
+# Sparkle
 
 個人用クリップ保存アプリ。Chrome 拡張から送られた Web ページ情報
 (URL・コメント・タグ・カテゴリ) を SQLite に保存し、Windows ネイティブウィンドウから
@@ -30,7 +30,7 @@ frontend/    クリップ、メモ、プロジェクトの画面
 requirements.txt
 ```
 
-DB・アップロードファイルは `%APPDATA%\AIClipSaveApp` に保存する。
+DB・アップロードファイルは `%APPDATA%\Sparkle` に保存する。
 パスの決定は `paths.py`、DBファイルの参照は `db.py` の `DB_PATH` で一元管理している。
 
 ## セットアップ
@@ -58,7 +58,7 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 python app_entry.py
 ```
 
-または `start.bat` をダブルクリックすると、`dist\AIClipSaveApp.exe` があれば exe版、
+または `start.bat` をダブルクリックすると、`dist\Sparkle.exe` があれば exe版、
 無ければ仮想環境のソース版を起動する。
 
 アプリは `127.0.0.1:8000` のローカルサーバーを内蔵ウィンドウで表示する。
@@ -69,6 +69,13 @@ Windows の Microsoft Edge WebView2 Runtime が必要。通常の Windows 11 環
 既にインストールされていることが多く、未導入の場合は Microsoft の WebView2 Runtime
 をインストールしてから起動する。
 
+### 既存データの移行
+
+以前の保存先やバックアップが残っている状態でSparkleを初回起動すると、移行ダイアログが表示される。
+「Sparkleへ移行する」を押すと、AppDataのDB・アップロードファイル、DocumentsのMarkdownエクスポート、
+旧バックアップ名、旧スタートアップ登録を検証してから一括移行する。移行後は旧保存先を削除し、
+旧バックアップの内容はそのまま保ったままファイル名だけSparkleへ変更する。
+
 ## exe ビルド
 
 依存パッケージと PyInstaller を仮想環境へインストールしたあと、次を実行する。
@@ -77,7 +84,7 @@ Windows の Microsoft Edge WebView2 Runtime が必要。通常の Windows 11 環
 .\build_exe.bat
 ```
 
-`dist\AIClipSaveApp.exe` に単一 exe が生成される。ビルドスクリプトはプロジェクト内の
+`dist\Sparkle.exe` に単一 exe が生成される。ビルドスクリプトはプロジェクト内の
 `.venv313` を優先し、無ければ `.venv` を使用する。
 
 ## Tailscale経由でスマホから使う場合
@@ -85,7 +92,7 @@ Windows の Microsoft Edge WebView2 Runtime が必要。通常の Windows 11 環
 サーバー本体は安全のため `127.0.0.1:8000` で待ち受けたまま、Tailscale Serveで
 Tailscale内だけにTCP転送する。
 
-1. PCでAIClipSaveAppを起動する。
+1. PCでSparkleを起動する。
 2. PCで次を実行する。
 
 ```powershell
@@ -207,7 +214,7 @@ tailscale serve --tcp=8000 tcp://127.0.0.1:8000 off
 
 設定で「AI向けMarkdownを自動更新」を有効にすると、データベースの変更後に次のフォルダへAIツール向けのMarkdownスナップショットを保存します。
 
-`%USERPROFILE%\Documents\AIClipSaveApp\ai-export\`
+`%USERPROFILE%\Documents\Sparkle\ai-export\`
 
 主なファイルは次のとおりです。
 

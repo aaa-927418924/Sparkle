@@ -1,8 +1,8 @@
-# AI Clip Save App — 引継ぎ書
+# Sparkle — 引継ぎ書
 
 ## プロジェクト概要
 
-**AI Clip Save** は、完全ローカル（オフライン）で動作する個人向けクリップ保存アプリケーション。
+**Sparkle** は、完全ローカル（オフライン）で動作する個人向けクリップ保存アプリケーション。
 Chrome 拡張機能から Web ページを保存・管理できる。fabric.so ライクな Pinterest 風 UI。
 
 - **保存対象**: URL・タイトル・サムネイル・コメント・タグ・カテゴリ・お気に入り
@@ -17,7 +17,7 @@ Chrome 拡張機能から Web ページを保存・管理できる。fabric.so �
 | 層 | 技術 |
 |---|---|
 | バックエンド | Python 3.10+ / FastAPI + uvicorn |
-| データベース | SQLite (`%APPDATA%\AIClipSaveApp\clips.db`) |
+| データベース | SQLite (`%APPDATA%\Sparkle\clips.db`) |
 | フロントエンド | Vanilla HTML / CSS / JS（ビルド不要） |
 | Chrome 拡張機能 | Manifest V3（service worker + content script + popup） |
 | exe ビルド | PyInstaller（onefile, noconsole） |
@@ -34,6 +34,7 @@ AI-clip-save-app/
 ├── main.py                 # FastAPI エントリポイント（開発用）
 ├── app_entry.py            # exe エントリポイント（トレイ＋uvicorn）
 ├── db.py                   # SQLite スキーマ・マイグレーション
+├── migration.py            # 旧保存先・バックアップからSparkleへの初回移行
 ├── schemas.py              # Pydantic モデル
 ├── routers.py              # 全 API ルート（~1150行）
 ├── crud.py                 # カテゴリ・タグの get_or_create
@@ -53,6 +54,7 @@ AI-clip-save-app/
 │   ├── pins.js             # ピン・サイドバー・設定・テーマ（共通）
 │   ├── search-history.js   # 検索履歴（共通）
 │   ├── style.css           # 全スタイル
+│   ├── migration.html/js/css # 初回移行ダイアログ
 │   └── icons/              # SVG アイコン
 │
 ├── extension/              # Chrome 拡張機能
@@ -72,7 +74,7 @@ AI-clip-save-app/
 
 ## データベース（SQLite）
 
-`clips.db` は `%APPDATA%\AIClipSaveApp\` に自動生成される。
+`clips.db` は `%APPDATA%\Sparkle\` に自動生成される。
 
 **主要テーブル**: `clips`, `categories`, `tags`, `clip_tags`, `projects`, `tasks`, `notes`, `note_clips`, `settings`
 

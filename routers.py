@@ -1334,7 +1334,7 @@ def export_database():
     if not DB_PATH.is_file():
         init_db()
 
-    fd, raw_path = tempfile.mkstemp(prefix="aiclipsave-export-", suffix=".db")
+    fd, raw_path = tempfile.mkstemp(prefix="sparkle-export-", suffix=".db")
     os.close(fd)
     export_path = Path(raw_path)
     try:
@@ -1344,7 +1344,7 @@ def export_database():
         _remove_temp_file(str(export_path))
         raise HTTPException(status_code=500, detail="データベースのエクスポートに失敗しました")
 
-    filename = f"AIClipSaveApp-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
+    filename = f"Sparkle-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
     return FileResponse(
         str(export_path),
         media_type="application/x-sqlite3",
@@ -1356,7 +1356,7 @@ def export_database():
 @router.post("/data/import")
 async def import_database(file: UploadFile = File(...)):
     """Validate an SQLite file and merge its data into the current database."""
-    fd, raw_path = tempfile.mkstemp(prefix="aiclipsave-import-", suffix=".db")
+    fd, raw_path = tempfile.mkstemp(prefix="sparkle-import-", suffix=".db")
     os.close(fd)
     import_path = Path(raw_path)
     try:
@@ -1466,13 +1466,13 @@ def export_backup_archive():
         raise HTTPException(status_code=400, detail="保存先フォルダが見つかりません")
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    archive_path = selected_dir / f"AIClipSaveApp-backup-{stamp}.zip"
+    archive_path = selected_dir / f"Sparkle-backup-{stamp}.zip"
     suffix = 2
     while archive_path.exists():
-        archive_path = selected_dir / f"AIClipSaveApp-backup-{stamp}-{suffix}.zip"
+        archive_path = selected_dir / f"Sparkle-backup-{stamp}-{suffix}.zip"
         suffix += 1
-    temp_archive = selected_dir / f".aiclipsave-backup-{uuid.uuid4().hex}.tmp"
-    fd, raw_db_path = tempfile.mkstemp(prefix="aiclipsave-export-", suffix=".db")
+    temp_archive = selected_dir / f".sparkle-backup-{uuid.uuid4().hex}.tmp"
+    fd, raw_db_path = tempfile.mkstemp(prefix="sparkle-export-", suffix=".db")
     os.close(fd)
     snapshot_path = Path(raw_db_path)
     try:
@@ -1507,10 +1507,10 @@ def export_backup_archive():
 @router.post("/data/import-backup")
 async def import_backup_archive(file: UploadFile = File(...)):
     """Import a ZIP backup, merging its DB and copying its uploads into app data."""
-    fd, raw_zip_path = tempfile.mkstemp(prefix="aiclipsave-import-", suffix=".zip")
+    fd, raw_zip_path = tempfile.mkstemp(prefix="sparkle-import-", suffix=".zip")
     os.close(fd)
     zip_path = Path(raw_zip_path)
-    staging_dir = Path(tempfile.mkdtemp(prefix="aiclipsave-backup-"))
+    staging_dir = Path(tempfile.mkdtemp(prefix="sparkle-backup-"))
     snapshot_path = staging_dir / "clips.db"
     uploads_staging = staging_dir / "uploads"
     try:
@@ -1537,7 +1537,7 @@ async def import_backup_archive(file: UploadFile = File(...)):
                 for info, name in upload_infos:
                     _copy_zip_member(archive, info, name, uploads_staging)
         except (zipfile.BadZipFile, ValueError, OSError) as exc:
-            raise HTTPException(status_code=400, detail=f"有効なAIClipSaveAppバックアップZIPではありません: {exc}") from exc
+            raise HTTPException(status_code=400, detail=f"有効なSparkleバックアップZIPではありません: {exc}") from exc
 
         _validate_database_file(snapshot_path)
         init_db()

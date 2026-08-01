@@ -206,6 +206,12 @@
         startWindowDrag(event);
       }, { capture: true });
     });
+    document.querySelectorAll(".window-drag-region").forEach((region) => {
+      region.addEventListener("mousedown", (event) => {
+        if (event.button !== 0 || event.target?.closest?.("button, a, input, select, textarea")) return;
+        startWindowDrag(event);
+      }, { capture: true });
+    });
   }
 
   function resizeWindowFromPointer(event, direction) {

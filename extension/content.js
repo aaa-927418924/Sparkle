@@ -1,4 +1,4 @@
-// AI Clip Save - content script
+// Sparkle - content script
 // "start-selection" を受けてページ上でドラッグ範囲選択UIを表示する。
 
 (function () {

@@ -12,6 +12,7 @@
   --muted: #a1a1aa;
   --accent: #d97957;
   --accent-soft: rgba(217, 121, 87, 0.16);
+  --sidebar-press-scale: 1;
   --shadow: 0 16px 42px rgba(0, 0, 0, 0.24);
   color-scheme: dark;
 }
@@ -409,9 +410,13 @@ html:not([data-theme="dark"]) .home-page .card-ph {
 .modal-btn:active,
 .fav-only:active,
 .cat-btn:active,
-.side-btn:active,
 .theme-toggle:active {
   scale: 0.96;
+}
+
+/* Comparison setting: change this variable to .96 to restore the press bounce. */
+.sidebar .side-btn:active {
+  scale: var(--sidebar-press-scale);
 }
 
 .batch-bar {

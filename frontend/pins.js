@@ -65,6 +65,51 @@ function getPinLabel(type) {
     type === "note" ? "メモ" : "プロジェクト";
 }
 
+function getPinName(data, type) {
+  if (!data) return "";
+  const name = type === "project" ? data.name : data.title;
+  return typeof name === "string" ? name.trim() : "";
+}
+
+function buildProjectPinCounts(data) {
+  const counts = [
+    { icon: "icons/clip.svg", label: "クリップ", value: (data._clips || []).length },
+    { icon: "icons/checkbox.svg", label: "タスク", value: (data._tasks || []).length },
+    { icon: "icons/clipboard.svg", label: "メモ", value: (data._notes || []).length },
+  ];
+  return counts.map((item) => {
+    const label = `${item.label} ${item.value}件`;
+    return `<span class="pin-count" title="${escapeAttr(label)}" aria-label="${escapeAttr(label)}">
+      <img class="icon icon-inline icon-pin-count" src="${item.icon}" alt="" />${item.value}
+    </span>`;
+  }).join("");
+}
+
+function applyPinData(pinItem, data, type) {
+  const nameEl = pinItem.querySelector(".pin-item-name");
+  const countsEl = pinItem.querySelector(".pin-item-counts");
+  const name = getPinName(data, type);
+  if (name && nameEl) {
+    nameEl.textContent = name;
+    pinItem.title = name;
+  }
+  if (!countsEl) return;
+  if (type === "project" && data) {
+    countsEl.innerHTML = buildProjectPinCounts(data);
+    countsEl.hidden = false;
+  } else {
+    countsEl.replaceChildren();
+    countsEl.hidden = true;
+  }
+}
+
+async function hydratePinItem(pinItem, pin) {
+  const data = await fetchPinData(Number(pin.id), pin.type);
+  if (!data || !pinItem.isConnected) return;
+  if (pinItem.dataset.id !== String(pin.id) || pinItem.dataset.type !== pin.type) return;
+  applyPinData(pinItem, data, pin.type);
+}
+
 async function fetchPinData(id, type) {
   const key = `${type}_${id}`;
   if (tooltipDataCache[key]) return tooltipDataCache[key];
@@ -267,11 +312,15 @@ function renderSidebarPins() {
        data-id="${p.id}" data-type="${p.type}" data-order="${i}"
        title="${getPinLabel(p.type)} #${p.id}">
       <img class="icon icon-pin" src="${getPinIcon(p.type)}" alt="${getPinLabel(p.type)}" />
+      <span class="pin-item-name">${getPinLabel(p.type)}</span>
+      <span class="pin-item-counts" hidden></span>
     </div>`
   ).join("");
   // Attach events
   let dragJustStarted = false;
   section.querySelectorAll(".pin-item").forEach((el) => {
+    const pin = { id: Number(el.dataset.id), type: el.dataset.type };
+    void hydratePinItem(el, pin);
     el.addEventListener("dragstart", (e) => { dragJustStarted = true; onPinDragStart.call(el, e); });
     el.addEventListener("dragenter", onPinDragEnter);
     el.addEventListener("dragover", onPinDragOver);

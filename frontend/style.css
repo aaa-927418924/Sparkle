@@ -2726,7 +2726,7 @@ html[data-theme="dark"] #detailView .task-check input[type="checkbox"]:checked {
 .pins-section {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 2px;
   padding: 4px 0;
   border-top: 1px solid var(--border);
@@ -2740,12 +2740,17 @@ html[data-theme="dark"] #detailView .task-check input[type="checkbox"]:checked {
 
 .pin-item {
   position: relative;
-  width: 32px;
+  width: 100%;
+  min-width: 0;
   height: 32px;
+  box-sizing: border-box;
   border-radius: 8px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 8px;
+  overflow: hidden;
   cursor: grab;
   transition: background 0.12s;
   flex-shrink: 0;
@@ -2768,6 +2773,62 @@ html[data-theme="dark"] #detailView .task-check input[type="checkbox"]:checked {
 .icon-pin {
   width: 16px;
   height: 16px;
+  flex: 0 0 16px;
+}
+
+.pin-item-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pin-item-counts {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.pin-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.icon-pin-count {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+  opacity: 0.72;
+}
+
+@media (max-width: 640px) {
+  .pins-section {
+    align-items: center;
+  }
+
+  .pin-item {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+  }
+
+  .pin-item-name,
+  .pin-item-counts {
+    display: none;
+  }
 }
 
 /* コンテキストメニュー */

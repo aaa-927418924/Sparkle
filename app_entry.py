@@ -34,6 +34,7 @@ APP_REG_NAME = "AIClipSaveApp"
 server_ref = {}
 window_ref = {}
 exit_requested = threading.Event()
+window_state = {"maximized": False}
 
 
 def _show_error(message: str) -> None:
@@ -191,6 +192,41 @@ def _stop_server() -> None:
         server.should_exit = True
 
 
+class NativeWindowApi:
+    """Expose the small set of native window actions used by the custom title bar."""
+
+    @staticmethod
+    def minimize_window() -> None:
+        window = window_ref.get("window")
+        if window is not None:
+            window.minimize()
+
+    @staticmethod
+    def toggle_maximize_window() -> bool:
+        window = window_ref.get("window")
+        if window is None:
+            return False
+
+        try:
+            if window_state["maximized"]:
+                window.restore()
+                window_state["maximized"] = False
+            else:
+                window.maximize()
+                window_state["maximized"] = True
+        except Exception:
+            pass
+        return window_state["maximized"]
+
+    @staticmethod
+    def close_window() -> None:
+        exit_requested.set()
+        _stop_server()
+        window = window_ref.get("window")
+        if window is not None:
+            window.destroy()
+
+
 def _on_window_closing(window) -> bool:
     if exit_requested.is_set():
         return True
@@ -315,16 +351,19 @@ def main() -> None:
         webview.settings["ALLOW_DOWNLOADS"] = True
 
         window = webview.create_window(
-            "AI Clip Save",
+            "Clips",
             url=f"http://{HOST}:{PORT}/Home",
             width=1280,
             height=820,
             min_size=(960, 640),
             resizable=True,
+            frameless=True,
+            easy_drag=True,
             text_select=True,
             zoomable=True,
             background_color="#202020",
             hidden="--hidden" in sys.argv[1:],
+            js_api=NativeWindowApi(),
         )
         window_ref["window"] = window
         window.events.closing += _on_window_closing

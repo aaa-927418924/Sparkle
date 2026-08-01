@@ -104,3 +104,37 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", install, { once: true });
   else install();
 })();
+
+(() => {
+  function updateMaximizeButton(button, maximized) {
+    if (!button || typeof maximized !== "boolean") return;
+    const label = maximized ? "元に戻す" : "最大化";
+    button.title = label;
+    button.setAttribute("aria-label", label);
+  }
+
+  function installWindowControls() {
+    document.querySelectorAll("[data-window-action]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const action = button.dataset.windowAction;
+        const api = window.pywebview?.api;
+        if (!action || !api || typeof api[action] !== "function") return;
+
+        try {
+          const result = await api[action]();
+          if (action === "toggle_maximize_window") {
+            updateMaximizeButton(button, result);
+          }
+        } catch {
+          // Browser previews do not expose the native window API.
+        }
+      });
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", installWindowControls, { once: true });
+  } else {
+    installWindowControls();
+  }
+})();

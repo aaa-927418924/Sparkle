@@ -5,14 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>メモを編集 — Clips</title>
     <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260801-v1" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260801-v2" />
     <script>(function(){var t=localStorage.getItem("theme");if(t!=="")document.documentElement.setAttribute("data-theme","dark")})()</script>
-    <script src="page-transition.js?v=sidebar-fade-20260730-v3"></script>
   </head>
   <body>
     <a class="skip-link" href="#mainContent">本文へ移動</a>
     <div class="layout">
       <nav class="sidebar sidebar--index" aria-label="メインナビゲーション">
+        <div class="sidebar-titlebar" data-window-drag>
+          <strong class="sidebar-title">Clips</strong>
+          <div class="window-controls" aria-label="ウィンドウ操作">
+            <button class="window-control" type="button" title="最小化" aria-label="最小化" data-window-action="minimize_window">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
+            </button>
+            <button class="window-control" type="button" title="最大化" aria-label="最大化" data-window-action="toggle_maximize_window">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z" /></svg>
+            </button>
+            <button class="window-control window-control-close" type="button" title="閉じる" aria-label="閉じる" data-window-action="close_window">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+            </button>
+          </div>
+        </div>
         <a class="side-btn" title="ホーム" data-nav="home" href="/Home"><img class="icon icon-nav" src="icons/home.svg" alt="" /><span class="side-label">ホーム</span></a>
         <a class="side-btn" title="ノート・メモ" data-nav="memo" href="/Notes"><img class="icon icon-nav" src="icons/memo.svg" alt="" /><span class="side-label">ノート・メモ</span></a>
         <a class="side-btn" title="プロジェクト" data-nav="projects" href="/Projects"><img class="icon icon-nav" src="icons/project.svg" alt="" /><span class="side-label">プロジェクト</span></a>
@@ -193,6 +206,6 @@
     <script src="pins.js"></script>
     <script src="vendor/marked.min.js?v=12.0.0"></script>
     <script src="note-editor.js"></script>
-    <script src="codex-shell.js?v=codex-shell-20260801-v1"></script>
+    <script src="codex-shell.js?v=codex-shell-20260801-v2"></script>
   </body>
 </html>

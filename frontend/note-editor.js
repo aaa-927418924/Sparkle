@@ -2,7 +2,7 @@ const API = window.location.origin;
 
 const state = {
   noteId: null, // null = 新規作成
-  pickedClips: [], // [{id,title,url}]
+  pickedClips: [], // 既存の関連付けを保存時に維持するためのデータ
   mode: "edit", // "edit" | "view"
   history: [], // undo/redo stack: [{value, start, end}]
   historyIdx: -1,
@@ -19,11 +19,6 @@ const els = {
   bodyPreview: $("noteBodyPreview"),
   modeEdit: $("modeEdit"),
   modeView: $("modeView"),
-  clipPickerOpen: $("clipPickerOpen"),
-  clipPicker: $("clipPicker"),
-  clipSearch: $("clipSearch"),
-  clipPickList: $("clipPickList"),
-  clipPicked: $("clipPicked"),
   noteDelete: $("noteDelete"),
   backLink: $("backLink"),
 };
@@ -272,98 +267,6 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-// --- クリップ選択 ---
-function renderPickedClips() {
-  els.clipPicked.innerHTML = state.pickedClips
-    .map((c) => {
-      const thumb = c.thumbnail_url
-        ? `<img class="picked-clip-thumb" src="${escapeAttr(c.thumbnail_url)}" alt="" />`
-        : `<div class="picked-clip-thumb ph">🖼</div>`;
-      const tags = (c.tags || [])
-        .map((t) => `<span class="picked-clip-tag">${escapeHtml(t.name)}</span>`)
-        .join("");
-      return `
-        <div class="picked-clip-card" data-url="${escapeAttr(c.url || "")}">
-          ${thumb}
-          <div class="picked-clip-info">
-            <div class="picked-clip-title">${escapeHtml(c.title || "(無題)")}</div>
-            ${c.comment ? `<div class="picked-clip-comment">${escapeHtml(c.comment)}</div>` : ""}
-            ${tags ? `<div class="picked-clip-tags">${tags}</div>` : ""}
-          </div>
-          <button class="picked-clip-remove" data-rm="${c.id}" title="外す">×</button>
-        </div>`;
-    })
-    .join("");
-  els.clipPicked.querySelectorAll(".picked-clip-card").forEach((card) => {
-    card.addEventListener("click", (e) => {
-      if (e.target.closest("[data-rm]")) return;
-      const url = card.dataset.url;
-      if (url) window.open(url, "_blank", "noopener");
-    });
-  });
-  els.clipPicked.querySelectorAll("[data-rm]").forEach((b) => {
-    b.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const id = Number(b.dataset.rm);
-      state.pickedClips = state.pickedClips.filter((c) => c.id !== id);
-      renderPickedClips();
-      markNoteDirty();
-    });
-  });
-}
-
-async function openClipPicker() {
-  try {
-    state.clips = await api("/clips");
-  } catch (e) {
-    state.clips = [];
-  }
-  els.clipPicker.hidden = false;
-  renderClipPickList("");
-}
-
-function closeClipPicker() {
-  els.clipPicker.hidden = true;
-}
-
-function renderClipPickList(q) {
-  const query = q.trim().toLowerCase();
-  const pickedIds = new Set(state.pickedClips.map((c) => c.id));
-  const list = state.clips.filter((c) =>
-    (c.title || c.url || "").toLowerCase().includes(query)
-  );
-  els.clipPickList.innerHTML = list
-    .map((c) => {
-      const checked = pickedIds.has(c.id) ? " checked" : "";
-      return `<li>
-        <label class="clip-pick-item">
-          <input type="checkbox" data-pick="${c.id}" data-title="${escapeAttr(c.title || "")}" data-url="${escapeAttr(c.url || "")}"${checked} />
-          <span>${escapeHtml(c.title || c.url || "(無題)")}</span>
-        </label>
-      </li>`;
-    })
-    .join("");
-
-  els.clipPickList.querySelectorAll("input[data-pick]").forEach((cb) => {
-    cb.addEventListener("change", () => {
-      const id = Number(cb.dataset.pick);
-      if (cb.checked) {
-        const clip = state.clips.find((c) => c.id === id);
-        if (clip && !state.pickedClips.some((c) => c.id === id)) {
-          state.pickedClips.push({ ...clip });
-        }
-      } else {
-        state.pickedClips = state.pickedClips.filter((c) => c.id !== id);
-      }
-      renderPickedClips();
-      markNoteDirty();
-    });
-  });
-}
-
-els.clipPickerOpen.addEventListener("click", openClipPicker);
-els.clipSearch.addEventListener("input", (e) => renderClipPickList(e.target.value));
-
 // --- 関連タスク ---
 // --- 保存 / 削除 ---
 els.noteDelete.addEventListener("click", async () => {
@@ -408,7 +311,6 @@ async function init() {
     state.pickedClips = [];
   }
   const restored = restoreNoteDraft();
-  renderPickedClips();
   initialSnapshot = snapshot();
   pushHistory();
   setupMdToolbar();

@@ -5,7 +5,6 @@ const HIGHLIGHT_KEY = "highlightTopPriority";
 const state = {
   tasks: [],
   notes: [],
-  projects: [],
   status: "active", // "all" | "active" | "done"
   selected: new Map(), // Map<id, "task" | "note">
   dragOccurred: false,
@@ -25,15 +24,13 @@ const els = {
   linkSearch: $("linkSearch"),
   linkList: $("linkList"),
   linkCancel: $("linkCancel"),
+  linkSave: $("linkSave"),
   taskEditModal: $("taskEditModal"),
   taskEditTitle: $("taskEditTitle"),
   taskEditDue: $("taskEditDue"),
   taskEditStars: $("taskEditStars"),
   taskEditCancel: $("taskEditCancel"),
   taskEditSave: $("taskEditSave"),
-  taskEditProject: $("taskEditProject"),
-  taskEditProjectClear: $("taskEditProjectClear"),
-  taskEditProjectList: $("taskEditProjectList"),
   batchBar: $("batchBar"),
   batchCount: $("batchCount"),
   batchDelBtn: $("batchDelBtn"),
@@ -83,12 +80,20 @@ function linkifyText(raw) {
 }
 
 // --- 繝倥Ν繝代・: 邏舌▼縺榊愛螳・---
+function noteTaskIds(note) {
+  const ids = Array.isArray(note.task_ids) && note.task_ids.length
+    ? note.task_ids
+    : (note.task_id != null ? [note.task_id] : []);
+  return [...new Set(ids.map(Number).filter(Number.isInteger))];
+}
+
 function noteTask(note) {
-  if (note.task_id == null) return null;
-  return state.tasks.find((t) => t.id === note.task_id) || null;
+  const taskId = noteTaskIds(note)[0];
+  if (taskId == null) return null;
+  return state.tasks.find((t) => t.id === taskId) || null;
 }
 function taskNotes(taskId) {
-  return state.notes.filter((n) => n.task_id === taskId);
+  return state.notes.filter((n) => noteTaskIds(n).includes(Number(taskId)));
 }
 
 // --- 繝倥Ν繝代・: 譛滄剞繝ｻ蜆ｪ蜈亥ｺｦ ---
@@ -163,10 +168,9 @@ function noteMatchesStatus(n) {
 
 // --- 繝・・繧ｿ隱ｭ縺ｿ霎ｼ縺ｿ ---
 async function loadAll() {
-  const [tasks, notes, projects] = await Promise.all([api("/tasks"), api("/notes"), api("/projects")]);
+  const [tasks, notes] = await Promise.all([api("/tasks"), api("/notes")]);
   state.tasks = tasks;
   state.notes = notes;
-  state.projects = projects;
   renderStatusTabs();
   renderTasks();
   renderNotes();
@@ -333,11 +337,6 @@ function openTaskEditModal(id) {
   els.taskEditDue.value = task.due_date || "";
   taskEditPriority = task.priority != null ? task.priority : null;
   renderStarPicker();
-  const projName = task.project_id ? (state.projects.find((p) => p.id === task.project_id)?.name || "") : "";
-  els.taskEditProject.value = projName;
-  els.taskEditProjectList.innerHTML = state.projects
-    .map((p) => `<option value="${escapeHtml(p.name)}">`)
-    .join("");
   els.taskEditModal.hidden = false;
 }
 
@@ -347,9 +346,6 @@ function closeTaskEditModal() {
 }
 
 els.taskEditCancel.addEventListener("click", closeTaskEditModal);
-els.taskEditProjectClear.addEventListener("click", () => {
-  els.taskEditProject.value = "";
-});
 els.taskEditModal.addEventListener("click", (e) => {
   if (e.target === els.taskEditModal) closeTaskEditModal();
 });
@@ -361,13 +357,10 @@ els.taskEditSave.addEventListener("click", async () => {
     alert("タイトルを入力してください。");
     return;
   }
-  const projName = els.taskEditProject.value.trim();
-  const projId = projName ? (state.projects.find((p) => p.name === projName)?.id || null) : null;
   const payload = {
     title,
     due_date: els.taskEditDue.value || null,
     priority: taskEditPriority,
-    project_id: projId,
   };
   try {
     const updated = await api(`/tasks/${taskEditTargetId}`, {
@@ -417,15 +410,22 @@ els.taskAdd.addEventListener("submit", async (e) => {
 
 // --- 繝｡繝｢邏蝉ｻ倥￠繝昴ャ繝励い繝・・ ---
 let linkTargetTaskId = null;
+let linkSelection = new Set();
 
 function openLinkModal(taskId) {
   linkTargetTaskId = taskId;
+  linkSelection = new Set(
+    state.notes
+      .filter((n) => noteTaskIds(n).includes(taskId))
+      .map((n) => n.id)
+  );
   els.linkModal.hidden = false;
   renderLinkList("");
 }
 function closeLinkModal() {
   els.linkModal.hidden = true;
   linkTargetTaskId = null;
+  linkSelection = new Set();
 }
 function renderLinkList(q) {
   const query = q.trim().toLowerCase();
@@ -434,36 +434,60 @@ function renderLinkList(q) {
     .sort((a, b) => a.id - b.id);
   els.linkList.innerHTML = list
     .map((n) => {
-      const linked = n.task_id === linkTargetTaskId ? " checked" : "";
+      const linked = linkSelection.has(n.id) ? " checked" : "";
       return `<li>
         <label class="clip-pick-item">
-          <input type="radio" name="linknote" data-id="${n.id}"${linked} />
+          <input type="checkbox" data-id="${n.id}"${linked} />
           <span>${escapeHtml(n.title || "(辟｡鬘・")}</span>
         </label>
       </li>`;
     })
     .join("");
-  els.linkList.querySelectorAll("input[data-id]").forEach((rb) => {
-    rb.addEventListener("change", async () => {
-      const noteId = Number(rb.dataset.id);
-      try {
-        await api(`/notes/${noteId}`, {
-          method: "PUT",
-          body: JSON.stringify({ task_id: linkTargetTaskId }),
-        });
-        const note = state.notes.find((n) => n.id === noteId);
-        if (note) note.task_id = linkTargetTaskId;
-        closeLinkModal();
-        renderTasks();
-        renderNotes();
-      } catch (e) {
-        alert("紐付けに失敗しました。");
-      }
+  els.linkList.querySelectorAll("input[data-id]").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const noteId = Number(cb.dataset.id);
+      if (cb.checked) linkSelection.add(noteId);
+      else linkSelection.delete(noteId);
     });
   });
 }
+
+async function saveLinkModal() {
+  const taskId = linkTargetTaskId;
+  if (taskId == null) return;
+  const changed = state.notes.filter((note) => {
+    const currentlyLinked = noteTaskIds(note).includes(taskId);
+    return currentlyLinked !== linkSelection.has(note.id);
+  });
+
+  try {
+    const updatedNotes = await Promise.all(
+      changed.map((note) => {
+        const currentIds = noteTaskIds(note);
+        const nextIds = linkSelection.has(note.id)
+          ? [...new Set([...currentIds, taskId])]
+          : currentIds.filter((id) => id !== taskId);
+        return api(`/notes/${note.id}`, {
+          method: "PUT",
+          body: JSON.stringify({ task_ids: nextIds }),
+        });
+      })
+    );
+    updatedNotes.forEach((updated) => {
+      const index = state.notes.findIndex((note) => note.id === updated.id);
+      if (index >= 0) state.notes[index] = updated;
+    });
+    closeLinkModal();
+    renderTasks();
+    renderNotes();
+  } catch (e) {
+    alert("紐付けに失敗しました。");
+  }
+}
+
 els.linkSearch.addEventListener("input", (e) => renderLinkList(e.target.value));
 els.linkCancel.addEventListener("click", closeLinkModal);
+els.linkSave.addEventListener("click", saveLinkModal);
 els.linkModal.addEventListener("click", (e) => {
   if (e.target === els.linkModal) closeLinkModal();
 });

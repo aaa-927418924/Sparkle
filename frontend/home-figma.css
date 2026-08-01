@@ -1017,6 +1017,61 @@ html[data-theme="dark"] .home-page #uploadModal #uploadSave:focus-visible {
   }
 }
 
+/* Keep the home toolbar readable before the native window reaches its
+   minimum width. The search field gets its own row so the three actions can
+   share the remaining width without squeezing the text into the borders. */
+@media (max-width: 1440px) {
+  .home-page .topbar {
+    align-items: stretch;
+    flex-wrap: wrap;
+    row-gap: 10px;
+    column-gap: 10px;
+  }
+
+  .home-page .topbar > .search-wrap {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    order: -1;
+  }
+
+  .home-page .topbar > #favOnly,
+  .home-page .topbar > #addLocalBtn,
+  .home-page .topbar > .sort-select {
+    flex: 1 1 0;
+    width: auto;
+    max-width: none;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .home-page .topbar > #favOnly,
+  .home-page .topbar > #addLocalBtn {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .home-page .topbar > .sort-select {
+    overflow: hidden;
+  }
+
+  .home-page .topbar > .sort-select .sort-trigger {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    padding-inline: 10px;
+  }
+
+  .home-page .topbar > .sort-select .sort-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 /* The file-list border is the only separator needed above the actions. */
 .home-page #uploadModal .modal-actions {
   border-top: 0;

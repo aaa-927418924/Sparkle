@@ -6,7 +6,7 @@
     <title>Sparkle — タスク・メモ</title>
     <link rel="stylesheet" href="style.css?v=pins-scroll-20260801-v1" />
     <link rel="stylesheet" href="notes-figma.css?v=notes-ui-20260802-spacing-v9" />
-    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260802-v7" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260802-v13" />
     <script>document.documentElement.setAttribute("data-theme", "dark");</script>
   </head>
   <body class="notes-page">
@@ -31,7 +31,7 @@
           </div>
         </div>
         <a class="side-btn" title="ホーム" data-nav="home" href="/Home"><img class="icon icon-nav" src="icons/home.svg" alt="" /><span class="side-label">ホーム</span></a>
-        <a class="side-btn active" title="ノート・メモ" data-nav="memo" href="/Notes"><img class="icon icon-nav" src="icons/memo.svg" alt="" /><span class="side-label">ノート・メモ</span></a>
+        <a class="side-btn active" title="タスク・メモ" data-nav="memo" href="/Notes"><img class="icon icon-nav" src="icons/memo.svg" alt="" /><span class="side-label">タスク・メモ</span></a>
         <a class="side-btn" title="プロジェクト" data-nav="projects" href="/Projects"><img class="icon icon-nav" src="icons/project.svg" alt="" /><span class="side-label">プロジェクト</span></a>
         <div class="side-spacer"></div>
         <div class="sidebar-tools" aria-label="サイドバー操作">
@@ -160,12 +160,6 @@
         <input id="taskEditDue" class="modal-input" type="date" />
         <label class="modal-label">優先度</label>
         <div id="taskEditStars" class="star-rating"></div>
-        <label class="modal-label" for="taskEditProject">プロジェクト</label>
-        <div class="project-select-row">
-          <input id="taskEditProject" list="taskEditProjectList" class="modal-input" autocomplete="off" placeholder="プロジェクトを選択…" />
-          <button id="taskEditProjectClear" type="button" class="project-clear" title="プロジェクトをクリア">×</button>
-        </div>
-        <datalist id="taskEditProjectList"></datalist>
         <div class="modal-actions">
           <button id="taskEditCancel" class="modal-btn ghost">キャンセル</button>
           <button id="taskEditSave" class="modal-btn">保存</button>
@@ -181,13 +175,14 @@
         <ul id="linkList" class="clip-pick-list"></ul>
         <div class="modal-actions">
           <button id="linkCancel" class="modal-btn ghost">キャンセル</button>
+          <button id="linkSave" class="modal-btn">保存</button>
         </div>
       </div>
     </div>
 
     <script src="pins.js?v=pins-ui-20260801-v5"></script>
     <script src="vendor/marked.min.js?v=12.0.0"></script>
-    <script src="notes.js?v=notes-ui-20260730-checkbox-v8"></script>
+    <script src="notes.js?v=notes-ui-20260802-task-editor-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260801-v7"></script>
   </body>
 </html>

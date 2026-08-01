@@ -559,7 +559,7 @@ def main() -> None:
         window = webview.create_window(
             "Sparkle",
             url=f"http://{HOST}:{PORT}/{initial_page}",
-            width=1280,
+            width=1510,
             height=820,
             min_size=(960, 640),
             resizable=True,

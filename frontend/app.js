@@ -38,28 +38,51 @@ const els = {
 };
 
 async function api(path) {
-  const res = await fetch(API + path, { headers: { Accept: "application/json" } });
+  const res = await fetch(API + path, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
+let dataSignature = "";
+let loadInFlight = false;
+
 async function loadAll() {
-  const [clips, categories, tags] = await Promise.all([
-    api("/clips"),
-    api("/categories"),
-    api("/tags"),
-  ]);
-  state.clips = clips;
-  state.categories = categories;
-  state.tags = tags;
-  // ランダム順用の固定シード(ページ再読み込みごとに新しい順序になる)
-  state.clips.forEach((c) => {
-    c._rand = Math.random();
-  });
-  state.catMap = new Map(categories.map((c) => [c.id, c.name]));
-  setSortValue(state.sortMode);
-  renderCategories();
-  render();
+  if (loadInFlight) return;
+  loadInFlight = true;
+  try {
+    const [clips, categories, tags] = await Promise.all([
+      api("/clips"),
+      api("/categories"),
+      api("/tags"),
+    ]);
+
+    // 拡張機能など別の画面から保存された場合も検知できるようにする。
+    // 内容が変わっていないときは再描画せず、入力中の状態や選択を保つ。
+    const nextSignature = JSON.stringify({ clips, categories, tags });
+    if (nextSignature === dataSignature) return;
+    dataSignature = nextSignature;
+
+    const clipIds = new Set(clips.map((clip) => clip.id));
+    state.selectedIds = new Set(
+      [...state.selectedIds].filter((id) => clipIds.has(id))
+    );
+    state.clips = clips;
+    state.categories = categories;
+    state.tags = tags;
+    // ランダム順用の固定シード(データ更新時に新しい順序になる)
+    state.clips.forEach((c) => {
+      c._rand = Math.random();
+    });
+    state.catMap = new Map(categories.map((c) => [c.id, c.name]));
+    setSortValue(state.sortMode);
+    renderCategories();
+    render();
+  } finally {
+    loadInFlight = false;
+  }
 }
 
 function renderCategories() {
@@ -269,7 +292,7 @@ function render() {
       if (e.target.closest("button")) return;
       if (state.dragOccurred) { state.dragOccurred = false; return; }
       const id = Number(card.dataset.id);
-      if (e.ctrlKey || e.metaKey) {
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
         toggleSelection(id);
         return;
       }
@@ -368,6 +391,7 @@ let rubberBandActive = false;
 let rubberBandStartX = 0;
 let rubberBandStartY = 0;
 let rubberBandEl = null;
+let rubberBandAdditive = false;
 
 function rectsOverlap(a, b) {
   return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
@@ -391,6 +415,7 @@ mainEl.addEventListener("mousedown", (e) => {
   if (e.target.closest(".card") || e.target.closest("button") || e.target.closest("select") || e.target.closest("input")) return;
   // 空き領域 → 新しいラバーバンド開始。ここで dragOccurred をリセット
   state.dragOccurred = false;
+  rubberBandAdditive = e.shiftKey || e.ctrlKey || e.metaKey;
   rubberBandActive = true;
   rubberBandStartX = e.clientX + window.scrollX;
   rubberBandStartY = e.clientY + window.scrollY;
@@ -424,16 +449,17 @@ document.addEventListener("mouseup", (e) => {
   // --- ラバーバンド中にマウスアップ → 範囲確定またはクリック ---
   if (rubberBandActive && rubberBandEl) {
     const bandRect = rubberBandEl.getBoundingClientRect();
+    const preserveSelection = rubberBandAdditive;
     cancelRubberBand();
     if (!state.dragOccurred) {
       // ドラッグなし＝単なるクリック → 空き領域なら選択解除
       if (!e.target.closest(".card") && !e.target.closest("button") && !e.target.closest("select") && !e.target.closest("input")) {
-        if (state.selectedIds.size > 0) clearSelection();
+        if (state.selectedIds.size > 0 && !preserveSelection) clearSelection();
       }
       return;
     }
     // ドラッグあり → 範囲選択を適用
-    if (!(e.ctrlKey || e.metaKey)) clearSelection();
+    if (!preserveSelection) clearSelection();
     els.grid.querySelectorAll(".card").forEach((card) => {
       const cardRect = card.getBoundingClientRect();
       if (rectsOverlap(bandRect, cardRect)) {
@@ -1411,3 +1437,14 @@ document.addEventListener("visibilitychange", () => {
     loadAll().catch(() => {});
   }
 });
+
+// Chrome拡張機能の保存後も、ホーム画面を手動更新せず一覧へ反映する。
+// 画面が表示中のときだけ確認し、データが変わった場合だけ再描画する。
+window.addEventListener("focus", () => {
+  loadAll().catch(() => {});
+});
+window.setInterval(() => {
+  if (document.visibilityState === "visible") {
+    loadAll().catch(() => {});
+  }
+}, 1000);

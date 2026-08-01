@@ -1112,7 +1112,8 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   gap: 4px;
   width: max-content;
   height: auto;
-  min-height: auto;
+  min-height: 50px;
+  box-sizing: border-box;
   margin: 0;
   padding: 4px;
   border: 1px solid var(--border);
@@ -1136,4 +1137,81 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   border-color: var(--border-strong);
   color: var(--text);
   background: var(--surface-active);
+}
+
+/* Give the settings form enough room for its labels and descriptions. Keep
+   the wider treatment scoped so upload and edit dialogs stay unchanged. */
+#settingsModal .modal-box.wide {
+  width: min(1120px, calc(100vw - 48px));
+  max-width: calc(100vw - 48px);
+}
+
+#settingsModal .settings-columns {
+  gap: 32px;
+}
+
+@media (max-width: 900px) {
+  #settingsModal .settings-columns {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+/* Keep the project creation form controls inside the modal surface. */
+#projectModal .modal-box,
+#projectModal .modal-input {
+  box-sizing: border-box;
+}
+
+html[data-theme="dark"] #projectModal #projectModalSave {
+  color: #fff;
+}
+
+/* Reserve the filter row before JavaScript fills it so the task panel does
+   not jump during the first render. */
+.notes-page .topbar {
+  min-height: 50px;
+}
+
+.notes-page .two-col {
+  height: calc(100% - 66px);
+}
+
+/* Notes has a page-specific modal palette; keep the settings dialog identical
+   to the shared settings dialog used on the other screens. */
+.notes-page #settingsModal .modal-box {
+  border-color: var(--border-strong);
+  border-radius: 20px;
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.notes-page #settingsModal .modal-title,
+.notes-page #settingsModal .modal-sub,
+.notes-page #settingsModal .setting-row {
+  color: var(--text);
+}
+
+.notes-page #settingsModal .modal-label,
+.notes-page #settingsModal .file-save-desc,
+.notes-page #settingsModal .ai-export-status {
+  color: var(--muted);
+}
+
+.notes-page #settingsModal .setting-select {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+  color-scheme: dark;
+}
+
+.notes-page #settingsModal .modal-btn {
+  border-radius: 11px;
+}
+
+.notes-page #settingsModal .modal-btn.ghost {
+  border-color: var(--border-strong);
+  color: var(--muted);
+  background: transparent;
 }

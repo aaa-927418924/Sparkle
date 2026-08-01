@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>メモを編集 — Sparkle</title>
     <link rel="stylesheet" href="style.css?v=ui-fixes-20260802-v1" />
-    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260802-v7" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260802-v13" />
     <script>document.documentElement.setAttribute("data-theme", "dark");</script>
   </head>
   <body class="note-editor-page">
@@ -30,7 +30,7 @@
           </div>
         </div>
         <a class="side-btn" title="ホーム" data-nav="home" href="/Home"><img class="icon icon-nav" src="icons/home.svg" alt="" /><span class="side-label">ホーム</span></a>
-        <a class="side-btn" title="ノート・メモ" data-nav="memo" href="/Notes"><img class="icon icon-nav" src="icons/memo.svg" alt="" /><span class="side-label">ノート・メモ</span></a>
+        <a class="side-btn" title="タスク・メモ" data-nav="memo" href="/Notes"><img class="icon icon-nav" src="icons/memo.svg" alt="" /><span class="side-label">タスク・メモ</span></a>
         <a class="side-btn" title="プロジェクト" data-nav="projects" href="/Projects"><img class="icon icon-nav" src="icons/project.svg" alt="" /><span class="side-label">プロジェクト</span></a>
         <div class="side-spacer"></div>
         <div class="sidebar-tools" aria-label="サイドバー操作">
@@ -73,16 +73,6 @@
         <div class="editor-body">
           <textarea id="noteBodyRaw" class="editor-textarea" placeholder="Markdownで記入…" spellcheck="false"></textarea>
           <div id="noteBodyPreview" class="editor-preview md-preview" hidden></div>
-        </div>
-
-        <div class="editor-clips">
-          <label class="modal-label">クリップを貼り付け</label>
-          <button id="clipPickerOpen" class="modal-btn ghost" type="button">クリップを選択…</button>
-          <div id="clipPicked" class="clip-picked"></div>
-          <div id="clipPicker" class="clip-picker" hidden>
-            <input id="clipSearch" class="modal-input" type="text" placeholder="クリップを検索…" autocomplete="off" />
-            <ul id="clipPickList" class="clip-pick-list"></ul>
-          </div>
         </div>
 
         <div class="editor-actions">
@@ -200,7 +190,7 @@
 
     <script src="pins.js?v=pins-ui-20260801-v5"></script>
     <script src="vendor/marked.min.js?v=12.0.0"></script>
-    <script src="note-editor.js"></script>
+    <script src="note-editor.js?v=note-editor-ui-20260802-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260801-v7"></script>
   </body>
 </html>

@@ -1,6 +1,5 @@
 const API_ROOT = window.location.origin;
 const PIN_KEY = "pins";
-const PIN_MAX = 10;
 // API is defined by each page's main script (app.js/notes.js/projects.js)
 
 function getPins() {
@@ -14,10 +13,6 @@ function savePins(pins) {
 function addPin(id, type) {
   let pins = getPins();
   if (pins.some((p) => p.id === id && p.type === type)) return;
-  if (pins.length >= PIN_MAX) {
-    alert(`ピン止めは最大${PIN_MAX}個までです。\n既存のピンを右クリックで解除してから追加してください。`);
-    return;
-  }
   pins.push({ id, type, order: pins.length });
   savePins(pins);
 }

@@ -13,7 +13,7 @@ import traceback
 from urllib.request import Request, urlopen
 from pathlib import Path
 
-from paths import get_app_data_dir, is_frozen
+from paths import get_app_data_dir, get_resource_dir, is_frozen
 
 HOST = "127.0.0.1"
 
@@ -419,6 +419,15 @@ def _configure_native_window() -> None:
 
 def _build_tray_image():
     from PIL import Image, ImageDraw
+
+    icon_path = get_resource_dir() / "Icon.png"
+    try:
+        with Image.open(icon_path) as source:
+            resampling = getattr(Image, "Resampling", Image)
+            return source.convert("RGBA").resize((64, 64), resampling.LANCZOS)
+    except Exception:
+        pass
+
     size = 64
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)

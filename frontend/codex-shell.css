@@ -682,6 +682,7 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   padding: 14px 12px;
   align-items: stretch;
   gap: 4px;
+  overflow-y: hidden;
   border-radius: 0;
 }
 

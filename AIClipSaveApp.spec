@@ -23,6 +23,7 @@ exe = EXE(
     a.datas,
     [],
     name='AIClipSaveApp',
+    icon='Icon.png',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

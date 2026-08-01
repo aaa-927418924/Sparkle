@@ -2731,11 +2731,34 @@ html[data-theme="dark"] #detailView .task-check input[type="checkbox"]:checked {
   padding: 4px 0;
   border-top: 1px solid var(--border);
   margin-top: 4px;
-  max-height: 200px;
+  min-height: 0;
+  flex: 0 1 auto;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.20) transparent;
   width: 100%;
+}
+
+.pins-section::-webkit-scrollbar {
+  width: 8px;
+}
+
+.pins-section::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pins-section::-webkit-scrollbar-thumb {
+  min-height: 34px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.20);
+  background-clip: padding-box;
+}
+
+.pins-section::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.34);
+  background-clip: padding-box;
 }
 
 .pin-item {

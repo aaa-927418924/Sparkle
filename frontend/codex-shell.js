@@ -171,7 +171,7 @@
         window.addEventListener("mouseup", cleanup);
         window.addEventListener("blur", cleanup);
 
-        api.begin_window_drag().then((geometry) => {
+        api.begin_window_drag(startScreenX, startScreenY).then((geometry) => {
           if (activeDrag !== drag) return;
           if (!geometry || typeof geometry.x !== "number") {
             cleanup();

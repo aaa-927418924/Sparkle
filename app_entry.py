@@ -199,6 +199,30 @@ def _get_window_geometry(window, restored: bool = False):
         return None
 
 
+def _place_restored_window_at_cursor(window, maximized_geometry, restored_geometry, screen_x, screen_y):
+    if not maximized_geometry or not restored_geometry or screen_x is None or screen_y is None:
+        return restored_geometry
+
+    try:
+        cursor_x = int(screen_x)
+        cursor_y = int(screen_y)
+        maximized_width = max(int(maximized_geometry["width"]), 1)
+        maximized_height = max(int(maximized_geometry["height"]), 1)
+        restored_width = max(int(restored_geometry["width"]), 1)
+        restored_height = max(int(restored_geometry["height"]), 1)
+
+        # Keep the point grabbed in the maximized title bar under the cursor
+        # after restoring, matching native Windows drag behavior.
+        cursor_offset_x = min(max(cursor_x - int(maximized_geometry["x"]), 0), maximized_width - 1)
+        cursor_offset_y = min(max(cursor_y - int(maximized_geometry["y"]), 0), maximized_height - 1)
+        restored_x = cursor_x - min(cursor_offset_x, restored_width - 1)
+        restored_y = cursor_y - min(cursor_offset_y, restored_height - 1)
+        window.move(restored_x, restored_y)
+        return _get_window_geometry(window, restored=True) or restored_geometry
+    except Exception:
+        return restored_geometry
+
+
 def _enable_native_resize(window) -> None:
     """Restore the Windows sizing frame that frameless pywebview removes."""
     if os.name != "nt":
@@ -330,12 +354,22 @@ class NativeWindowApi:
         return True
 
     @staticmethod
-    def begin_window_drag():
+    def begin_window_drag(screen_x=None, screen_y=None):
         window = window_ref.get("window")
         if window is None:
             return None
+        maximized_geometry = _get_window_geometry(window)
         restored = NativeWindowApi.restore_window_for_drag()
-        return _get_window_geometry(window, restored=restored)
+        geometry = _get_window_geometry(window, restored=restored)
+        if restored:
+            geometry = _place_restored_window_at_cursor(
+                window,
+                maximized_geometry,
+                geometry,
+                screen_x,
+                screen_y,
+            )
+        return geometry
 
     @staticmethod
     def move_window(x: int, y: int) -> None:

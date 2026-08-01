@@ -939,7 +939,6 @@ window.addEventListener("blur", () => {
   };
   window.addEventListener("scroll", check, { passive: true });
   document.body.addEventListener("scroll", check, { passive: true });
-  document.addEventListener("themechange", () => requestAnimationFrame(check));
   check();
 })();
 

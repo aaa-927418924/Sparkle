@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sparkleの初期設定</title>
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260802-page-entry-v12" />
+    <link rel="stylesheet" href="migration.css?v=migration-ui-20260802-v2" />
+    <link rel="stylesheet" href="setup.css?v=setup-ui-20260803-v1" />
+  </head>
+  <body class="migration-page setup-page">
+    <main class="migration-window">
+      <header class="migration-titlebar window-drag-region">
+        <div class="migration-brand">
+          <img src="/icon.png" alt="" aria-hidden="true" />
+          <strong>Sparkle</strong>
+        </div>
+        <div class="window-controls" aria-label="ウィンドウ操作">
+          <button class="window-control" type="button" title="最小化" aria-label="最小化" data-window-action="minimize_window">
+            <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
+          </button>
+          <button class="window-control" type="button" title="最大化" aria-label="最大化" data-window-action="toggle_maximize_window">
+            <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z" /></svg>
+          </button>
+          <button class="window-control window-control-close" type="button" title="閉じる" aria-label="閉じる" data-window-action="close_window">
+            <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="migration-card setup-card" role="dialog" aria-modal="true" aria-labelledby="setupTitle" aria-describedby="setupDescription">
+        <p class="migration-eyebrow">初回セットアップ</p>
+        <p id="setupDebugNote" class="setup-debug-note" hidden>開発用デバッグ表示</p>
+        <h1 id="setupTitle">Sparkleをはじめましょう</h1>
+        <p id="setupDescription" class="migration-description">
+          最初に基本設定を選択してください。設定はあとから設定メニューでいつでも変更できます。
+        </p>
+
+        <div class="setup-panel">
+          <div class="setup-panel-heading">
+            <span>基本設定</span>
+            <span>あとから変更できます</span>
+          </div>
+
+          <label class="setup-setting" for="setupFileSaveMethod">
+            <span>ファイル保存方式</span>
+            <select id="setupFileSaveMethod" class="setup-select">
+              <option value="copy">アプリ内へコピー</option>
+              <option value="reference">元ファイル参照</option>
+            </select>
+            <small id="setupFileSaveMethodDesc">アップロードしたファイルの場所をそのまま参照します。</small>
+          </label>
+
+          <label class="setup-setting" for="setupTaskAutoDelete">
+            <span>完了したタスクを自動削除</span>
+            <select id="setupTaskAutoDelete" class="setup-select">
+              <option value="3d">3日後</option>
+              <option value="1w">1週間後</option>
+              <option value="1m">1か月後</option>
+              <option value="never">自動削除しない</option>
+            </select>
+            <small>完了後のタスクを自動的に整理します。</small>
+          </label>
+
+          <label class="setup-setting setup-checkbox-setting" for="setupAutoCreateNoteOnTask">
+            <span>タスク作成時に同名の空メモを自動作成する</span>
+            <input id="setupAutoCreateNoteOnTask" type="checkbox" />
+            <small>タスクの内容をメモとしてすぐに編集できます。</small>
+          </label>
+
+          <label class="setup-setting setup-checkbox-setting" for="setupAutoCreateNoteOnProject">
+            <span>プロジェクト作成時に同名の空メモを自動作成する</span>
+            <input id="setupAutoCreateNoteOnProject" type="checkbox" />
+            <small>プロジェクトの概要をメモとして一緒に管理できます。</small>
+          </label>
+        </div>
+
+        <p id="setupStatus" class="migration-status" role="status" aria-live="polite"></p>
+        <div class="migration-actions">
+          <button id="setupExit" class="migration-secondary" type="button">終了</button>
+          <button id="setupComplete" class="migration-primary" type="button">Sparkleを始める</button>
+        </div>
+      </section>
+    </main>
+    <script src="codex-shell.js?v=codex-shell-20260802-zoom-lock-v1"></script>
+    <script src="setup.js?v=setup-ui-20260803-v1"></script>
+  </body>
+</html>

@@ -15,8 +15,10 @@ from pathlib import Path
 
 from migration import get_migration_status
 from paths import get_app_data_dir, get_resource_dir, is_frozen
+from setup import get_setup_status
 
 HOST = "127.0.0.1"
+DEBUG_SETUP_FLAG = "--debug-setup"
 
 
 def _get_port() -> int:
@@ -605,6 +607,8 @@ def _is_port_in_use() -> bool:
 def main() -> None:
     try:
         migration_required = bool(get_migration_status().get("required"))
+        setup_required = bool(get_setup_status().get("required"))
+        debug_setup = DEBUG_SETUP_FLAG in sys.argv[1:]
         if _is_app_server_running():
             # 既に起動中(二重起動) → 既存のネイティブウィンドウを前面表示
             _activate_existing_app()
@@ -650,7 +654,12 @@ def main() -> None:
         webview.settings["ALLOW_DOWNLOADS"] = True
 
         os.environ["SPARKLE_EXECUTABLE"] = _get_exe_path()
-        initial_page = "Migration" if migration_required else "Home"
+        if migration_required:
+            initial_page = "Migration"
+        elif setup_required or debug_setup:
+            initial_page = "Setup?debug=setup" if debug_setup else "Setup"
+        else:
+            initial_page = "Home"
 
         window = webview.create_window(
             "Sparkle",
@@ -667,7 +676,12 @@ def main() -> None:
             # and drag/resize affordances inconsistent.
             zoomable=False,
             background_color="#202020",
-            hidden=("--hidden" in sys.argv[1:] and not migration_required),
+            hidden=(
+                "--hidden" in sys.argv[1:]
+                and not migration_required
+                and not setup_required
+                and not debug_setup
+            ),
             js_api=NativeWindowApi(),
         )
         window_ref["window"] = window

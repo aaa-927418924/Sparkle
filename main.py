@@ -2,18 +2,20 @@
 
 import os
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
+from pydantic import BaseModel
 
-from db import init_db
+from db import get_connection, init_db
 from ai_export import request_export
 from routers import router
-from maintenance import run_maintenance
+from maintenance import SETTING_DEFAULTS, run_maintenance
 from paths import get_uploads_dir, get_thumbnails_dir, get_local_files_dir, get_resource_dir
 from ffmpeg_bootstrap import ensure_ffmpeg_async
 from migration import get_migration_status, run_migration
+from setup import get_setup_status, mark_setup_complete
 
 UPLOADS_DIR = get_uploads_dir()
 get_thumbnails_dir()
@@ -45,6 +47,13 @@ def _initialize_application_data() -> None:
     app.state.data_initialized = True
 
 
+class InitialSetupPayload(BaseModel):
+    file_save_method: str = SETTING_DEFAULTS["file_save_method"]
+    task_auto_delete: str = SETTING_DEFAULTS["task_auto_delete"]
+    auto_create_note_on_task: bool = False
+    auto_create_note_on_project: bool = False
+
+
 @app.get("/migration/status", include_in_schema=False)
 def migration_status():
     return get_migration_status()
@@ -56,6 +65,39 @@ def migration_run():
     if result.get("ok"):
         _initialize_application_data()
     return result
+
+
+@app.get("/setup/status", include_in_schema=False)
+def setup_status():
+    return get_setup_status()
+
+
+@app.post("/setup/complete", include_in_schema=False)
+def setup_complete(payload: InitialSetupPayload):
+    if get_migration_status().get("required"):
+        raise HTTPException(status_code=409, detail="先にデータ移行を完了してください。")
+
+    if payload.file_save_method not in {"copy", "reference"}:
+        raise HTTPException(status_code=422, detail="ファイル保存方式が不正です。")
+    if payload.task_auto_delete not in {"3d", "1w", "1m", "never"}:
+        raise HTTPException(status_code=422, detail="タスク自動削除の設定が不正です。")
+
+    _initialize_application_data()
+    with get_connection() as db:
+        db.execute(
+            "INSERT INTO settings(key, value) VALUES(?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            ("file_save_method", payload.file_save_method),
+        )
+        db.execute(
+            "INSERT INTO settings(key, value) VALUES(?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            ("task_auto_delete", payload.task_auto_delete),
+        )
+        db.commit()
+
+    mark_setup_complete(payload.model_dump())
+    return {"ok": True, "status": get_setup_status()}
 
 
 @app.get("/health")
@@ -88,12 +130,21 @@ def root_page():
 
 @app.get("/Home", include_in_schema=False)
 def home_page():
+    if get_migration_status().get("required"):
+        return RedirectResponse(url="/Migration")
+    if get_setup_status().get("required"):
+        return RedirectResponse(url="/Setup")
     return _frontend_page("index.html")
 
 
 @app.get("/Migration", include_in_schema=False)
 def migration_page():
     return _frontend_page("migration.html")
+
+
+@app.get("/Setup", include_in_schema=False)
+def setup_page():
+    return _frontend_page("setup.html")
 
 
 @app.get("/Notes", include_in_schema=False)
@@ -122,7 +173,7 @@ app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="fronte
 
 @app.on_event("startup")
 def _startup() -> None:
-    if get_migration_status().get("required"):
+    if get_migration_status().get("required") or get_setup_status().get("required"):
         app.state.data_initialized = False
         return
     _initialize_application_data()

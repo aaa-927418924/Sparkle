@@ -13,12 +13,54 @@ import traceback
 from urllib.request import Request, urlopen
 from pathlib import Path
 
+
+def _enable_windows_dpi_awareness() -> bool:
+    """Make the native window participate in Windows DPI scaling correctly."""
+    if os.name != "nt":
+        return False
+
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        set_context = getattr(user32, "SetProcessDpiAwarenessContext", None)
+        if set_context is not None:
+            set_context.argtypes = [ctypes.c_void_p]
+            set_context.restype = ctypes.c_bool
+            # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+            if set_context(ctypes.c_void_p(-4)):
+                return True
+    except Exception:
+        pass
+
+    # Windows 8.1 fallback for systems without SetProcessDpiAwarenessContext.
+    try:
+        import ctypes
+
+        shcore = ctypes.windll.shcore
+        set_process_awareness = shcore.SetProcessDpiAwareness
+        set_process_awareness.argtypes = [ctypes.c_int]
+        set_process_awareness.restype = ctypes.c_long
+        # PROCESS_PER_MONITOR_DPI_AWARE
+        return set_process_awareness(2) == 0
+    except Exception:
+        return False
+
+
+# This must run before pywebview creates the WinForms/WebView2 window. Without
+# it Windows can bitmap-scale the whole window at 150%/175%, making the fixed
+# 1510x820 startup size larger than the physical display.
+_WINDOW_DPI_AWARE = _enable_windows_dpi_awareness()
+
 from migration import get_migration_status
 from paths import get_app_data_dir, get_resource_dir, is_frozen
 from setup import get_setup_status
 
 HOST = "127.0.0.1"
 DEBUG_SETUP_FLAG = "--debug-setup"
+DEFAULT_WINDOW_SIZE = (1510, 820)
+DEFAULT_MIN_WINDOW_SIZE = (960, 640)
+WINDOW_SCREEN_MARGIN = 24
 
 
 def _get_port() -> int:
@@ -54,6 +96,61 @@ native_drop_condition = threading.Condition()
 native_drop_paths = []
 native_drop_document = None
 native_drop_targets = []
+
+
+def _get_work_area_size():
+    """Return the current primary work area in the process's DPI units."""
+    if os.name != "nt":
+        return None
+
+    try:
+        import ctypes
+
+        rect_type = type(
+            "RECT",
+            (ctypes.Structure,),
+            {
+                "_fields_": [
+                    ("left", ctypes.c_long),
+                    ("top", ctypes.c_long),
+                    ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long),
+                ]
+            },
+        )
+        rect = rect_type()
+        # SPI_GETWORKAREA = 0x0030
+        if not ctypes.windll.user32.SystemParametersInfoW(
+            0x0030,
+            0,
+            ctypes.byref(rect),
+            0,
+        ):
+            return None
+
+        width = int(rect.right - rect.left)
+        height = int(rect.bottom - rect.top)
+        if width <= 0 or height <= 0:
+            return None
+        return width, height
+    except Exception:
+        return None
+
+
+def _get_window_size_config():
+    """Keep the initial window inside the usable display area at any DPI."""
+    width, height = DEFAULT_WINDOW_SIZE
+    minimum_width, minimum_height = DEFAULT_MIN_WINDOW_SIZE
+    work_area = _get_work_area_size()
+    if work_area:
+        available_width = max(work_area[0] - WINDOW_SCREEN_MARGIN, 1)
+        available_height = max(work_area[1] - WINDOW_SCREEN_MARGIN, 1)
+        width = min(width, available_width)
+        height = min(height, available_height)
+        minimum_width = min(minimum_width, width)
+        minimum_height = min(minimum_height, height)
+
+    return width, height, (minimum_width, minimum_height)
 
 
 def _show_error(message: str) -> None:
@@ -661,12 +758,13 @@ def main() -> None:
         else:
             initial_page = "Home"
 
+        window_width, window_height, minimum_window_size = _get_window_size_config()
         window = webview.create_window(
             "Sparkle",
             url=f"http://{HOST}:{PORT}/{initial_page}",
-            width=1510,
-            height=820,
-            min_size=(960, 640),
+            width=window_width,
+            height=window_height,
+            min_size=minimum_window_size,
             resizable=True,
             frameless=True,
             easy_drag=False,

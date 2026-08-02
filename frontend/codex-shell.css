@@ -1215,3 +1215,33 @@ html[data-theme="dark"] #projectModal #projectModalSave {
   color: var(--muted);
   background: transparent;
 }
+
+/* Range selection on Notes is memo-only, and selected memos need a clear
+   orange outline because the Notes palette otherwise flattens the shared
+   selection style. */
+.notes-page .memo-card.selected {
+  border-color: var(--notes-accent);
+  box-shadow: 0 0 0 2px var(--notes-accent);
+}
+
+/* The card/list pages use drag gestures for range selection. Prevent browser
+   text highlighting there while keeping normal text-box editing/selection. */
+body.home-page,
+body.notes-page,
+body.projects-page {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.home-page input,
+body.home-page textarea,
+body.notes-page input,
+body.notes-page textarea,
+body.projects-page input,
+body.projects-page textarea,
+body.home-page [contenteditable="true"],
+body.notes-page [contenteditable="true"],
+body.projects-page [contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}

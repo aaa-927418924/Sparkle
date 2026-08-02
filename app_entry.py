@@ -30,6 +30,8 @@ def _get_port() -> int:
 PORT = _get_port()
 LOG_PATH = get_app_data_dir() / "app.log"
 STDIO_LOG_PATH = get_app_data_dir() / "stdio.log"
+WEBVIEW_STORAGE_PATH = get_app_data_dir() / "webview"
+WEBVIEW_STORAGE_PATH.mkdir(parents=True, exist_ok=True)
 
 # --noconsoleビルドでは sys.stdout / sys.stderr が None になり、
 # それに依存するライブラリ(uvicornのログ設定など)がクラッシュするため、
@@ -46,6 +48,10 @@ server_ref = {}
 window_ref = {}
 exit_requested = threading.Event()
 window_state = {"maximized": False}
+native_drop_condition = threading.Condition()
+native_drop_paths = []
+native_drop_document = None
+native_drop_targets = []
 
 
 def _show_error(message: str) -> None:
@@ -307,8 +313,97 @@ def _stop_server() -> None:
         server.should_exit = True
 
 
+def _capture_native_drop(event) -> None:
+    """Keep the absolute paths supplied by pywebview's WebView2 drop bridge."""
+    paths = []
+    try:
+        files = (event or {}).get("dataTransfer", {}).get("files", [])
+        for file_info in files:
+            if not isinstance(file_info, dict):
+                continue
+            file_path = file_info.get("pywebviewFullPath")
+            if file_path:
+                paths.append(str(file_path))
+    except Exception:
+        paths = []
+
+    # Keep only the latest drop. This prevents a copy-mode drop from becoming
+    # stale input if the next drop is handled in reference mode.
+    with native_drop_condition:
+        native_drop_paths[:] = paths
+        native_drop_condition.notify_all()
+
+
+def _attach_native_drop_listener() -> None:
+    """Enable pywebview's WebView2 additional-object file path handling."""
+    global native_drop_document, native_drop_targets
+
+    window = window_ref.get("window")
+    if window is None:
+        return
+
+    try:
+        document = window.dom.document
+        if document is not native_drop_document:
+            document.on("drop", _capture_native_drop)
+            native_drop_document = document
+            native_drop_targets = [document]
+
+        # The upload modal stops propagation at the modal element, so a
+        # document-only listener cannot see drops made inside the dialog.
+        # Attach there as well; stopPropagation does not block other listeners
+        # registered on the same element.
+        upload_modal = window.dom.get_element("#uploadModal")
+        if upload_modal is not None and not any(
+            target is upload_modal for target in native_drop_targets
+        ):
+            upload_modal.on("drop", _capture_native_drop)
+            native_drop_targets.append(upload_modal)
+    except Exception:
+        # The normal browser FileList and the native file picker remain usable
+        # if the optional pywebview DOM bridge is unavailable.
+        native_drop_document = None
+        native_drop_targets = []
+
+
 class NativeWindowApi:
     """Expose the small set of native window actions used by the custom title bar."""
+
+    @staticmethod
+    def clear_dropped_files() -> None:
+        with native_drop_condition:
+            native_drop_paths.clear()
+
+    @staticmethod
+    def read_dropped_files():
+        """Return validated absolute paths captured from the latest OS drop."""
+        with native_drop_condition:
+            if not native_drop_paths:
+                native_drop_condition.wait(timeout=0.8)
+            pending_paths = list(native_drop_paths)
+            native_drop_paths.clear()
+
+        files = []
+        seen = set()
+        for raw_path in pending_paths:
+            try:
+                file_path = Path(raw_path).expanduser().resolve(strict=True)
+                if not file_path.is_file():
+                    continue
+                key = os.path.normcase(str(file_path))
+                if key in seen:
+                    continue
+                file_size = file_path.stat().st_size
+            except (OSError, RuntimeError, TypeError, ValueError):
+                continue
+
+            seen.add(key)
+            files.append({
+                "name": file_path.name,
+                "path": str(file_path),
+                "size": file_size,
+            })
+        return files
 
     @staticmethod
     def minimize_window() -> None:
@@ -427,6 +522,7 @@ def _on_window_closing(window) -> bool:
 
 def _configure_native_window() -> None:
     _enable_native_resize(window_ref.get("window"))
+    _attach_native_drop_listener()
 
 
 def _build_tray_image():
@@ -572,13 +668,19 @@ def main() -> None:
             js_api=NativeWindowApi(),
         )
         window_ref["window"] = window
+        window.events.loaded += _attach_native_drop_listener
         window.events.closing += _on_window_closing
 
         icon = _build_tray_icon()
         tray_thread = threading.Thread(target=icon.run, daemon=True)
         tray_thread.start()
 
-        webview.start(_configure_native_window, debug=not is_frozen())
+        webview.start(
+            _configure_native_window,
+            debug=not is_frozen(),
+            private_mode=False,
+            storage_path=str(WEBVIEW_STORAGE_PATH),
+        )
 
         exit_requested.set()
         _stop_server()

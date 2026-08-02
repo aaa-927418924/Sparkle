@@ -6,7 +6,7 @@ const state = {
   tasks: [],
   notes: [],
   status: "active", // "all" | "active" | "done"
-  selected: new Map(), // Map<id, "task" | "note">
+  selected: new Map(), // Map<id, "note"> (タスクは選択対象外)
   dragOccurred: false,
 };
 
@@ -508,8 +508,9 @@ function renderNotes() {
         ? `<div class="memo-task ${task.is_done ? "done" : ""}" data-task="${task.id}"><img class="icon icon-inline" src="icons/${task.is_done ? "checkbox" : "box"}.svg" alt="" /> ${escapeHtml(task.title)}</div>`
         : "";
       const pinned = typeof isPinned === "function" && isPinned(n.id, "note");
+      const selected = state.selected.get(n.id) === "note" ? " selected" : "";
       return `
-        <article class="memo-card" data-id="${n.id}">
+        <article class="memo-card${selected}" data-id="${n.id}">
           <button class="pin-btn${pinned ? ' on' : ''}" data-pin="${n.id}" data-pin-type="note" title="ピン止め"><img class="icon icon-btn" src="icons/pin.svg" alt="" /></button>
           ${clips ? `<div class="memo-clips">${clips}</div>` : ""}
           <h3 class="memo-title">${escapeHtml(n.title)}</h3>
@@ -522,7 +523,7 @@ function renderNotes() {
   els.memoGrid.querySelectorAll(".memo-card").forEach((card) => {
     card.addEventListener("click", (e) => {
       if (e.target.closest("a.body-link")) return;
-      if (e.ctrlKey || e.metaKey) {
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
         toggleSelection(Number(card.dataset.id), "note", card);
         return;
       }
@@ -571,6 +572,7 @@ let rubberBandActive = false;
 let rubberBandStartX = 0;
 let rubberBandStartY = 0;
 let rubberBandEl = null;
+let rubberBandAdditive = false;
 
 function rectsOverlap(a, b) {
   return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
@@ -628,8 +630,10 @@ const notesMainEl = document.querySelector(".main");
 notesMainEl.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   cancelRubberBand();
-  if (e.target.closest(".task-item") || e.target.closest(".memo-card") || e.target.closest("button") || e.target.closest("select") || e.target.closest("input") || e.target.closest("a")) return;
+  // タスクリスト内では範囲選択を開始しない。範囲選択はメモ専用。
+  if (e.target.closest(".task-panel") || e.target.closest(".memo-card") || e.target.closest("button") || e.target.closest("select") || e.target.closest("input") || e.target.closest("a")) return;
   state.dragOccurred = false;
+  rubberBandAdditive = e.shiftKey || e.ctrlKey || e.metaKey;
   rubberBandActive = true;
   rubberBandStartX = e.clientX + window.scrollX;
   rubberBandStartY = e.clientY + window.scrollY;
@@ -662,21 +666,21 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("mouseup", (e) => {
   if (rubberBandActive && rubberBandEl) {
     const bandRect = rubberBandEl.getBoundingClientRect();
+    const preserveSelection = rubberBandAdditive;
     cancelRubberBand();
     if (!state.dragOccurred) {
       if (!e.target.closest(".task-item") && !e.target.closest(".memo-card") && !e.target.closest("button") && !e.target.closest("select") && !e.target.closest("input") && !e.target.closest("a")) {
-        if (state.selected.size > 0) clearSelection();
+        if (state.selected.size > 0 && !preserveSelection) clearSelection();
       }
       return;
     }
-    if (!(e.ctrlKey || e.metaKey)) clearSelection();
-    document.querySelectorAll(".task-item, .memo-card").forEach((el) => {
+    if (!preserveSelection) clearSelection();
+    document.querySelectorAll(".memo-card").forEach((el) => {
       const cardRect = el.getBoundingClientRect();
       if (rectsOverlap(bandRect, cardRect)) {
         const id = Number(el.dataset.id);
-        const type = el.classList.contains("task-item") ? "task" : "note";
-        if (!state.selected.has(id) || state.selected.get(id) !== type) {
-          state.selected.set(id, type);
+        if (!state.selected.has(id) || state.selected.get(id) !== "note") {
+          state.selected.set(id, "note");
           el.classList.add("selected");
         }
       }
@@ -696,15 +700,6 @@ document.addEventListener("keydown", (e) => {
 
 // Events
 els.batchDelBtn.addEventListener("click", batchDeleteSelected);
-
-// Task Ctrl+click selection
-els.taskList.addEventListener("click", (e) => {
-  const item = e.target.closest(".task-item");
-  if (!item) return;
-  if (e.ctrlKey || e.metaKey) {
-    toggleSelection(Number(item.dataset.id), "task", item);
-  }
-});
 
 loadAll().catch((e) => {
   els.memoEmpty.hidden = false;

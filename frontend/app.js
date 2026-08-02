@@ -1136,25 +1136,88 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !uploadEls.modal.hidden) closeUploadModal();
 });
 
-// ドロップゾーン → showOpenFilePicker でファイル選択
+function addReferenceFiles(entries) {
+  let added = 0;
+  for (const entry of entries || []) {
+    const refPath = typeof entry === "string" ? entry : entry?.path;
+    if (!refPath || uploadFiles.some((u) => u.refPath === refPath)) continue;
+
+    const fallbackName = refPath.split(/[\\/]/).pop();
+    const name = (typeof entry === "object" && entry?.name) || fallbackName;
+    const rawSize = typeof entry === "object" ? entry?.size : null;
+    const size = Number.isFinite(Number(rawSize)) ? Number(rawSize) : null;
+    if (!name || !confirmIfDuplicate(name, size)) continue;
+
+    uploadFiles.push({
+      file: null,
+      refPath,
+      name,
+      size,
+      tags: [],
+      category: "",
+      handle: null,
+    });
+    added += 1;
+  }
+  renderUploadList();
+  return added;
+}
+
+async function appendReferenceFilesFromDialog() {
+  try {
+    const res = await fetch(`${API}/dialog/open-files`, { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return addReferenceFiles(data.files || []);
+  } catch (e) {
+    alert("ファイル選択ダイアログを開けませんでした。サーバーが起動しているか確認してください。");
+    return 0;
+  }
+}
+
+function getDirectReferenceDropFiles(dataTransfer) {
+  return [...(dataTransfer?.files || [])]
+    .map((file) => {
+      const path = typeof file.path === "string" ? file.path : "";
+      return path
+        ? { path, name: file.name, size: file.size }
+        : null;
+    })
+    .filter(Boolean);
+}
+
+async function getReferenceDropFiles(event) {
+  const nativeApi = window.pywebview?.api;
+  if (
+    nativeApi &&
+    typeof nativeApi.clear_dropped_files === "function" &&
+    typeof nativeApi.read_dropped_files === "function"
+  ) {
+    try {
+      const entries = await nativeApi.read_dropped_files();
+      if (Array.isArray(entries) && entries.length) return entries;
+    } catch (e) {
+      // ブラウザのプレビューや旧ランタイムでは、下のFile.pathフォールバックを試す。
+    }
+  }
+  return getDirectReferenceDropFiles(event?.dataTransfer);
+}
+
+function clearNativeDroppedFiles() {
+  const clear = window.pywebview?.api?.clear_dropped_files;
+  if (typeof clear === "function") {
+    try {
+      Promise.resolve(clear()).catch(() => {});
+    } catch (e) {}
+  }
+}
+
+// ドロップゾーン → 参照モードはネイティブ選択、コピー モードは通常のFile選択
 uploadEls.dropZone.addEventListener("click", async () => {
   const isReference = els.fileSaveMethod.value === "reference";
 
   if (isReference) {
-    try {
-      const res = await fetch(`${API}/dialog/open-files`, { method: "POST" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      for (const entry of data.files || []) {
-        const name = entry.path.split(/[\\/]/).pop();
-        if (uploadFiles.some((u) => u.refPath === entry.path)) continue;
-        if (!confirmIfDuplicate(name, entry.size)) continue;
-        uploadFiles.push({ file: null, refPath: entry.path, name, tags: [], category: "", handle: null });
-      }
-      renderUploadList();
-    } catch (e) {
-      alert("ファイル選択ダイアログを開けませんでした。サーバーが起動しているか確認してください。");
-    }
+    await appendReferenceFilesFromDialog();
     return;
   }
 
@@ -1170,26 +1233,27 @@ let dragModalActive = false;
 document.addEventListener("dragenter", (e) => {
   if (dragModalActive) return;
   e.preventDefault();
+  clearNativeDroppedFiles();
 });
 document.addEventListener("dragover", (e) => {
   if (dragModalActive) return;
   e.preventDefault();
 });
-document.addEventListener("drop", (e) => {
+document.addEventListener("drop", async (e) => {
   if (dragModalActive) return;
   e.preventDefault();
-  if (e.dataTransfer.files.length) {
+  if (e.dataTransfer?.files?.length) {
     if (els.fileSaveMethod.value === "reference") {
-      alert(
-        "「元ファイル参照」モードではドラッグ＆ドロップから絶対パスを取得できません。\n" +
-        "「＋ ファイル追加」ボタンをクリックし、ファイル選択ダイアログから選んでください。"
-      );
+      openUploadModal();
+      const entries = await getReferenceDropFiles(e);
+      if (entries.length) addReferenceFiles(entries);
+      else await appendReferenceFilesFromDialog();
       return;
     }
-    // ドラッグ経由(コピー保存モード): 絶対パスは取得不可 → copy モード専用
+    // ドラッグ経由(コピー保存モード): Fileの内容をそのままアップロードする。
     const dropped = [...e.dataTransfer.files];
-    openUploadModal(); // 先に空の状態でモーダルを開く
-    addUploadFiles(dropped); // その後でファイルを追加＆描画する
+    openUploadModal();
+    addUploadFiles(dropped);
   }
 });
 
@@ -1198,22 +1262,22 @@ document.addEventListener("drop", (e) => {
 //  uploadFiles が openUploadModal() でもう一度リセットされていたのが原因)
 uploadEls.modal.addEventListener("dragenter", (e) => {
   dragModalActive = true;
+  clearNativeDroppedFiles();
   e.stopPropagation();
 });
 uploadEls.modal.addEventListener("dragover", (e) => {
   e.preventDefault();
   e.stopPropagation();
 });
-uploadEls.modal.addEventListener("drop", (e) => {
+uploadEls.modal.addEventListener("drop", async (e) => {
   e.preventDefault();
   e.stopPropagation();
   dragModalActive = false;
-  if (e.dataTransfer.files.length) {
+  if (e.dataTransfer?.files?.length) {
     if (els.fileSaveMethod.value === "reference") {
-      alert(
-        "「元ファイル参照」モードではドラッグ＆ドロップから絶対パスを取得できません。\n" +
-        "ドロップゾーンをクリックし、ファイル選択ダイアログから選んでください。"
-      );
+      const entries = await getReferenceDropFiles(e);
+      if (entries.length) addReferenceFiles(entries);
+      else await appendReferenceFilesFromDialog();
       return;
     }
     addUploadFiles([...e.dataTransfer.files]);

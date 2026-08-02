@@ -290,7 +290,10 @@ function render() {
   els.grid.querySelectorAll(".card").forEach((card) => {
     card.addEventListener("click", (e) => {
       if (e.target.closest("button")) return;
-      if (state.dragOccurred) { state.dragOccurred = false; return; }
+      if (suppressNextCardClick) {
+        suppressNextCardClick = false;
+        return;
+      }
       const id = Number(card.dataset.id);
       if (e.shiftKey || e.ctrlKey || e.metaKey) {
         toggleSelection(id);
@@ -395,6 +398,7 @@ let rubberBandStartX = 0;
 let rubberBandStartY = 0;
 let rubberBandEl = null;
 let rubberBandAdditive = false;
+let suppressNextCardClick = false;
 
 function rectsOverlap(a, b) {
   return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
@@ -418,6 +422,7 @@ mainEl.addEventListener("mousedown", (e) => {
   if (e.target.closest(".card") || e.target.closest("button") || e.target.closest("select") || e.target.closest("input")) return;
   // 空き領域 → 新しいラバーバンド開始。ここで dragOccurred をリセット
   state.dragOccurred = false;
+  suppressNextCardClick = false;
   rubberBandAdditive = e.shiftKey || e.ctrlKey || e.metaKey;
   rubberBandActive = true;
   rubberBandStartX = e.clientX + window.scrollX;
@@ -453,6 +458,7 @@ document.addEventListener("mouseup", (e) => {
   if (rubberBandActive && rubberBandEl) {
     const bandRect = rubberBandEl.getBoundingClientRect();
     const preserveSelection = rubberBandAdditive;
+    const suppressClickFromThisDrag = Boolean(e.target.closest(".card"));
     cancelRubberBand();
     if (!state.dragOccurred) {
       // ドラッグなし＝単なるクリック → 空き領域なら選択解除
@@ -474,7 +480,13 @@ document.addEventListener("mouseup", (e) => {
       }
     });
     updateBatchBar();
-    // dragOccurred をリセットしない → 後続の card click で drag 直後の URL オープンを抑制する
+    // ドラッグ直後にブラウザが発生させるクリックだけを抑制する。
+    // 空白でドラッグを終えた場合は次のユーザー操作へ持ち越さない。
+    state.dragOccurred = false;
+    suppressNextCardClick = suppressClickFromThisDrag;
+    if (suppressNextCardClick) {
+      window.setTimeout(() => { suppressNextCardClick = false; }, 0);
+    }
     return;
   }
 
@@ -486,6 +498,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     cancelRubberBand();
     state.dragOccurred = false;
+    suppressNextCardClick = false;
     if (state.selectedIds.size > 0) clearSelection();
   }
 });

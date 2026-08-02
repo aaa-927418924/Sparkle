@@ -354,10 +354,10 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   will-change: opacity, transform;
 }
 
-/* Temporarily disable the home clip entrance animation for comparison. */
+/* Home clips keep the fade direction, but enter together on reload. */
 .home-page .page-enter-card {
-  animation: none;
-  will-change: auto;
+  animation: sparkle-page-preview-in 240ms cubic-bezier(0.2, 0, 0, 1) 0ms both;
+  will-change: opacity, transform;
 }
 
 .home-page .search-liquid,
@@ -1266,6 +1266,36 @@ html:not([data-theme="dark"]) .home-page .card-ph {
 
 .notes-page .sidebar {
   background: color-mix(in srgb, var(--surface) 92%, transparent);
+}
+
+/* Keep Notes content surfaces consistent with the Projects cards. */
+html[data-theme="dark"] .notes-page,
+html:not([data-theme="dark"]) .notes-page {
+  --notes-panel: var(--surface-raised);
+  --notes-card: var(--surface-raised);
+  --notes-border: var(--border);
+  --notes-text: var(--text);
+  --notes-muted: var(--muted);
+  --notes-accent: var(--accent);
+}
+
+.notes-page .task-panel,
+.notes-page .memo-card {
+  border-color: var(--border);
+  border-radius: 16px;
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.notes-page .memo-card:hover {
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.notes-page #newNote.fav-only.active {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
 }
 
 /* Match Notes status filters to the Projects segmented filter group. */

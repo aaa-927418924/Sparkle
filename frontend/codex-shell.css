@@ -1293,9 +1293,20 @@ html:not([data-theme="dark"]) .notes-page {
 }
 
 .notes-page #newNote.fav-only.active {
+  height: 40px;
+  min-height: 40px;
+  box-sizing: border-box;
   border-color: var(--border);
+  border-radius: 999px;
   background: var(--surface);
   color: var(--text);
+}
+
+.notes-page #newNote.fav-only.active:hover {
+  border-color: var(--accent-soft);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 /* Match Notes status filters to the Projects segmented filter group. */
@@ -1304,7 +1315,7 @@ html:not([data-theme="dark"]) .notes-page {
   align-items: center;
   gap: 4px;
   width: max-content;
-  height: auto;
+  height: 50px;
   min-height: 50px;
   box-sizing: border-box;
   margin: 0;
@@ -1315,14 +1326,19 @@ html:not([data-theme="dark"]) .notes-page {
 }
 
 .notes-page .status-tabs .cat-btn {
+  height: 40px;
   min-height: 40px;
-  padding: 6px 14px 8px;
+  box-sizing: border-box;
+  padding: 0 14px;
   border: 1px solid var(--border);
   border-radius: 11px;
   color: var(--muted);
   background: transparent;
   font-size: 13px;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .notes-page .status-tabs .cat-btn:hover,
@@ -1364,10 +1380,17 @@ html[data-theme="dark"] #projectModal #projectModalSave {
    not jump during the first render. */
 .notes-page .topbar {
   min-height: 50px;
+  gap: 12px;
+  margin-bottom: 28px;
 }
 
 .notes-page .two-col {
-  height: calc(100% - 66px);
+  height: calc(100% - 78px);
+}
+
+/* Keep the first memo frame on the same top edge as the task-list frame. */
+.notes-page .memo-grid {
+  padding-top: 0;
 }
 
 /* Notes has a page-specific modal palette; keep the settings dialog identical

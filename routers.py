@@ -1776,6 +1776,10 @@ class OpenFilesOut(BaseModel):
     files: List[OpenFileEntry]
 
 
+class LocalFilePathOut(BaseModel):
+    path: str
+
+
 @router.post("/dialog/open-files", response_model=OpenFilesOut)
 def open_file_dialog():
     """サーバー(このアプリを動かしているPC)上でネイティブのファイル選択ダイアログを開き、
@@ -1797,6 +1801,34 @@ def open_file_dialog():
             size = 0
         files.append(OpenFileEntry(path=p, size=size))
     return OpenFilesOut(files=files)
+
+
+@router.get("/clips/{clip_id}/path", response_model=LocalFilePathOut)
+def get_local_file_path(clip_id: int, db: Connection = Depends(get_db)):
+    """Return the absolute path for a local clip so the UI can copy it."""
+    row = db.execute(
+        "SELECT url, clip_type FROM clips WHERE id = ?", (clip_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Clip not found")
+    if row["clip_type"] != "local":
+        raise HTTPException(status_code=400, detail="Not a local clip")
+
+    url = row["url"] or ""
+    if not url.startswith("local://"):
+        raise HTTPException(status_code=400, detail="Invalid local URL")
+
+    if "/reference/" in url:
+        file_path = Path(url.split("/reference/", 1)[1])
+    else:
+        name = url.rsplit("/", 1)[-1]
+        if not name:
+            raise HTTPException(status_code=400, detail="Invalid file path")
+        file_path = LOCAL_DIR / name
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    return LocalFilePathOut(path=str(file_path))
 
 
 @router.get("/clips/{clip_id}/file")

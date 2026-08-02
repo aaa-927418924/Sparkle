@@ -163,6 +163,20 @@ function localFilePath(url) {
   return url;
 }
 
+async function resolveLocalFilePath(clip) {
+  const url = clip.url || "";
+  if (url.startsWith("local://reference/")) return localFilePath(url);
+
+  const res = await fetch(`${API}/clips/${clip.id}/path`, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data.path) throw new Error("File path is missing");
+  return data.path;
+}
+
 function localFileExt(clip) {
   const name = localFileName(clip);
   return (name.split(".").pop() || "").toLowerCase();
@@ -380,8 +394,8 @@ function render() {
       if (!clip) return;
       const url = clip.url || "";
       if (!url) return;
-      const text = isLocalClip(clip) ? localFilePath(url) : url;
       try {
+        const text = isLocalClip(clip) ? await resolveLocalFilePath(clip) : url;
         await navigator.clipboard.writeText(text);
         const orig = btn.innerHTML;
         btn.innerHTML = "✓";
@@ -1531,47 +1545,55 @@ function renderUploadList() {
 }
 
 uploadEls.save.addEventListener("click", async () => {
-  if (!uploadFiles.length) return;
+  if (!uploadFiles.length || uploadEls.save.disabled) return;
+  const originalSaveLabel = uploadEls.save.textContent;
   uploadEls.save.disabled = true;
+  uploadEls.save.textContent = "保存中…";
+  uploadEls.save.setAttribute("aria-busy", "true");
   let ok = 0, fail = 0;
 
-  for (const u of uploadFiles) {
-    const mergedTags = [...new Set([...uploadBulkTags, ...u.tags])];
-    const cat = u.category || uploadBulkCategory;
+  try {
+    for (const u of uploadFiles) {
+      const mergedTags = [...new Set([...uploadBulkTags, ...u.tags])];
+      const cat = u.category || uploadBulkCategory;
 
-    try {
-      if (u.refPath) {
-        // 元ファイル参照モード: サーバーで取得した本物の絶対パスを送る
-        const payload = {
-          file_path: u.refPath,
-          title: u.name,
-          comment: null,
-          category: cat || null,
-          tags: mergedTags.join(","),
-        };
-        const res = await fetch(`${API}/clips/local/reference`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) throw new Error();
-      } else {
-        // コピー保存モード: ファイル内容をアップロード
-        const fd = new FormData();
-        fd.append("file", u.file);
-        fd.append("comment", "");
-        if (mergedTags.length) fd.append("tags", mergedTags.join(","));
-        if (cat) fd.append("category", cat);
-        const res = await fetch(`${API}/clips/local`, { method: "POST", body: fd });
-        if (!res.ok) throw new Error();
+      try {
+        if (u.refPath) {
+          // 元ファイル参照モード: サーバーで取得した本物の絶対パスを送る
+          const payload = {
+            file_path: u.refPath,
+            title: u.name,
+            comment: null,
+            category: cat || null,
+            tags: mergedTags.join(","),
+          };
+          const res = await fetch(`${API}/clips/local/reference`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error();
+        } else {
+          // コピー保存モード: ファイル内容をアップロード
+          const fd = new FormData();
+          fd.append("file", u.file);
+          fd.append("comment", "");
+          if (mergedTags.length) fd.append("tags", mergedTags.join(","));
+          if (cat) fd.append("category", cat);
+          const res = await fetch(`${API}/clips/local`, { method: "POST", body: fd });
+          if (!res.ok) throw new Error();
+        }
+        ok++;
+      } catch {
+        fail++;
       }
-      ok++;
-    } catch {
-      fail++;
     }
+  } finally {
+    uploadEls.save.disabled = false;
+    uploadEls.save.textContent = originalSaveLabel;
+    uploadEls.save.removeAttribute("aria-busy");
   }
 
-  uploadEls.save.disabled = false;
   closeUploadModal();
   await loadAll();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);

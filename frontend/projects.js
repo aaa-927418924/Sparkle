@@ -795,7 +795,17 @@ async function renderClipPicker() {
       thumb = `<div class="pm-clip-thumb ph">${fileIconHtml(c.url)}</div>`;
     }
     const catName = c.category_id ? (state.catMap.get(c.category_id) || "") : "";
-    const tags = (c.tags || []).map((t) => `<span class="pm-clip-tag">${escapeHtml(t.name)}</span>`).join("");
+    const seenTagNames = new Set(catName ? [catName.trim().toLocaleLowerCase()] : []);
+    const tags = (c.tags || [])
+      .map((t) => String(t?.name || "").trim())
+      .filter((name) => {
+        const key = name.toLocaleLowerCase();
+        if (!name || seenTagNames.has(key)) return false;
+        seenTagNames.add(key);
+        return true;
+      })
+      .map((name) => `<span class="pm-clip-tag">${escapeHtml(name)}</span>`)
+      .join("");
     return `
       <div class="pm-clip-item" data-id="${c.id}">
         ${thumb}

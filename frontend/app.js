@@ -48,6 +48,7 @@ async function api(path) {
 
 let dataSignature = "";
 let loadInFlight = false;
+let clipGridHasRendered = false;
 
 async function loadAll() {
   if (loadInFlight) return;
@@ -179,7 +180,7 @@ function fileIconHtml(ext) {
   return '';
 }
 
-function cardHtml(clip) {
+function cardHtml(clip, { animate = false, index = 0 } = {}) {
   const local = isLocalClip(clip);
   const ext = local ? localFileExt(clip) : "";
 
@@ -203,8 +204,10 @@ function cardHtml(clip) {
     .join("");
 
   const sel = state.selectedIds.has(clip.id) ? " selected" : "";
+  const entryClass = animate ? " page-enter-card" : "";
+  const entryStyle = animate ? ` style="--page-enter-index:${index}"` : "";
   return `
-    <article class="card${local ? " local-clip" : ""}${sel}" data-id="${clip.id}" data-url="${escapeAttr(clip.url || "")}" draggable="false">
+    <article class="card${local ? " local-clip" : ""}${sel}${entryClass}" data-id="${clip.id}" data-url="${escapeAttr(clip.url || "")}"${entryStyle} draggable="false">
       <div class="card-actions">
         <button class="act-btn pin-btn${isPinned(clip.id, 'clip') ? ' on' : ''}" data-pin="${clip.id}" data-pin-type="clip" title="ピン止め"><img class="icon icon-btn" src="icons/clip2.svg" alt="ピン" /></button>
         <button class="act-btn" data-copy="${clip.id}" title="${local ? "ファイルパスをコピー" : "リンクをコピー"}"><img class="icon icon-btn" src="icons/clipboard.svg" alt="コピー" /></button>
@@ -247,7 +250,15 @@ function sortClips(list) {
 
 function render() {
   const list = sortClips(state.clips.filter(matches));
-  els.grid.innerHTML = list.map(cardHtml).join("");
+  const animateInitial = !clipGridHasRendered;
+  els.grid.innerHTML = list.map((clip, index) => cardHtml(clip, {
+    animate: animateInitial,
+    index,
+  })).join("");
+  if (animateInitial) {
+    bindPageEntryAnimation(els.grid);
+    clipGridHasRendered = true;
+  }
 
   if (state.activeTags.length) {
     els.activeTag.hidden = false;
@@ -389,6 +400,15 @@ function render() {
   });
 
   updateBatchBar();
+}
+
+function bindPageEntryAnimation(container) {
+  container.querySelectorAll(".page-enter-card").forEach((card) => {
+    card.addEventListener("animationend", () => {
+      card.classList.remove("page-enter-card");
+      card.style.removeProperty("--page-enter-index");
+    }, { once: true });
+  });
 }
 
 // ==================== 範囲選択（ラバーバンド） ====================

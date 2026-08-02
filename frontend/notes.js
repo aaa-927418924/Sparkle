@@ -9,6 +9,7 @@ const state = {
   selected: new Map(), // Map<id, "note"> (タスクは選択対象外)
   dragOccurred: false,
 };
+let notesHaveRendered = false;
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -498,9 +499,10 @@ els.linkModal.addEventListener("click", (e) => {
 // --- 繝｡繝｢ ---
 function renderNotes() {
   const list = state.notes.filter(noteMatchesStatus);
+  const animateInitial = !notesHaveRendered;
   els.memoEmpty.hidden = list.length > 0;
   els.memoGrid.innerHTML = list
-    .map((n) => {
+    .map((n, index) => {
       const first = (n.clips || [])[0];
       const extra = (n.clips || []).length - 1;
       const clips = first
@@ -512,8 +514,10 @@ function renderNotes() {
         : "";
       const pinned = typeof isPinned === "function" && isPinned(n.id, "note");
       const selected = state.selected.get(n.id) === "note" ? " selected" : "";
+      const entryClass = animateInitial ? " page-enter-card" : "";
+      const entryStyle = animateInitial ? ` style="--page-enter-index:${index}"` : "";
       return `
-        <article class="memo-card${selected}" data-id="${n.id}">
+        <article class="memo-card${selected}${entryClass}"${entryStyle} data-id="${n.id}">
           <button class="pin-btn${pinned ? ' on' : ''}" data-pin="${n.id}" data-pin-type="note" title="ピン止め"><img class="icon icon-btn" src="icons/pin.svg" alt="" /></button>
           ${clips ? `<div class="memo-clips">${clips}</div>` : ""}
           <h3 class="memo-title">${escapeHtml(n.title)}</h3>
@@ -522,6 +526,10 @@ function renderNotes() {
         </article>`;
     })
     .join("");
+  if (animateInitial) {
+    bindPageEntryAnimation(els.memoGrid);
+    notesHaveRendered = true;
+  }
 
   els.memoGrid.querySelectorAll(".memo-card").forEach((card) => {
     card.addEventListener("click", (e) => {
@@ -550,6 +558,15 @@ function renderNotes() {
       renderSidebarPins();
       notifyPinChange();
     });
+  });
+}
+
+function bindPageEntryAnimation(container) {
+  container.querySelectorAll(".page-enter-card").forEach((card) => {
+    card.addEventListener("animationend", () => {
+      card.classList.remove("page-enter-card");
+      card.style.removeProperty("--page-enter-index");
+    }, { once: true });
   });
 }
 

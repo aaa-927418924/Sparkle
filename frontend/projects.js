@@ -16,6 +16,7 @@ const state = {
   dragOccurred: false,
   routeRequestId: 0,
 };
+let projectListHasRendered = false;
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -143,14 +144,17 @@ async function loadAll() {
 
 function renderProjectList() {
   const projs = state.projects;
+  const animateInitial = !projectListHasRendered;
   els.projectEmpty.hidden = projs.length > 0;
   els.projectGrid.hidden = projs.length === 0;
-  els.projectGrid.innerHTML = projs.map((p) => {
+  els.projectGrid.innerHTML = projs.map((p, index) => {
     const clipCount = state.clips.filter((c) => linkedToProject(c, p.id)).length;
     const taskCount = state.tasks.filter((t) => t.project_id === p.id).length;
     const noteCount = state.notes.filter((n) => linkedToProject(n, p.id)).length;
+    const entryClass = animateInitial ? " page-enter-card" : "";
+    const entryStyle = animateInitial ? ` style="--page-enter-index:${index}"` : "";
     return `
-      <div class="project-card${p.is_done ? " done" : ""}" data-id="${p.id}">
+      <div class="project-card${p.is_done ? " done" : ""}${entryClass}"${entryStyle} data-id="${p.id}">
         <div class="project-card-check">
           <input type="checkbox" class="proj-done-cb" data-id="${p.id}" aria-label="${escapeHtml(p.name)}の完了状態を切り替え" ${p.is_done ? "checked" : ""} />
         </div>
@@ -170,6 +174,10 @@ function renderProjectList() {
       </div>
     `;
   }).join("");
+  if (animateInitial) {
+    bindPageEntryAnimation(els.projectGrid);
+    projectListHasRendered = true;
+  }
 
   els.projectGrid.querySelectorAll(".project-card").forEach((card) => {
     card.addEventListener("click", (e) => {
@@ -209,6 +217,15 @@ function renderProjectList() {
       e.stopPropagation();
       toggleProject(Number(cb.dataset.id));
     });
+  });
+}
+
+function bindPageEntryAnimation(container) {
+  container.querySelectorAll(".page-enter-card").forEach((card) => {
+    card.addEventListener("animationend", () => {
+      card.classList.remove("page-enter-card");
+      card.style.removeProperty("--page-enter-index");
+    }, { once: true });
   });
 }
 

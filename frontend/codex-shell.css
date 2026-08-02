@@ -337,7 +337,7 @@ html:not([data-theme="dark"]) .home-page .card-ph {
 @keyframes sparkle-page-preview-in {
   from {
     opacity: 0;
-    transform: translate3d(-14px, 0, 0);
+    transform: translate3d(0, 14px, 0);
   }
   to {
     opacity: 1;
@@ -349,7 +349,7 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   animation-name: sparkle-page-preview-in;
   animation-duration: 240ms;
   animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
-  animation-delay: calc(var(--page-enter-index, 0) * 36ms);
+  animation-delay: calc(var(--page-enter-index, 0) * 24ms);
   animation-fill-mode: both;
   will-change: opacity, transform;
 }

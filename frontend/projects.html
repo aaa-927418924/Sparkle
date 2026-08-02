@@ -150,9 +150,9 @@
         <div class="pm-section">
           <label class="modal-label">新規タスクを作成</label>
           <label class="modal-label sub" for="taskTitle">タイトル</label>
-          <input id="taskTitle" class="modal-input" type="text" placeholder="タスク名" />
+          <input id="taskTitle" class="modal-input" type="text" placeholder="タスク名" autocomplete="off" />
           <label class="modal-label sub" for="taskDue">期限（任意）</label>
-          <input id="taskDue" class="modal-input" type="date" />
+          <input id="taskDue" class="modal-input" type="date" autocomplete="off" />
           <label class="modal-label sub">優先度（任意）</label>
           <div id="taskStars" class="star-rating"></div>
           <label class="project-only-toggle">
@@ -293,6 +293,6 @@
 
     <script src="pins.js?v=pins-ui-20260803-ai-export-v1"></script>
     <script src="projects.js?v=projects-controls-20260803-batch-duplicate-v1"></script>
-    <script src="codex-shell.js?v=codex-shell-20260802-zoom-lock-v1"></script>
+    <script src="codex-shell.js?v=codex-shell-20260803-no-autocomplete-v1"></script>
   </body>
 </html>

@@ -11,6 +11,31 @@
     if (!event.ctrlKey && !event.metaKey) return;
     if (["+", "-", "=", "_", "0"].includes(event.key)) event.preventDefault();
   }, true);
+
+  // Chromium can offer previously saved form values even when an individual
+  // dialog did not explicitly opt out.  Apply the opt-out to every form
+  // control in the page, including controls added later by a dialog.
+  const AUTOCOMPLETE_SELECTOR = "form, input, textarea, select";
+
+  function disableBrowserAutocomplete(root) {
+    if (root?.nodeType === Node.ELEMENT_NODE && root.matches(AUTOCOMPLETE_SELECTOR)) {
+      root.setAttribute("autocomplete", "off");
+    }
+    root?.querySelectorAll?.(AUTOCOMPLETE_SELECTOR).forEach((element) => {
+      element.setAttribute("autocomplete", "off");
+    });
+  }
+
+  disableBrowserAutocomplete(document);
+
+  const autocompleteObserver = new MutationObserver((records) => {
+    records.forEach(({ addedNodes }) => {
+      addedNodes.forEach((node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) disableBrowserAutocomplete(node);
+      });
+    });
+  });
+  autocompleteObserver.observe(document.documentElement, { childList: true, subtree: true });
 })();
 
 (() => {

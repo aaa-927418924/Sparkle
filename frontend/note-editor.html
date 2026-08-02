@@ -41,7 +41,7 @@
       <main id="mainContent" class="main editor-main">
         <div class="editor-top">
           <a id="backLink" class="back-link" href="/Notes">← 戻る</a>
-          <input id="noteTitle" class="editor-title" type="text" placeholder="タイトル" />
+          <input id="noteTitle" class="editor-title" type="text" placeholder="タイトル" autocomplete="off" />
           <div class="mode-toggle">
             <button id="modeEdit" class="mode-btn active" type="button">🖊 テキスト編集</button>
             <button id="modeView" class="mode-btn" type="button">👁 プレビュー表示</button>
@@ -71,7 +71,7 @@
           <button id="mdCheatsheetBtn" class="md-tb-btn icon-only" title="Markdown記法一覧">?</button>
         </div>
         <div class="editor-body">
-          <textarea id="noteBodyRaw" class="editor-textarea" placeholder="Markdownで記入…" spellcheck="false"></textarea>
+          <textarea id="noteBodyRaw" class="editor-textarea" placeholder="Markdownで記入…" spellcheck="false" autocomplete="off"></textarea>
           <div id="noteBodyPreview" class="editor-preview md-preview" hidden></div>
         </div>
       </main>
@@ -181,6 +181,6 @@
     <script src="pins.js?v=pins-ui-20260803-ai-export-v1"></script>
     <script src="vendor/marked.min.js?v=12.0.0"></script>
     <script src="note-editor.js?v=note-editor-ui-20260803-no-delete-v1"></script>
-    <script src="codex-shell.js?v=codex-shell-20260802-zoom-lock-v1"></script>
+    <script src="codex-shell.js?v=codex-shell-20260803-no-autocomplete-v1"></script>
   </body>
 </html>

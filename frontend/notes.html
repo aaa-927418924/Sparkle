@@ -56,7 +56,7 @@
             <h2 class="panel-title">タスクリスト</h2>
             <ul id="taskList" class="task-list"></ul>
             <div id="taskEmpty" class="task-empty" hidden>タスクはまだありません</div>
-            <form id="taskAdd" class="task-add">
+            <form id="taskAdd" class="task-add" autocomplete="off">
               <input id="taskInput" type="text" placeholder="＋ タスクを追加 (Enter)" autocomplete="off" />
             </form>
           </section>
@@ -157,7 +157,7 @@
         <label class="modal-label" for="taskEditTitle">タイトル</label>
         <input id="taskEditTitle" class="modal-input" type="text" autocomplete="off" />
         <label class="modal-label" for="taskEditDue">期限</label>
-        <input id="taskEditDue" class="modal-input" type="date" />
+        <input id="taskEditDue" class="modal-input" type="date" autocomplete="off" />
         <label class="modal-label">優先度</label>
         <div id="taskEditStars" class="star-rating"></div>
         <div class="modal-actions">
@@ -183,7 +183,7 @@
     <script src="pins.js?v=pins-ui-20260803-ai-export-v1"></script>
     <script src="vendor/marked.min.js?v=12.0.0"></script>
     <script src="notes.js?v=notes-ui-20260803-no-memo-hover-v1"></script>
-    <script src="codex-shell.js?v=codex-shell-20260802-zoom-lock-v1"></script>
+    <script src="codex-shell.js?v=codex-shell-20260803-no-autocomplete-v1"></script>
   </body>
 </html>
 

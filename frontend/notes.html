@@ -6,7 +6,7 @@
     <title>Sparkle — タスク・メモ</title>
     <link rel="stylesheet" href="style.css?v=pins-scroll-20260801-v1" />
     <link rel="stylesheet" href="notes-figma.css?v=notes-ui-20260802-spacing-v9" />
-    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260802-page-entry-v10" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260802-page-entry-v11" />
     <script>document.documentElement.setAttribute("data-theme", "dark");</script>
   </head>
   <body class="notes-page">
@@ -42,7 +42,11 @@
       <main id="mainContent" class="main notes-main">
         <h1 class="sr-only">タスク・メモ</h1>
         <div class="topbar">
-          <div id="statusTabs" class="categories status-tabs"></div>
+          <div id="statusTabs" class="categories status-tabs">
+            <button class="cat-btn" data-status="all" type="button">すべて</button>
+            <button class="cat-btn active" data-status="active" type="button">進行中</button>
+            <button class="cat-btn" data-status="done" type="button">完了済み</button>
+          </div>
           <button id="newNote" class="fav-only active">＋ 新規メモ</button>
         </div>
 

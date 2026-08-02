@@ -59,6 +59,7 @@ const els = {
   noteBody: $("noteBody"),
   batchBar: $("batchBar"),
   batchCount: $("batchCount"),
+  batchDuplicateBtn: $("batchDuplicateBtn"),
   batchDelBtn: $("batchDelBtn"),
 };
 
@@ -533,6 +534,25 @@ async function deleteProject(id, options = {}) {
   await refreshProjectPin(id);
 }
 
+async function duplicateProject(project) {
+  const duplicate = await api("/projects", {
+    method: "POST",
+    body: JSON.stringify({
+      name: duplicateLabel(project.name, "無題のプロジェクト"),
+      description: project.description || null,
+    }),
+  });
+  if (project.is_done && duplicate?.id) {
+    await api(`/projects/${duplicate.id}/toggle`, { method: "PATCH" });
+  }
+  return duplicate;
+}
+
+function duplicateLabel(value, fallback) {
+  const base = String(value || "").trim() || fallback;
+  return `${base}（コピー）`;
+}
+
 async function toggleProject(id) {
   await api(`/projects/${id}/toggle`, { method: "PATCH" });
   if (state.currentProjectId === id) {
@@ -975,6 +995,27 @@ async function batchDeleteSelected(event) {
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
 }
 
+async function batchDuplicateSelected() {
+  const projects = [...state.selectedIds]
+    .map((id) => state.projects.find((project) => project.id === id))
+    .filter(Boolean);
+  if (!projects.length) return;
+
+  clearSelection();
+  let ok = 0;
+  let fail = 0;
+  for (const project of projects) {
+    try {
+      await duplicateProject(project);
+      ok++;
+    } catch {
+      fail++;
+    }
+  }
+  await loadAll();
+  if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
+}
+
 const projMainEl = document.querySelector(".main");
 
 projMainEl.addEventListener("mousedown", (e) => {
@@ -1040,6 +1081,7 @@ document.addEventListener("mouseup", (e) => {
 });
 
 // イベント
+els.batchDuplicateBtn.addEventListener("click", batchDuplicateSelected);
 els.batchDelBtn.addEventListener("click", batchDeleteSelected);
 
 // サイドバー設定

@@ -33,6 +33,7 @@ const els = {
   taskEditSave: $("taskEditSave"),
   batchBar: $("batchBar"),
   batchCount: $("batchCount"),
+  batchDuplicateBtn: $("batchDuplicateBtn"),
   batchDelBtn: $("batchDelBtn"),
 };
 
@@ -681,6 +682,54 @@ async function batchDeleteSelected(event) {
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
 }
 
+function duplicateLabel(value, fallback) {
+  const base = String(value || "").trim() || fallback;
+  return `${base}（コピー）`;
+}
+
+async function duplicateNote(note) {
+  const clipIds = [...new Set((note.clips || []).map((clip) => Number(clip.id)).filter(Number.isInteger))];
+  const taskIds = [...new Set(noteTaskIds(note).map(Number).filter(Number.isInteger))];
+  const projectIds = [...new Set(
+    (Array.isArray(note.project_ids) ? note.project_ids : (note.project_id != null ? [note.project_id] : []))
+      .map(Number)
+      .filter(Number.isInteger),
+  )];
+  return api("/notes", {
+    method: "POST",
+    body: JSON.stringify({
+      title: duplicateLabel(note.title, "無題のメモ"),
+      body: note.body ?? null,
+      clip_ids: clipIds,
+      task_ids: taskIds,
+      project_ids: projectIds,
+    }),
+  });
+}
+
+async function batchDuplicateSelected() {
+  const notes = [...state.selected]
+    .filter(([, type]) => type === "note")
+    .map(([id]) => state.notes.find((note) => note.id === id))
+    .filter(Boolean);
+  if (!notes.length) return;
+
+  clearSelection();
+  let ok = 0;
+  let fail = 0;
+  for (const note of notes) {
+    try {
+      await duplicateNote(note);
+      ok++;
+    } catch {
+      fail++;
+    }
+  }
+  await loadAll();
+  await window.refreshAllPinnedProjects?.();
+  if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
+}
+
 const notesMainEl = document.querySelector(".main");
 
 notesMainEl.addEventListener("mousedown", (e) => {
@@ -755,6 +804,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 // Events
+els.batchDuplicateBtn.addEventListener("click", batchDuplicateSelected);
 els.batchDelBtn.addEventListener("click", batchDeleteSelected);
 
 loadAll().catch((e) => {

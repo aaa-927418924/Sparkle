@@ -30,6 +30,11 @@
   let activeRequest = null;
   let hideTimer = null;
 
+  function handleDocumentPointerDown(event) {
+    if (!activeRequest || !dialog || dialog.hidden) return;
+    if (!(event.target instanceof Node) || !dialog.contains(event.target)) finish(false);
+  }
+
   function ensureDialog() {
     if (dialog) return dialog;
 
@@ -104,6 +109,7 @@
     activeRequest = null;
     window.removeEventListener("resize", request.reposition);
     window.removeEventListener("scroll", request.reposition, true);
+    document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
     clearTimeout(hideTimer);
     dialog.classList.remove("is-open");
     dialog.setAttribute("aria-hidden", "true");
@@ -143,6 +149,7 @@
     position(request);
     window.addEventListener("resize", request.reposition);
     window.addEventListener("scroll", request.reposition, true);
+    document.addEventListener("pointerdown", handleDocumentPointerDown, true);
     requestAnimationFrame(() => {
       if (activeRequest !== request) return;
       nextDialog.classList.add("is-open");

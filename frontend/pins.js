@@ -628,7 +628,8 @@ function updateAIExportStatus(data) {
 async function loadAIExportSettings() {
   try {
     const statusRes = await fetch(`${API_ROOT}/data/ai-export/status`);
-    if (statusRes.ok) updateAIExportStatus(await statusRes.json());
+    if (!statusRes.ok) throw new Error(`HTTP ${statusRes.status}`);
+    updateAIExportStatus(await statusRes.json());
   } catch {
     const statusEl = document.getElementById("aiExportStatus");
     if (statusEl) statusEl.textContent = "状態を確認できません。";
@@ -663,27 +664,8 @@ function initSettings() {
     if (typeof updateFileSaveDesc === "function") updateFileSaveDesc(fsm.value);
   });
   // AI-friendly Markdown export (always enabled)
-  const aiNow = document.getElementById("aiExportNow");
   const aiOpen = document.getElementById("aiExportOpen");
   const aiApi = API_ROOT;
-  if (aiNow) aiNow.addEventListener("click", async () => {
-    const original = aiNow.textContent;
-    aiNow.disabled = true;
-    aiNow.textContent = "更新中…";
-    try {
-      const res = await fetch(`${aiApi}/data/ai-export`, { method: "POST", headers: { Accept: "application/json" } });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-      updateAIExportStatus(data);
-    } catch (e) {
-      const statusEl = document.getElementById("aiExportStatus");
-      if (statusEl) statusEl.textContent = "更新に失敗しました。";
-      alert(`AI向けMarkdownを更新できませんでした。${e.message ? `\n${e.message}` : ""}`);
-    } finally {
-      aiNow.disabled = false;
-      aiNow.textContent = original;
-    }
-  });
   if (aiOpen) aiOpen.addEventListener("click", async () => {
     try {
       const res = await fetch(`${aiApi}/data/ai-export/open`, { method: "POST", headers: { Accept: "application/json" } });
@@ -696,8 +678,16 @@ function initSettings() {
   });
   // clearSearchHistory
   const csh = document.getElementById("clearSearchHistory");
-  if (csh) csh.addEventListener("click", () => {
-    if (!confirm("検索履歴をすべて削除しますか？")) return;
+  if (csh) csh.addEventListener("click", async () => {
+    const message = "検索履歴をすべて削除しますか？";
+    const confirmed = typeof window.confirmDeletion === "function"
+      ? await window.confirmDeletion(message, {
+        anchor: csh,
+        title: "検索履歴を削除しますか？",
+        confirmLabel: "すべて削除",
+      })
+      : window.confirm(message);
+    if (!confirmed) return;
     if (typeof SearchHistory !== "undefined") SearchHistory.clear();
   });
   // settings reset button
@@ -826,6 +816,7 @@ async function initPinSettings() {
   if (missingMetadata.length) await primeMissingPinMetadata(missingMetadata);
   renderSidebarPins();
   initSettings();
+  if (document.body?.classList.contains("settings-page")) loadSettingsValues();
 }
 
 // ---- Dark Theme ----

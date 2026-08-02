@@ -39,6 +39,19 @@ body {
   background: var(--bg);
 }
 
+html.settings-document,
+body.settings-page {
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+html.settings-document::-webkit-scrollbar,
+body.settings-page::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 body {
   overflow-x: hidden;
 }
@@ -1406,6 +1419,9 @@ html:not([data-theme="dark"]) .notes-page {
 
 .settings-page-card {
   box-sizing: border-box;
+  width: min(760px, 100%);
+  max-width: 760px;
+  min-width: 0;
   padding: 24px 28px 28px;
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -1415,6 +1431,8 @@ html:not([data-theme="dark"]) .notes-page {
 }
 
 .settings-page-card .settings-columns {
+  display: flex;
+  flex-direction: column;
   gap: 32px;
 }
 

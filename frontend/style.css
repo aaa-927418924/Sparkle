@@ -1721,7 +1721,9 @@ textarea.modal-input {
 .editor-textarea,
 .editor-preview {
   width: 100%;
+  height: 420px;
   min-height: 420px;
+  max-height: 420px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface);
@@ -1746,6 +1748,22 @@ textarea.modal-input {
 
 .editor-preview {
   overflow-y: auto;
+}
+
+/* Note editor is a fixed work surface: only the editor content itself may
+   scroll, never the empty page area around the controls. */
+html.note-editor-document,
+body.note-editor-page,
+body.note-editor-page .layout,
+body.note-editor-page .main.editor-main {
+  overflow: hidden;
+}
+
+body.note-editor-page .layout,
+body.note-editor-page .main.editor-main {
+  height: 100vh;
+  min-height: 0;
+  box-sizing: border-box;
 }
 
 /* ノート編集画面はスクロール自体を保ちつつ、スクロールバーだけ隠す。 */
@@ -2367,10 +2385,30 @@ html[data-theme="dark"] #detailView .task-check input[type="checkbox"]:checked {
   padding: 14px;
 }
 
-.project-memos {
+.projects-page .project-memos {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 16px;
+  background: transparent;
+}
+
+/* Keep the document scrollable when its content requires it, but do not
+   display a page scrollbar in the compact project workspace. */
+html.projects-document,
+body.projects-page {
+  scrollbar-width: none;
+}
+
+html.projects-document::-webkit-scrollbar,
+body.projects-page::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Resolve the project route before exposing the list view. */
+html.projects-route-pending #listView {
+  visibility: hidden;
 }
 
 .project-clips-section {

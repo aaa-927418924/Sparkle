@@ -1027,9 +1027,13 @@ document.querySelectorAll(".side-btn").forEach((btn) => {
 });
 
 async function init() {
-  bindEvents();
-  await loadAll();
-  await syncRouteFromLocation({ reloadList: false });
+  try {
+    bindEvents();
+    await loadAll();
+    await syncRouteFromLocation({ reloadList: false });
+  } finally {
+    document.documentElement.classList.remove("projects-route-pending");
+  }
 }
 
 init();

@@ -25,6 +25,16 @@ if not exist "%PYTHON%" (
   exit /b 1
 )
 
+"%PYTHON%" -c "from pathlib import Path; import sys; expected=Path(r'%VENV_DIR%').resolve(); actual=Path(sys.prefix).resolve(); raise SystemExit(0 if actual == expected else 1)" >nul 2>&1
+if errorlevel 1 (
+  echo.
+  echo The selected virtual environment was created under a different folder or is invalid.
+  echo Recreate .venv313 in the current project folder before building.
+  echo.
+  pause
+  exit /b 1
+)
+
 if not exist "%PYINSTALLER%" (
   echo.
   echo PyInstaller was not found in the selected virtual environment.

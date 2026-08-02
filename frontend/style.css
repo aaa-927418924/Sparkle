@@ -2723,7 +2723,7 @@ html.projects-route-pending #listView {
 .pm-clip-cat {
   font-size: 10px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--muted);
   border-radius: 999px;
   padding: 1px 6px;
 }

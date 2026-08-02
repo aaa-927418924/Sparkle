@@ -1138,6 +1138,10 @@ const uploadEls = {
   bulkCategory: $("uploadBulkCategory"),
   cancel: $("uploadCancel"),
   save: $("uploadSave"),
+  duplicateConfirm: $("uploadDuplicateConfirm"),
+  duplicateMessage: $("uploadDuplicateMessage"),
+  duplicateCancel: $("uploadDuplicateCancel"),
+  duplicateSubmit: $("uploadDuplicateSubmit"),
 };
 const pageDropOverlay = $("pageDropOverlay");
 let pageDragDepth = 0;
@@ -1176,9 +1180,89 @@ let uploadBulkTags = [];
 let uploadBulkCategory = "";
 let uploadCloseTimer = null;
 let uploadReturnFocus = null;
+let duplicateConfirmRequest = null;
+let duplicateConfirmHideTimer = null;
+
+function finishDuplicateConfirm(result) {
+  const request = duplicateConfirmRequest;
+  if (!request) return;
+  duplicateConfirmRequest = null;
+  clearTimeout(duplicateConfirmHideTimer);
+  duplicateConfirmHideTimer = null;
+
+  const dialog = uploadEls.duplicateConfirm;
+  if (dialog) {
+    dialog.classList.remove("is-open");
+    dialog.setAttribute("aria-hidden", "true");
+    duplicateConfirmHideTimer = window.setTimeout(() => {
+      if (!duplicateConfirmRequest) dialog.hidden = true;
+      duplicateConfirmHideTimer = null;
+    }, 160);
+  }
+
+  if (!result && request.returnFocus?.isConnected) {
+    request.returnFocus.focus({ preventScroll: true });
+  }
+  request.resolve(result);
+}
+
+function confirmDuplicateUpload(name) {
+  const message = `「${name}」と同じファイルがすでに保存されています。\nアップロードを続行しますか？`;
+  const dialog = uploadEls.duplicateConfirm;
+  if (!dialog || !uploadEls.duplicateMessage) {
+    if (typeof window.appConfirm === "function") {
+      return window.appConfirm(message, {
+        title: "同じファイルが見つかりました",
+        cancelLabel: "キャンセル",
+        confirmLabel: "続行する",
+      });
+    }
+    return Promise.resolve(window.confirm(message));
+  }
+
+  if (duplicateConfirmRequest) finishDuplicateConfirm(false);
+  clearTimeout(duplicateConfirmHideTimer);
+  duplicateConfirmHideTimer = null;
+  uploadEls.duplicateMessage.textContent = message;
+  dialog.hidden = false;
+  dialog.setAttribute("aria-hidden", "false");
+
+  return new Promise((resolve) => {
+    const request = {
+      resolve,
+      returnFocus: document.activeElement,
+    };
+    duplicateConfirmRequest = request;
+    requestAnimationFrame(() => {
+      if (duplicateConfirmRequest !== request) return;
+      dialog.classList.add("is-open");
+      uploadEls.duplicateSubmit?.focus();
+    });
+  });
+}
+
+uploadEls.duplicateConfirm?.addEventListener("click", (event) => {
+  if (event.target === uploadEls.duplicateConfirm) finishDuplicateConfirm(false);
+});
+uploadEls.duplicateCancel?.addEventListener("click", () => finishDuplicateConfirm(false));
+uploadEls.duplicateSubmit?.addEventListener("click", () => finishDuplicateConfirm(true));
+uploadEls.duplicateConfirm?.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  event.stopPropagation();
+  finishDuplicateConfirm(false);
+});
 
 function openUploadModal() {
   resetPageDragState();
+  finishDuplicateConfirm(false);
+  clearTimeout(duplicateConfirmHideTimer);
+  duplicateConfirmHideTimer = null;
+  if (uploadEls.duplicateConfirm) {
+    uploadEls.duplicateConfirm.hidden = true;
+    uploadEls.duplicateConfirm.classList.remove("is-open");
+    uploadEls.duplicateConfirm.setAttribute("aria-hidden", "true");
+  }
   if (uploadCloseTimer !== null) {
     clearTimeout(uploadCloseTimer);
     uploadCloseTimer = null;
@@ -1203,6 +1287,7 @@ function openUploadModal() {
 }
 function closeUploadModal() {
   resetPageDragState();
+  finishDuplicateConfirm(false);
   uploadEls.modal.classList.remove("is-open");
   uploadEls.modal.classList.remove("has-upload-files");
   uploadEls.modal.setAttribute("aria-hidden", "true");
@@ -1221,13 +1306,23 @@ function closeUploadModal() {
 els.addLocalBtn.addEventListener("click", openUploadModal);
 uploadEls.cancel.addEventListener("click", closeUploadModal);
 uploadEls.modal.addEventListener("click", (e) => {
-  if (e.target === uploadEls.modal) closeUploadModal();
+  if (e.target !== uploadEls.modal) return;
+  if (duplicateConfirmRequest) {
+    finishDuplicateConfirm(false);
+    return;
+  }
+  closeUploadModal();
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !uploadEls.modal.hidden) closeUploadModal();
+  if (e.key !== "Escape" || uploadEls.modal.hidden) return;
+  if (uploadEls.duplicateConfirm && e.target instanceof Node && uploadEls.duplicateConfirm.contains(e.target)) {
+    finishDuplicateConfirm(false);
+    return;
+  }
+  closeUploadModal();
 });
 
-function addReferenceFiles(entries) {
+async function addReferenceFiles(entries) {
   let added = 0;
   for (const entry of entries || []) {
     const refPath = typeof entry === "string" ? entry : entry?.path;
@@ -1237,7 +1332,7 @@ function addReferenceFiles(entries) {
     const name = (typeof entry === "object" && entry?.name) || fallbackName;
     const rawSize = typeof entry === "object" ? entry?.size : null;
     const size = Number.isFinite(Number(rawSize)) ? Number(rawSize) : null;
-    if (!name || !confirmIfDuplicate(name, size)) continue;
+    if (!name || !(await confirmIfDuplicate(name, size))) continue;
 
     uploadFiles.push({
       file: null,
@@ -1330,8 +1425,8 @@ uploadEls.dropZone.addEventListener("click", async () => {
 
   uploadEls.fileInput.click();
 });
-uploadEls.fileInput.addEventListener("change", () => {
-  addUploadFiles([...uploadEls.fileInput.files]);
+uploadEls.fileInput.addEventListener("change", async () => {
+  await addUploadFiles([...uploadEls.fileInput.files]);
   uploadEls.fileInput.value = "";
 });
 
@@ -1369,14 +1464,14 @@ document.addEventListener("drop", async (e) => {
       const entriesPromise = getReferenceDropFiles(e);
       openUploadModal();
       const entries = await entriesPromise;
-      if (entries.length) addReferenceFiles(entries);
+      if (entries.length) await addReferenceFiles(entries);
       else await appendReferenceFilesFromDialog();
       return;
     }
     // ドラッグ経由(コピー保存モード): Fileの内容をそのままアップロードする。
     const dropped = [...e.dataTransfer.files];
     openUploadModal();
-    addUploadFiles(dropped);
+    await addUploadFiles(dropped);
   }
 });
 document.addEventListener("dragend", resetPageDragState);
@@ -1402,11 +1497,11 @@ uploadEls.modal.addEventListener("drop", async (e) => {
   if (e.dataTransfer?.files?.length) {
     if (els.fileSaveMethod.value === "reference") {
       const entries = await getReferenceDropFiles(e);
-      if (entries.length) addReferenceFiles(entries);
+      if (entries.length) await addReferenceFiles(entries);
       else await appendReferenceFilesFromDialog();
       return;
     }
-    addUploadFiles([...e.dataTransfer.files]);
+    await addUploadFiles([...e.dataTransfer.files]);
   }
 });
 uploadEls.modal.addEventListener("dragleave", (e) => {
@@ -1424,16 +1519,16 @@ function findExistingClipMatch(name, size) {
   );
 }
 
-function confirmIfDuplicate(name, size) {
+async function confirmIfDuplicate(name, size) {
   const dup = findExistingClipMatch(name, size);
   if (!dup) return true;
-  return confirm("同じファイルですでにクリップがあります。アップロードを続行しますか？");
+  return confirmDuplicateUpload(name);
 }
 
-function addUploadFiles(fileList) {
+async function addUploadFiles(fileList) {
   for (const f of fileList) {
     if (uploadFiles.some((u) => u.file && u.file.name === f.name && u.file.size === f.size)) continue;
-    if (!confirmIfDuplicate(f.name, f.size)) continue;
+    if (!(await confirmIfDuplicate(f.name, f.size))) continue;
     uploadFiles.push({ file: f, tags: [], category: "", handle: null });
   }
   renderUploadList();

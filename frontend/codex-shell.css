@@ -509,6 +509,43 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   scale: 0.96;
 }
 
+.upload-modal-box {
+  position: relative;
+  isolation: isolate;
+}
+
+.upload-duplicate-confirm {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  border-radius: inherit;
+  background: rgba(12, 12, 14, 0.76);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px) scale(0.98);
+  transition-property: opacity, transform;
+  transition-duration: 160ms;
+  transition-timing-function: ease-out;
+}
+
+.upload-duplicate-confirm[hidden] {
+  display: none;
+}
+
+.upload-duplicate-confirm.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.upload-duplicate-confirm .app-confirm-card {
+  width: min(390px, 100%);
+}
+
 .modal-box,
 .modal-box.wide {
   border: 1px solid var(--border-strong);

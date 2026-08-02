@@ -180,8 +180,21 @@
     </div>
 
     <div id="uploadModal" class="modal" hidden>
-      <div class="modal-box wide">
+      <div class="modal-box wide upload-modal-box">
         <h2 class="modal-title">ファイルをアップロード</h2>
+        <div id="uploadDuplicateConfirm" class="upload-duplicate-confirm" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="uploadDuplicateTitle" aria-describedby="uploadDuplicateMessage">
+          <div class="app-confirm-card">
+            <div class="app-confirm-mark" aria-hidden="true">!</div>
+            <div class="app-confirm-copy">
+              <h2 id="uploadDuplicateTitle" class="app-confirm-title">同じファイルが見つかりました</h2>
+              <p id="uploadDuplicateMessage" class="app-confirm-message"></p>
+            </div>
+            <div class="app-confirm-actions">
+              <button id="uploadDuplicateCancel" class="app-confirm-btn app-confirm-cancel" type="button">キャンセル</button>
+              <button id="uploadDuplicateSubmit" class="app-confirm-btn app-confirm-submit" type="button">続行する</button>
+            </div>
+          </div>
+        </div>
         <div id="uploadDropZone" class="upload-drop-zone">
           <p>ここにファイルをドロップ、またはクリックして選択</p>
           <input id="uploadFileInput" type="file" multiple hidden />
@@ -296,7 +309,7 @@
 
     <script src="pins.js?v=pins-ui-20260802-project-note-setting-v1"></script>
     <script src="search-history.js"></script>
-    <script src="app.js?v=home-ui-20260802-local-upload-state-v1"></script>
+    <script src="app.js?v=home-ui-20260802-duplicate-confirm-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260802-zoom-lock-v1"></script>
   </body>
 </html>

@@ -142,7 +142,7 @@ function buildProjectPinCountsFromValues(values) {
   ];
   return counts.map((item) => {
     const label = `${item.label} ${item.value}件`;
-    return `<span class="pin-count" title="${escapeAttr(label)}" aria-label="${escapeAttr(label)}">
+    return `<span class="pin-count" aria-label="${escapeAttr(label)}">
       <img class="icon icon-inline icon-pin-count" src="${item.icon}" alt="" />${item.value}
     </span>`;
   }).join("");
@@ -158,7 +158,8 @@ function applyPinData(pinItem, data, type) {
   const name = getPinName(data, type);
   if (name && nameEl) {
     nameEl.textContent = name;
-    pinItem.title = name;
+    pinItem.setAttribute("aria-label", name);
+    pinItem.removeAttribute("title");
     rememberPinName(pinItem, name);
   }
   if (!countsEl) return;
@@ -448,9 +449,10 @@ function renderSidebarPins() {
     const name = getStoredPinName(p);
     const counts = getStoredPinCounts(p);
     const countsMarkup = counts ? buildProjectPinCountsFromValues(counts) : "";
+    const accessibleName = name || getPinLabel(p.type);
     return `<div class="pin-item${i === 0 ? " pin-first" : ""}" draggable="true"
        data-id="${p.id}" data-type="${p.type}" data-order="${i}"
-       title="${escapeAttr(name)}">
+       aria-label="${escapeAttr(accessibleName)}">
       <img class="icon icon-pin" src="${getPinIcon(p.type)}" alt="" />
       <span class="pin-item-name">${escapeHtml(name)}</span>
       <span class="pin-item-counts"${counts ? "" : " hidden"}>${countsMarkup}</span>

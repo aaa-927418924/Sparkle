@@ -1750,6 +1750,16 @@ textarea.modal-input {
   overflow-y: auto;
 }
 
+/* The editor surface itself owns the fixed height; keep its wrapper
+   transparent so mode changes cannot expose a second background layer. */
+.note-editor-page .editor-body {
+  height: 420px;
+  min-height: 420px;
+  background: transparent;
+  border-color: transparent;
+  overflow: hidden;
+}
+
 /* Note editor is a fixed work surface: only the editor content itself may
    scroll, never the empty page area around the controls. */
 html.note-editor-document,

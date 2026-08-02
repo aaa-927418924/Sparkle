@@ -1512,7 +1512,10 @@ html[data-theme="dark"] #projectModal #projectModalSave {
 /* Reserve the filter row before JavaScript fills it so the task panel does
    not jump during the first render. */
 .notes-page .topbar {
+  height: 50px;
   min-height: 50px;
+  box-sizing: border-box;
+  flex: 0 0 50px;
   gap: 12px;
   margin-bottom: 28px;
 }
@@ -1524,7 +1527,14 @@ html[data-theme="dark"] #projectModal #projectModalSave {
 /* Keep the first memo frame on the same top edge as the task-list frame. */
 .notes-page .memo-grid {
   box-sizing: border-box;
-  padding-top: 10px;
+  padding-top: 0;
+}
+
+/* The scroll viewport clips a translated card at its top edge. Keep the
+   first row stationary on hover so its frame remains fully visible without
+   adding a permanent gap above the memo grid. */
+.notes-page .memo-card.memo-card-top-row:hover {
+  transform: translateY(0);
 }
 
 /* Projects and Notes share the same top edge for filters and content. */

@@ -1721,9 +1721,9 @@ textarea.modal-input {
 .editor-textarea,
 .editor-preview {
   width: 100%;
-  height: 420px;
-  min-height: 420px;
-  max-height: 420px;
+  height: 480px;
+  min-height: 480px;
+  max-height: 480px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface);
@@ -1753,8 +1753,8 @@ textarea.modal-input {
 /* The editor surface itself owns the fixed height; keep its wrapper
    transparent so mode changes cannot expose a second background layer. */
 .note-editor-page .editor-body {
-  height: 420px;
-  min-height: 420px;
+  height: 480px;
+  min-height: 480px;
   background: transparent;
   border-color: transparent;
   overflow: hidden;

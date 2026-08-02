@@ -1523,7 +1523,8 @@ html[data-theme="dark"] #projectModal #projectModalSave {
 
 /* Keep the first memo frame on the same top edge as the task-list frame. */
 .notes-page .memo-grid {
-  padding-top: 0;
+  box-sizing: border-box;
+  padding-top: 10px;
 }
 
 /* Projects and Notes share the same top edge for filters and content. */

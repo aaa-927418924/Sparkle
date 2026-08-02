@@ -635,7 +635,7 @@ html[data-theme="dark"] .notes-page .task-note {
 
 .notes-page .memo-grid {
   box-sizing: border-box;
-  padding-top: 8px;
+  padding-top: 10px;
 }
 
 .notes-page .memo-card:hover {

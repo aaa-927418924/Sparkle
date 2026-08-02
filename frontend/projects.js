@@ -494,10 +494,23 @@ async function saveProject() {
   if (!name) return;
   const body = { name, description: els.projectDesc.value.trim() || null };
   const editingId = state.editingId;
+  let savedProject = null;
   if (editingId) {
-    await api(`/projects/${editingId}`, { method: "PUT", body: JSON.stringify(body) });
+    savedProject = await api(`/projects/${editingId}`, { method: "PUT", body: JSON.stringify(body) });
   } else {
-    await api("/projects", { method: "POST", body: JSON.stringify(body) });
+    savedProject = await api("/projects", { method: "POST", body: JSON.stringify(body) });
+    if (savedProject?.id && localStorage.getItem("autoCreateNoteOnProject") === "true") {
+      try {
+        await api("/notes", {
+          method: "POST",
+          body: JSON.stringify({ title: name, body: null, project_id: savedProject.id }),
+        });
+      } catch (error) {
+        // The project is already saved; keep creation successful if the
+        // optional companion memo cannot be created.
+        console.warn("Project companion note creation failed", error);
+      }
+    }
   }
   els.projectModal.hidden = true;
   await loadAll();

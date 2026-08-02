@@ -587,6 +587,8 @@ window.addEventListener("storage", (e) => {
 function loadSettingsValues() {
   const acn = document.getElementById("autoCreateNote");
   if (acn) acn.checked = localStorage.getItem("autoCreateNoteOnTask") === "true";
+  const acnp = document.getElementById("autoCreateNoteOnProject");
+  if (acnp) acnp.checked = localStorage.getItem("autoCreateNoteOnProject") === "true";
   const tad = document.getElementById("taskAutoDelete");
   if (tad && !tad.dataset.loaded) {
     tad.dataset.loaded = "1";
@@ -641,6 +643,11 @@ function initSettings() {
   const acn = document.getElementById("autoCreateNote");
   if (acn) acn.addEventListener("change", () => {
     localStorage.setItem("autoCreateNoteOnTask", acn.checked ? "true" : "false");
+  });
+  // autoCreateNoteOnProject
+  const acnp = document.getElementById("autoCreateNoteOnProject");
+  if (acnp) acnp.addEventListener("change", () => {
+    localStorage.setItem("autoCreateNoteOnProject", acnp.checked ? "true" : "false");
   });
   // taskAutoDelete
   const tad = document.getElementById("taskAutoDelete");
@@ -704,10 +711,13 @@ function initSettings() {
     if (!confirmed) return;
     // localStorage settings
     localStorage.setItem("autoCreateNoteOnTask", "false");
+    localStorage.setItem("autoCreateNoteOnProject", "false");
     localStorage.removeItem("hideAutoCheatsheet");
     // UI update
     const acn = document.getElementById("autoCreateNote");
     if (acn) acn.checked = false;
+    const acnp = document.getElementById("autoCreateNoteOnProject");
+    if (acnp) acnp.checked = false;
     // backend settings
     const tad = document.getElementById("taskAutoDelete");
     if (tad) { tad.value = "1w";

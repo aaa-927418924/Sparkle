@@ -1,4 +1,19 @@
 (() => {
+  // The native window disables WebView zoom as well.  This guard keeps the
+  // same behavior in browser previews and prevents Ctrl/Cmd zoom gestures
+  // from changing the workbench scale.
+  document.addEventListener("wheel", (event) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+  }, { capture: true, passive: false });
+
+  document.addEventListener("keydown", (event) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    if (["+", "-", "=", "_", "0"].includes(event.key)) event.preventDefault();
+  }, true);
+})();
+
+(() => {
   // ファイルはホーム画面(index.html)だけで受け付ける。
   // ピンの並べ替えなど、text/plain を使う既存のドラッグ操作は対象外。
   if (document.body?.classList.contains("home-page")) return;

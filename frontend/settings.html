@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle — 設定</title>
     <link rel="stylesheet" href="style.css?v=settings-page-20260802-v2" />
-    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260802-settings-page-v2" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260802-zoom-lock-v1" />
     <script>document.documentElement.setAttribute("data-theme", "dark");</script>
   </head>
   <body class="settings-page">
@@ -83,6 +83,14 @@
               </label>
             </div>
 
+            <div class="settings-col">
+              <h3 class="modal-sub">プロジェクトの設定</h3>
+              <label class="setting-row">
+                <span>プロジェクト作成時に同名の空メモを自動作成する</span>
+                <input type="checkbox" id="autoCreateNoteOnProject" />
+              </label>
+            </div>
+
             <div class="settings-col settings-data-col">
               <h3 class="modal-sub">データ移行</h3>
               <div class="setting-row column">
@@ -113,7 +121,7 @@
       </main>
     </div>
 
-    <script src="pins.js?v=pins-ui-20260802-settings-page-v2"></script>
-    <script src="codex-shell.js?v=codex-shell-20260802-settings-page-v2"></script>
+    <script src="pins.js?v=pins-ui-20260802-project-note-setting-v1"></script>
+    <script src="codex-shell.js?v=codex-shell-20260802-zoom-lock-v1"></script>
   </body>
 </html>

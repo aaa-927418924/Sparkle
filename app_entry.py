@@ -662,7 +662,10 @@ def main() -> None:
             frameless=True,
             easy_drag=False,
             text_select=True,
-            zoomable=True,
+            # Keep the native WebView at its default 100% zoom.  The app has
+            # a fixed workbench layout, so browser zoom would make its sizing
+            # and drag/resize affordances inconsistent.
+            zoomable=False,
             background_color="#202020",
             hidden=("--hidden" in sys.argv[1:] and not migration_required),
             js_api=NativeWindowApi(),

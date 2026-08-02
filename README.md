@@ -212,7 +212,7 @@ tailscale serve --tcp=8000 tcp://127.0.0.1:8000 off
 
 ## AI向けMarkdownエクスポート
 
-設定で「AI向けMarkdownを自動更新」を有効にすると、データベースの変更後に次のフォルダへAIツール向けのMarkdownスナップショットを保存します。
+データベースが変更されると、次のフォルダへAIツール向けのMarkdownスナップショットを自動保存します。自動更新は常に有効です。
 
 `%USERPROFILE%\Documents\Sparkle\ai-export\`
 

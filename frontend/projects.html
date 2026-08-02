@@ -51,12 +51,12 @@
               <button class="cat-btn active" data-done="0">進行中</button>
               <button class="cat-btn" data-done="1">完了済み</button>
             </div>
-            <button id="newProjectBtn" class="fav-only active" type="button">＋ 新規</button>
+            <button id="newProjectBtn" class="fav-only active" type="button">＋ 新規プロジェクト</button>
           </div>
           <div id="projectGrid" class="projects-grid"></div>
           <div id="projectEmpty" class="empty" hidden>
             <p class="empty-msg">プロジェクトがありません</p>
-            <p class="empty-sub">「＋ 新規」ボタンでプロジェクトを作成してください</p>
+            <p class="empty-sub">「＋ 新規プロジェクト」ボタンでプロジェクトを作成してください</p>
           </div>
         </div>
 
@@ -246,10 +246,6 @@
               <span>タスク作成時に同名の空メモを自動作成する</span>
               <input type="checkbox" id="autoCreateNote" />
             </label>
-            <label class="setting-row">
-              <span>最優先タスクをハイライトする</span>
-              <input type="checkbox" id="highlightTopPriority" />
-            </label>
             <label class="setting-row column">
               <span>完了したタスクを自動削除</span>
               <select id="taskAutoDelete" class="setting-select">
@@ -275,10 +271,6 @@
           </div>
 <div class="settings-col settings-ai-col">
           <h3 class="modal-sub">AI向けエクスポート</h3>
-          <label class="setting-row">
-            <span>AI向けMarkdownを自動更新</span>
-            <input type="checkbox" id="aiExportEnabled" aria-describedby="aiExportDesc" />
-          </label>
           <span id="aiExportDesc" class="file-save-desc">保存先のMarkdownをClaudeのFileSystemMCPやOpenCodeなどから読み込めます。</span>
           <div id="aiExportStatus" class="ai-export-status" role="status" aria-live="polite">状態を確認中…</div>
           <div class="settings-data-actions">
@@ -295,7 +287,7 @@
       </div>
     </div>
 
-    <script src="pins.js?v=pins-ui-20260802-no-native-tooltip-v1"></script>
+    <script src="pins.js?v=pins-ui-20260802-settings-always-on-v1"></script>
     <script src="projects.js?v=projects-controls-20260802-page-entry-v2"></script>
     <script src="codex-shell.js?v=codex-shell-20260802-delete-confirm-v1"></script>
   </body>

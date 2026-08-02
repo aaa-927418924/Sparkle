@@ -1,6 +1,5 @@
 const API = window.location.origin;
 const AUTO_KEY = "autoCreateNoteOnTask";
-const HIGHLIGHT_KEY = "highlightTopPriority";
 
 const state = {
   tasks: [],
@@ -188,8 +187,7 @@ function renderTasks() {
     });
   els.taskEmpty.hidden = list.length > 0;
 
-  const highlightOn = localStorage.getItem(HIGHLIGHT_KEY) === "true";
-  const topIds = highlightOn ? topPriorityIds() : new Set();
+  const topIds = topPriorityIds();
 
   els.taskList.innerHTML = list
     .map((t) => {
@@ -580,9 +578,6 @@ els.newNote.addEventListener("click", () => {
 });
 
 // --- 險ｭ螳壹Δ繝ｼ繝繝ｫ ---
-
-// pins.js縺九ｉ逋ｺ陦後＆繧後ｋ繧ｫ繧ｹ繧ｿ繝繧､繝吶Φ繝医〒繧ｿ繧ｹ繧ｯ蜀肴緒逕ｻ
-document.addEventListener("highlightSettingChanged", () => renderTasks());
 
 // サイドバー設定
 document.querySelectorAll(".side-btn").forEach((btn) => {

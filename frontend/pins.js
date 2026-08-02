@@ -587,8 +587,6 @@ window.addEventListener("storage", (e) => {
 function loadSettingsValues() {
   const acn = document.getElementById("autoCreateNote");
   if (acn) acn.checked = localStorage.getItem("autoCreateNoteOnTask") === "true";
-  const htp = document.getElementById("highlightTopPriority");
-  if (htp) htp.checked = localStorage.getItem("highlightTopPriority") === "true";
   const tad = document.getElementById("taskAutoDelete");
   if (tad && !tad.dataset.loaded) {
     tad.dataset.loaded = "1";
@@ -623,23 +621,13 @@ function updateAIExportStatus(data) {
     : "保存先を確認できません。";
   if (!statusEl) return;
   if (data?.last_error) statusEl.textContent = "更新に失敗しました。次回保存時に再試行します。";
-  else if (data?.enabled === false) statusEl.textContent = "自動更新はオフです。";
   else if (data?.last_exported_at) statusEl.textContent = `最終更新: ${data.last_exported_at}`;
   else statusEl.textContent = "まだ生成されていません。";
 }
 
 async function loadAIExportSettings() {
-  const toggle = document.getElementById("aiExportEnabled");
-  if (!toggle) return;
   try {
-    const [settingRes, statusRes] = await Promise.all([
-      fetch(`${API_ROOT}/settings/ai_export_enabled`),
-      fetch(`${API_ROOT}/data/ai-export/status`),
-    ]);
-    if (settingRes.ok) {
-      const setting = await settingRes.json();
-      toggle.checked = setting.value !== "0";
-    }
+    const statusRes = await fetch(`${API_ROOT}/data/ai-export/status`);
     if (statusRes.ok) updateAIExportStatus(await statusRes.json());
   } catch {
     const statusEl = document.getElementById("aiExportStatus");
@@ -652,13 +640,6 @@ function initSettings() {
   const acn = document.getElementById("autoCreateNote");
   if (acn) acn.addEventListener("change", () => {
     localStorage.setItem("autoCreateNoteOnTask", acn.checked ? "true" : "false");
-  });
-  // highlightTopPriority
-  const htp = document.getElementById("highlightTopPriority");
-  if (htp) htp.addEventListener("change", () => {
-    localStorage.setItem("highlightTopPriority", htp.checked ? "true" : "false");
-    // Notify page-specific code to re-render
-    document.dispatchEvent(new Event("highlightSettingChanged"));
   });
   // taskAutoDelete
   const tad = document.getElementById("taskAutoDelete");
@@ -681,26 +662,10 @@ function initSettings() {
     });
     if (typeof updateFileSaveDesc === "function") updateFileSaveDesc(fsm.value);
   });
-// AI-friendly Markdown export
-  const aiToggle = document.getElementById("aiExportEnabled");
+  // AI-friendly Markdown export (always enabled)
   const aiNow = document.getElementById("aiExportNow");
   const aiOpen = document.getElementById("aiExportOpen");
   const aiApi = API_ROOT;
-  if (aiToggle) aiToggle.addEventListener("change", async () => {
-    const next = aiToggle.checked;
-    try {
-      const res = await fetch(`${aiApi}/settings/ai_export_enabled`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: next ? "1" : "0" }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      loadAIExportSettings();
-    } catch {
-      aiToggle.checked = !next;
-      alert("AI向けMarkdownの設定を保存できませんでした。");
-    }
-  });
   if (aiNow) aiNow.addEventListener("click", async () => {
     const original = aiNow.textContent;
     aiNow.disabled = true;
@@ -741,13 +706,10 @@ function initSettings() {
     if (!confirm("設定をすべてデフォルトに戻しますか？\n保存したクリップ、検索履歴は保持されます。")) return;
     // localStorage settings
     localStorage.setItem("autoCreateNoteOnTask", "false");
-    localStorage.setItem("highlightTopPriority", "false");
     localStorage.removeItem("hideAutoCheatsheet");
     // UI update
     const acn = document.getElementById("autoCreateNote");
     if (acn) acn.checked = false;
-    const htp = document.getElementById("highlightTopPriority");
-    if (htp) htp.checked = false;
     // backend settings
     const tad = document.getElementById("taskAutoDelete");
     if (tad) { tad.value = "1w";
@@ -765,15 +727,6 @@ function initSettings() {
       });
       if (typeof updateFileSaveDesc === "function") updateFileSaveDesc("copy");
     }
-const aiToggleReset = document.getElementById("aiExportEnabled");
-    if (aiToggleReset) {
-      aiToggleReset.checked = true;
-      fetch(`${API_ROOT}/settings/ai_export_enabled`, {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: "1" }),
-      }).then(() => loadAIExportSettings()).catch(() => {});
-    }
-    document.dispatchEvent(new Event("highlightSettingChanged"));
   });
   // ZIP backup export / import
   const dbExport = document.getElementById("dbExportBtn");

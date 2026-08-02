@@ -62,18 +62,6 @@ def _open_readonly(db_path: Path) -> sqlite3.Connection:
     return connection
 
 
-def _setting_enabled(connection: sqlite3.Connection) -> bool:
-    try:
-        row = connection.execute(
-            "SELECT value FROM settings WHERE key = 'ai_export_enabled'"
-        ).fetchone()
-    except sqlite3.OperationalError:
-        return True
-    if row is None or row[0] is None:
-        return True
-    return str(row[0]).strip().lower() not in {"0", "false", "off", "no"}
-
-
 def _plain(value: Any) -> str:
     if value is None:
         return ""
@@ -319,12 +307,6 @@ def export_database(
     target_dir = export_dir or get_ai_export_dir()
     with _export_lock:
         with _open_readonly(target_db) as connection:
-            if not force and not _setting_enabled(connection):
-                return {
-                    "enabled": False,
-                    "path": str(target_dir),
-                    "files": list(EXPORT_FILENAMES),
-                }
             connection.execute("BEGIN")
             generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
             snapshot_id = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
@@ -403,11 +385,6 @@ def get_status() -> Dict[str, Any]:
             "files": list(EXPORT_FILENAMES),
         }
     )
-    try:
-        with _open_readonly(_db_path()) as connection:
-            result["enabled"] = _setting_enabled(connection)
-    except Exception as exc:
-        result["last_error"] = str(exc)
     return result
 
 

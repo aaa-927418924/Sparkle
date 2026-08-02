@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 
 from db import get_connection, init_db
-from ai_export import request_export
+from ai_export import clear_exported_files, request_export
 from routers import router
 from maintenance import SETTING_DEFAULTS, run_maintenance
 from paths import get_uploads_dir, get_thumbnails_dir, get_local_files_dir, get_resource_dir
@@ -52,6 +52,7 @@ class InitialSetupPayload(BaseModel):
     task_auto_delete: str = SETTING_DEFAULTS["task_auto_delete"]
     auto_create_note_on_task: bool = False
     auto_create_note_on_project: bool = False
+    ai_export_enabled: bool = True
 
 
 @app.get("/migration/status", include_in_schema=False)
@@ -94,8 +95,15 @@ def setup_complete(payload: InitialSetupPayload):
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             ("task_auto_delete", payload.task_auto_delete),
         )
+        db.execute(
+            "INSERT INTO settings(key, value) VALUES(?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            ("ai_export_enabled", "true" if payload.ai_export_enabled else "false"),
+        )
         db.commit()
 
+    if not payload.ai_export_enabled:
+        clear_exported_files()
     mark_setup_complete(payload.model_dump())
     return {"ok": True, "status": get_setup_status()}
 

@@ -45,6 +45,74 @@ _last_status: Dict[str, Any] = {
 }
 
 
+def _ai_export_enabled() -> bool:
+    """Read the persisted export toggle without creating or changing data."""
+    try:
+        from db import get_connection
+
+        with get_connection() as connection:
+            row = connection.execute(
+                "SELECT value FROM settings WHERE key = ?",
+                ("ai_export_enabled",),
+            ).fetchone()
+    except (OSError, sqlite3.Error):
+        # Keep the historical default when the database is not ready yet.
+        return True
+    if not row:
+        return True
+    return str(row["value"] or "").strip().lower() not in {"false", "0", "off", "disabled", "no"}
+
+
+def _cancel_scheduled_export() -> None:
+    global _pending, _timer
+    with _timer_lock:
+        if _timer is not None:
+            _timer.cancel()
+        _timer = None
+        _pending = False
+
+
+def clear_exported_files() -> Dict[str, Any]:
+    """Remove generated Markdown while preserving the source database."""
+    _cancel_scheduled_export()
+    target_dir = get_ai_export_dir()
+    removed: list[str] = []
+    failed: list[str] = []
+
+    # The directory is app-managed.  Limit deletion to known snapshots and
+    # temporary files created by export_database so unrelated files survive.
+    candidates = [target_dir / filename for filename in EXPORT_FILENAMES]
+    if target_dir.is_dir():
+        candidates.extend(path for path in target_dir.glob(".*.tmp") if path.is_file())
+
+    seen: set[Path] = set()
+    with _export_lock:
+        for path in candidates:
+            if path in seen or not path.is_file():
+                continue
+            seen.add(path)
+            try:
+                path.unlink()
+                removed.append(path.name)
+            except OSError:
+                failed.append(path.name)
+
+    with _timer_lock:
+        _last_status.update(
+            {
+                "last_exported_at": None,
+                "snapshot_id": None,
+                "last_error": None,
+            }
+        )
+    return {
+        "enabled": False,
+        "path": str(target_dir),
+        "removed_files": removed,
+        "failed_files": failed,
+    }
+
+
 def _db_path() -> Path:
     # Import lazily so db.py can call request_export() without a module cycle.
     from db import DB_PATH
@@ -303,9 +371,13 @@ def export_database(
     force: bool = False,
 ) -> Dict[str, Any]:
     """Write one consistent Markdown snapshot and return its status."""
+    if not _ai_export_enabled():
+        return get_status()
     target_db = db_path or _db_path()
     target_dir = export_dir or get_ai_export_dir()
     with _export_lock:
+        if not _ai_export_enabled():
+            return get_status()
         with _open_readonly(target_db) as connection:
             connection.execute("BEGIN")
             generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -336,6 +408,9 @@ def export_database(
 
 def _run_scheduled_export() -> None:
     global _pending, _exporting, _timer
+    if not _ai_export_enabled():
+        _cancel_scheduled_export()
+        return
     with _timer_lock:
         _timer = None
         if _exporting:
@@ -360,6 +435,9 @@ def _run_scheduled_export() -> None:
 
 def request_export(delay: float = EXPORT_DELAY_SECONDS) -> None:
     """Schedule a debounced export after a successful DB commit."""
+    if not _ai_export_enabled():
+        _cancel_scheduled_export()
+        return
     global _pending, _timer
     with _timer_lock:
         _pending = True
@@ -371,16 +449,19 @@ def request_export(delay: float = EXPORT_DELAY_SECONDS) -> None:
 
 
 def export_now() -> Dict[str, Any]:
+    if not _ai_export_enabled():
+        return get_status()
     return export_database(force=True)
 
 
 def get_status() -> Dict[str, Any]:
     target_dir = get_ai_export_dir()
+    enabled = _ai_export_enabled()
     with _timer_lock:
         result = dict(_last_status)
     result.update(
         {
-            "enabled": True,
+            "enabled": enabled,
             "path": str(target_dir),
             "files": list(EXPORT_FILENAMES),
         }
@@ -395,4 +476,4 @@ def open_export_folder() -> Dict[str, Any]:
         os.startfile(str(target_dir))
     elif os.name == "posix":
         subprocess.Popen(["xdg-open", str(target_dir)])
-    return {"ok": True, "path": str(target_dir)}
+    return {"ok": True, "path": str(target_dir), "enabled": _ai_export_enabled()}

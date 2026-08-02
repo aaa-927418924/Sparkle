@@ -6,6 +6,7 @@
   const taskAutoDelete = document.getElementById("setupTaskAutoDelete");
   const autoCreateNoteOnTask = document.getElementById("setupAutoCreateNoteOnTask");
   const autoCreateNoteOnProject = document.getElementById("setupAutoCreateNoteOnProject");
+  const aiExportEnabled = document.getElementById("setupAiExportEnabled");
   const debugNote = document.getElementById("setupDebugNote");
   const status = document.getElementById("setupStatus");
   const completeButton = document.getElementById("setupComplete");
@@ -16,6 +17,7 @@
     task_auto_delete: "1w",
     auto_create_note_on_task: false,
     auto_create_note_on_project: false,
+    ai_export_enabled: true,
   };
 
   function updateFileSaveDescription(value) {
@@ -31,6 +33,7 @@
     taskAutoDelete.value = next.task_auto_delete;
     autoCreateNoteOnTask.checked = Boolean(next.auto_create_note_on_task);
     autoCreateNoteOnProject.checked = Boolean(next.auto_create_note_on_project);
+    aiExportEnabled.checked = Boolean(next.ai_export_enabled);
     updateFileSaveDescription(fileSaveMethod.value);
   }
 
@@ -41,6 +44,7 @@
     taskAutoDelete.disabled = busy;
     autoCreateNoteOnTask.disabled = busy;
     autoCreateNoteOnProject.disabled = busy;
+    aiExportEnabled.disabled = busy;
   }
 
   async function loadStatus() {
@@ -72,6 +76,7 @@
       task_auto_delete: taskAutoDelete.value,
       auto_create_note_on_task: autoCreateNoteOnTask.checked,
       auto_create_note_on_project: autoCreateNoteOnProject.checked,
+      ai_export_enabled: aiExportEnabled.checked,
     };
     try {
       const response = await fetch("/setup/complete", {
@@ -103,6 +108,20 @@
   }
 
   fileSaveMethod.addEventListener("change", () => updateFileSaveDescription(fileSaveMethod.value));
+  aiExportEnabled.addEventListener("change", async () => {
+    if (aiExportEnabled.checked) return;
+    aiExportEnabled.disabled = true;
+    const message = "エクスポートした内容が全て削除されますが、続行しますか？\nデータ自体は保持されます。";
+    const confirmed = typeof window.confirmDeletion === "function"
+      ? await window.confirmDeletion(message, {
+        anchor: aiExportEnabled,
+        title: "AI向けエクスポートを無効にしますか？",
+        confirmLabel: "無効にする",
+      })
+      : window.confirm(message);
+    if (!confirmed) aiExportEnabled.checked = true;
+    aiExportEnabled.disabled = false;
+  });
   completeButton.addEventListener("click", completeSetup);
   exitButton.addEventListener("click", exitSetup);
   loadStatus();

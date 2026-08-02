@@ -6,7 +6,7 @@
     <title>Sparkleの初期設定</title>
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260802-page-entry-v12" />
     <link rel="stylesheet" href="migration.css?v=migration-ui-20260802-v2" />
-    <link rel="stylesheet" href="setup.css?v=setup-ui-20260803-v2" />
+    <link rel="stylesheet" href="setup.css?v=setup-ui-20260803-ai-export-v1" />
   </head>
   <body class="migration-page setup-page">
     <main class="migration-window">
@@ -73,6 +73,12 @@
             <input id="setupAutoCreateNoteOnProject" type="checkbox" />
             <small>プロジェクトの概要をメモとして一緒に管理できます。</small>
           </label>
+
+          <label class="setup-setting setup-checkbox-setting" for="setupAiExportEnabled">
+            <span>AI向けエクスポートを有効にする</span>
+            <input id="setupAiExportEnabled" type="checkbox" checked />
+            <small>無効にすると、エクスポート済みMarkdownを削除します。元データは保持されます。</small>
+          </label>
         </div>
 
         <p id="setupStatus" class="migration-status" role="status" aria-live="polite"></p>
@@ -83,6 +89,6 @@
       </section>
     </main>
     <script src="codex-shell.js?v=codex-shell-20260802-zoom-lock-v1"></script>
-    <script src="setup.js?v=setup-ui-20260803-v1"></script>
+    <script src="setup.js?v=setup-ui-20260803-ai-export-v1"></script>
   </body>
 </html>

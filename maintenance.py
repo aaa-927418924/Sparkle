@@ -16,6 +16,7 @@ THUMBNAILS_DIR = get_thumbnails_dir()
 SETTING_DEFAULTS = {
     "task_auto_delete": "1w",
     "file_save_method": "reference",  # "copy" or "reference"
+    "ai_export_enabled": "true",
 }
 
 # Maps a setting value to the SQLite date modifier used to compute the

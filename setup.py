@@ -24,6 +24,7 @@ SETUP_DEFAULTS: dict[str, Any] = {
     "task_auto_delete": "1w",
     "auto_create_note_on_task": False,
     "auto_create_note_on_project": False,
+    "ai_export_enabled": True,
 }
 
 

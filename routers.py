@@ -24,7 +24,12 @@ from sqlite3 import Connection
 
 from crud import get_or_create_category, get_or_create_tag
 from db import DB_PATH, get_connection, init_db
-from ai_export import export_now, get_status as get_ai_export_status, open_export_folder
+from ai_export import (
+    clear_exported_files,
+    export_now,
+    get_status as get_ai_export_status,
+    open_export_folder,
+)
 from paths import get_local_files_dir, get_uploads_dir
 from ffmpeg_bootstrap import get_ffmpeg_path
 from maintenance import (
@@ -1040,13 +1045,20 @@ def get_setting(key: str, db: Connection = Depends(get_db)):
 
 @router.put("/settings/{key}", response_model=SettingValue)
 def put_setting(key: str, payload: SettingValue, db: Connection = Depends(get_db)):
+    value = payload.value
+    if key == "ai_export_enabled":
+        value = payload.value.strip().lower()
+        if value not in {"true", "false"}:
+            raise HTTPException(status_code=422, detail="AI向けエクスポートの設定値が不正です。")
     db.execute(
         "INSERT INTO settings(key, value) VALUES(?, ?) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        (key, payload.value),
+        (key, value),
     )
     db.commit()
-    return SettingValue(value=payload.value)
+    if key == "ai_export_enabled" and value == "false":
+        clear_exported_files()
+    return SettingValue(value=value)
 
 
 @router.get("/data/ai-export/status")

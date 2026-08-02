@@ -618,16 +618,24 @@ function updateFileSaveDesc(v) {
 function updateAIExportStatus(data) {
   const pathEl = document.getElementById("aiExportDesc");
   const statusEl = document.getElementById("aiExportStatus");
+  const enabledEl = document.getElementById("aiExportEnabled");
+  if (enabledEl && typeof data?.enabled === "boolean") {
+    enabledEl.checked = data.enabled;
+    enabledEl.disabled = false;
+  }
   if (pathEl) pathEl.textContent = data?.path
     ? `保存先: ${data.path}`
     : "保存先を確認できません。";
   if (!statusEl) return;
-  if (data?.last_error) statusEl.textContent = "更新に失敗しました。次回保存時に再試行します。";
+  if (data?.enabled === false) statusEl.textContent = "無効です。Markdownは自動生成されません。";
+  else if (data?.last_error) statusEl.textContent = "更新に失敗しました。次回保存時に再試行します。";
   else if (data?.last_exported_at) statusEl.textContent = `最終更新: ${data.last_exported_at}`;
   else statusEl.textContent = "まだ生成されていません。";
 }
 
 async function loadAIExportSettings() {
+  const enabledEl = document.getElementById("aiExportEnabled");
+  if (enabledEl) enabledEl.disabled = true;
   try {
     const statusRes = await fetch(`${API_ROOT}/data/ai-export/status`);
     if (!statusRes.ok) throw new Error(`HTTP ${statusRes.status}`);
@@ -635,6 +643,7 @@ async function loadAIExportSettings() {
   } catch {
     const statusEl = document.getElementById("aiExportStatus");
     if (statusEl) statusEl.textContent = "状態を確認できません。";
+    if (enabledEl) enabledEl.disabled = false;
   }
 }
 
@@ -670,7 +679,45 @@ function initSettings() {
     });
     if (typeof updateFileSaveDesc === "function") updateFileSaveDesc(fsm.value);
   });
-  // AI-friendly Markdown export (always enabled)
+  // AI-friendly Markdown export
+  const aiEnabled = document.getElementById("aiExportEnabled");
+  if (aiEnabled) aiEnabled.addEventListener("change", async () => {
+    const nextValue = aiEnabled.checked;
+    if (!nextValue) {
+      aiEnabled.disabled = true;
+      const message = "エクスポートした内容が全て削除されますが、続行しますか？\nデータ自体は保持されます。";
+      const confirmed = typeof window.confirmDeletion === "function"
+        ? await window.confirmDeletion(message, {
+          anchor: aiEnabled,
+          title: "AI向けエクスポートを無効にしますか？",
+          confirmLabel: "無効にする",
+        })
+        : window.confirm(message);
+      if (!confirmed) {
+        aiEnabled.checked = true;
+        aiEnabled.disabled = false;
+        return;
+      }
+    } else {
+      aiEnabled.disabled = true;
+    }
+    try {
+      const res = await fetch(`${API_ROOT}/settings/ai_export_enabled`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ value: nextValue ? "true" : "false" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      await loadAIExportSettings();
+    } catch {
+      aiEnabled.checked = !nextValue;
+      const statusEl = document.getElementById("aiExportStatus");
+      if (statusEl) statusEl.textContent = "設定を保存できませんでした。";
+    } finally {
+      aiEnabled.disabled = false;
+    }
+  });
   const aiOpen = document.getElementById("aiExportOpen");
   const aiApi = API_ROOT;
   if (aiOpen) aiOpen.addEventListener("click", async () => {
@@ -718,6 +765,21 @@ function initSettings() {
     if (acn) acn.checked = false;
     const acnp = document.getElementById("autoCreateNoteOnProject");
     if (acnp) acnp.checked = false;
+    const aiEnabled = document.getElementById("aiExportEnabled");
+    if (aiEnabled) {
+      aiEnabled.checked = true;
+      aiEnabled.disabled = true;
+      fetch(`${API_ROOT}/settings/ai_export_enabled`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ value: "true" }),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return loadAIExportSettings();
+      }).catch(() => {
+        aiEnabled.disabled = false;
+      });
+    }
     // backend settings
     const tad = document.getElementById("taskAutoDelete");
     if (tad) { tad.value = "1w";

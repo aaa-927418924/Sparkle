@@ -124,6 +124,8 @@
 
     nextDialog.querySelector(".app-confirm-title").textContent = options.title || "本当に削除しますか？";
     nextDialog.querySelector(".app-confirm-message").textContent = message || "この操作は元に戻せません。";
+    nextDialog.querySelector(".app-confirm-cancel").textContent = options.cancelLabel || "キャンセル";
+    nextDialog.querySelector(".app-confirm-submit").textContent = options.confirmLabel || "削除する";
     nextDialog.hidden = false;
     nextDialog.setAttribute("aria-hidden", "false");
     const request = {
@@ -152,7 +154,12 @@
   window.confirmDeletion = (message, options = {}) => {
     if (options.immediate) return Promise.resolve(true);
     if (typeof window.appConfirm === "function") {
-      return window.appConfirm(message, { anchor: options.anchor, title: options.title });
+      return window.appConfirm(message, {
+        anchor: options.anchor,
+        title: options.title,
+        cancelLabel: options.cancelLabel,
+        confirmLabel: options.confirmLabel,
+      });
     }
     return Promise.resolve(window.confirm(message));
   };

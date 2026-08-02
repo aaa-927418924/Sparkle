@@ -702,8 +702,16 @@ function initSettings() {
   });
   // settings reset button
   const sr = document.getElementById("settingsReset");
-  if (sr) sr.addEventListener("click", () => {
-    if (!confirm("設定をすべてデフォルトに戻しますか？\n保存したクリップ、検索履歴は保持されます。")) return;
+  if (sr) sr.addEventListener("click", async () => {
+    const message = "設定をすべてデフォルトに戻しますか？\n保存したクリップ、検索履歴は保持されます。";
+    const confirmed = typeof window.confirmDeletion === "function"
+      ? await window.confirmDeletion(message, {
+        anchor: sr,
+        title: "設定をリセットしますか？",
+        confirmLabel: "リセットする",
+      })
+      : window.confirm(message);
+    if (!confirmed) return;
     // localStorage settings
     localStorage.setItem("autoCreateNoteOnTask", "false");
     localStorage.removeItem("hideAutoCheatsheet");
@@ -806,9 +814,8 @@ function initSettings() {
 }
 
 window.openSettings = function () {
-  loadSettingsValues();
-  const m = document.getElementById("settingsModal");
-  if (m) m.hidden = false;
+  if (/\/settings\/?$/i.test(window.location.pathname)) return;
+  window.location.href = "/Settings";
 };
 
 async function initPinSettings() {

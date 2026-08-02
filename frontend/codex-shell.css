@@ -1353,7 +1353,8 @@ html:not([data-theme="dark"]) .notes-page {
 
 /* Give the settings form enough room for its labels and descriptions. Keep
    the wider treatment scoped so upload and edit dialogs stay unchanged. */
-#settingsModal .modal-box.wide {
+#settingsModal .modal-box.wide,
+.settings-page-card {
   width: min(1120px, calc(100vw - 48px));
   max-width: calc(100vw - 48px);
 }
@@ -1363,7 +1364,81 @@ html:not([data-theme="dark"]) .notes-page {
 }
 
 @media (max-width: 900px) {
-  #settingsModal .settings-columns {
+  #settingsModal .settings-columns,
+  .settings-page .settings-columns {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+/* Settings is a first-class page, while keeping the same surfaces and density
+   as the Projects and Notes screens. */
+.settings-page .settings-main {
+  padding-top: 22px;
+}
+
+.settings-page-header {
+  max-width: 1120px;
+  margin-bottom: 22px;
+}
+
+.settings-page-kicker {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+}
+
+.settings-page-title {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(24px, 2.4vw, 32px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+.settings-page-description {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.settings-page-card {
+  box-sizing: border-box;
+  padding: 24px 28px 28px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.settings-page-card .settings-columns {
+  gap: 32px;
+}
+
+.settings-page-card .settings-ai-col {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-page-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 900px) {
+  .settings-page-card {
+    width: 100%;
+    max-width: none;
+  }
+
+  .settings-page-card .settings-columns {
     flex-direction: column;
     gap: 8px;
   }

@@ -1759,11 +1759,17 @@ body.note-editor-page .main.editor-main {
   overflow: hidden;
 }
 
-body.note-editor-page .layout,
-body.note-editor-page .main.editor-main {
+body.note-editor-page .layout {
   height: 100vh;
   min-height: 0;
   box-sizing: border-box;
+}
+
+/* Keep the editor's max-width as its content width. The sidebar inset is
+   intentionally outside that width, matching the original editor layout. */
+body.note-editor-page .main.editor-main {
+  height: 100vh;
+  min-height: 0;
 }
 
 /* ノート編集画面はスクロール自体を保ちつつ、スクロールバーだけ隠す。 */

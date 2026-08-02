@@ -1184,3 +1184,70 @@ html[data-theme="dark"] .home-page #uploadModal #uploadSave:focus-visible {
   right: 0;
   transform-origin: top right;
 }
+
+/* Page-level file drop affordance. It stays below the native sidebar and
+   above the page content, while pointer-events remain disabled so the
+   existing document drop handler receives the file. */
+.home-page .page-drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: 24px;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 150ms ease, visibility 0s linear 150ms;
+}
+
+.home-page .page-drop-overlay.is-active {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.home-page .page-drop-frame {
+  width: min(620px, calc(100vw - 48px));
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-sizing: border-box;
+  padding: 28px;
+  border: 2px dashed var(--accent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-raised) 94%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent),
+    0 22px 52px rgba(0, 0, 0, 0.28);
+  color: var(--text);
+  text-align: center;
+}
+
+.home-page .page-drop-icon {
+  color: var(--accent);
+  font-size: 30px;
+  line-height: 1;
+}
+
+.home-page .page-drop-message {
+  font-size: clamp(16px, 1.6vw, 20px);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.home-page .page-drop-hint {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-page .page-drop-overlay {
+    transition: none;
+  }
+}

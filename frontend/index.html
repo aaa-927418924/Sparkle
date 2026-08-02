@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle</title>
     <link rel="stylesheet" href="style.css?v=pins-scroll-20260801-v1" />
-    <link rel="stylesheet" href="home-figma.css?v=home-ui-20260802-controls-v9" />
-    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260802-v14" />
+    <link rel="stylesheet" href="home-figma.css?v=home-ui-20260802-controls-drop-overlay-v1" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260802-file-drop-block-v1" />
     <script>
       document.documentElement.setAttribute("data-theme", "dark");
     </script>
@@ -110,6 +110,21 @@
           <p class="empty-sub">Chrome 拡張機能からクリップを保存してみましょう。</p>
         </div>
       </main>
+    </div>
+
+    <div
+      id="pageDropOverlay"
+      class="page-drop-overlay"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      aria-hidden="true"
+    >
+      <div class="page-drop-frame">
+        <span class="page-drop-icon" aria-hidden="true">↓</span>
+        <strong class="page-drop-message">ここにドロップしてアップロード</strong>
+        <span class="page-drop-hint">ファイルを離すとアップロード画面が開きます</span>
+      </div>
     </div>
 
     <div id="editModal" class="modal" hidden>
@@ -271,7 +286,7 @@
 
     <script src="pins.js?v=pins-ui-20260801-v5"></script>
     <script src="search-history.js"></script>
-    <script src="app.js?v=home-ui-20260802-reference-drop-v1"></script>
-    <script src="codex-shell.js?v=codex-shell-20260801-v7"></script>
+    <script src="app.js?v=home-ui-20260802-bulk-tags-single-drop-overlay-v1"></script>
+    <script src="codex-shell.js?v=codex-shell-20260802-file-drop-block-v1"></script>
   </body>
 </html>

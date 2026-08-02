@@ -1,4 +1,31 @@
 (() => {
+  // ファイルはホーム画面(index.html)だけで受け付ける。
+  // ピンの並べ替えなど、text/plain を使う既存のドラッグ操作は対象外。
+  if (document.body?.classList.contains("home-page")) return;
+
+  function hasFilePayload(event) {
+    const types = Array.from(event.dataTransfer?.types || []);
+    return Boolean(
+      event.dataTransfer?.files?.length ||
+      types.some((type) => String(type).toLowerCase() === "files")
+    );
+  }
+
+  function rejectFileDrop(event) {
+    if (!hasFilePayload(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.type === "dragover" && event.dataTransfer) {
+      event.dataTransfer.dropEffect = "none";
+    }
+  }
+
+  document.addEventListener("dragenter", rejectFileDrop, true);
+  document.addEventListener("dragover", rejectFileDrop, true);
+  document.addEventListener("drop", rejectFileDrop, true);
+})();
+
+(() => {
   const focusableSelector = [
     "button:not([disabled])",
     "[href]",

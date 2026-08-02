@@ -1072,6 +1072,28 @@ const uploadEls = {
   cancel: $("uploadCancel"),
   save: $("uploadSave"),
 };
+const pageDropOverlay = $("pageDropOverlay");
+let pageDragDepth = 0;
+
+function setPageDropVisible(visible) {
+  if (!pageDropOverlay) return;
+  pageDropOverlay.classList.toggle("is-active", visible);
+  pageDropOverlay.setAttribute("aria-hidden", visible ? "false" : "true");
+}
+
+function resetPageDragState() {
+  pageDragDepth = 0;
+  setPageDropVisible(false);
+}
+
+function isFileDragEvent(event) {
+  const types = Array.from(event.dataTransfer?.types || []);
+  return Boolean(
+    event.dataTransfer?.files?.length ||
+    types.some((type) => String(type).toLowerCase() === "files")
+  );
+}
+
 // uploadFiles の各要素: { file: File, tags: string[], category: string, handle: FileSystemFileHandle|null }
 uploadEls.modal.setAttribute("role", "dialog");
 uploadEls.modal.setAttribute("aria-modal", "true");
@@ -1089,6 +1111,7 @@ let uploadCloseTimer = null;
 let uploadReturnFocus = null;
 
 function openUploadModal() {
+  resetPageDragState();
   if (uploadCloseTimer !== null) {
     clearTimeout(uploadCloseTimer);
     uploadCloseTimer = null;
@@ -1112,6 +1135,7 @@ function openUploadModal() {
   });
 }
 function closeUploadModal() {
+  resetPageDragState();
   uploadEls.modal.classList.remove("is-open");
   uploadEls.modal.classList.remove("has-upload-files");
   uploadEls.modal.setAttribute("aria-hidden", "true");
@@ -1186,6 +1210,20 @@ function getDirectReferenceDropFiles(dataTransfer) {
     .filter(Boolean);
 }
 
+function postNativeDroppedFiles(dataTransfer) {
+  const postMessage = window.chrome?.webview?.postMessageWithAdditionalObjects;
+  if (typeof postMessage !== "function" || !dataTransfer?.files?.length) return false;
+
+  try {
+    // pywebviewのDOMリスナーに加えて明示的にも送ることで、
+    // ホーム画面からのdropでもパス通知の順序を安定させる。
+    postMessage.call(window.chrome.webview, "FilesDropped", dataTransfer.files);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 async function getReferenceDropFiles(event) {
   const nativeApi = window.pywebview?.api;
   if (
@@ -1194,6 +1232,8 @@ async function getReferenceDropFiles(event) {
     typeof nativeApi.read_dropped_files === "function"
   ) {
     try {
+      await nativeApi.clear_dropped_files();
+      postNativeDroppedFiles(event?.dataTransfer);
       const entries = await nativeApi.read_dropped_files();
       if (Array.isArray(entries) && entries.length) return entries;
     } catch (e) {
@@ -1233,19 +1273,35 @@ let dragModalActive = false;
 document.addEventListener("dragenter", (e) => {
   if (dragModalActive) return;
   e.preventDefault();
-  clearNativeDroppedFiles();
+  if (!isFileDragEvent(e)) return;
+  if (pageDragDepth === 0) clearNativeDroppedFiles();
+  pageDragDepth += 1;
+  setPageDropVisible(true);
 });
 document.addEventListener("dragover", (e) => {
   if (dragModalActive) return;
   e.preventDefault();
+  if (!isFileDragEvent(e)) return;
+  setPageDropVisible(true);
+});
+document.addEventListener("dragleave", (e) => {
+  if (dragModalActive) return;
+  if (!isFileDragEvent(e)) return;
+  e.preventDefault();
+  pageDragDepth = Math.max(0, pageDragDepth - 1);
+  if (pageDragDepth === 0) setPageDropVisible(false);
 });
 document.addEventListener("drop", async (e) => {
   if (dragModalActive) return;
   e.preventDefault();
+  const hasFiles = Boolean(e.dataTransfer?.files?.length);
+  resetPageDragState();
+  if (!hasFiles) return;
   if (e.dataTransfer?.files?.length) {
     if (els.fileSaveMethod.value === "reference") {
+      const entriesPromise = getReferenceDropFiles(e);
       openUploadModal();
-      const entries = await getReferenceDropFiles(e);
+      const entries = await entriesPromise;
       if (entries.length) addReferenceFiles(entries);
       else await appendReferenceFilesFromDialog();
       return;
@@ -1256,12 +1312,15 @@ document.addEventListener("drop", async (e) => {
     addUploadFiles(dropped);
   }
 });
+document.addEventListener("dragend", resetPageDragState);
+window.addEventListener("blur", resetPageDragState);
 
 // モーダル表示中のドラッグイベントは document 側に伝播させない。
 // (伝播すると document 側の drop ハンドラも同じイベントを処理してしまい、
 //  uploadFiles が openUploadModal() でもう一度リセットされていたのが原因)
 uploadEls.modal.addEventListener("dragenter", (e) => {
   dragModalActive = true;
+  resetPageDragState();
   clearNativeDroppedFiles();
   e.stopPropagation();
 });
@@ -1355,7 +1414,7 @@ uploadEls.bulkCategory.addEventListener("input", () => {
 });
 
 function renderUploadList() {
-  uploadEls.bulkWrap.hidden = uploadFiles.length < 2;
+  uploadEls.bulkWrap.hidden = uploadFiles.length === 0;
   uploadEls.modal.classList.toggle("has-upload-files", uploadFiles.length > 0);
   const catList = state.categories.map((c) => `<option value="${escapeHtml(c.name)}">`).join("");
   const dl = $("uploadCategoryList");

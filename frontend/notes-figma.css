@@ -416,6 +416,45 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
   color: var(--notes-text);
 }
 
+.notes-page .memo-card-actions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.notes-page .memo-card:hover .memo-card-actions,
+.notes-page .memo-card:focus-within .memo-card-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.notes-page .memo-card-actions .act-btn {
+  position: static;
+  width: 34px;
+  height: 34px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  opacity: 1;
+}
+
+.notes-page .memo-card-actions .act-btn:hover,
+.notes-page .memo-card-actions .act-btn:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
 .notes-page .empty {
   height: 100%;
   color: var(--notes-muted);
@@ -595,7 +634,8 @@ html[data-theme="dark"] .notes-page .task-note {
 }
 
 .notes-page .memo-grid {
-  padding-top: 5px;
+  box-sizing: border-box;
+  padding-top: 8px;
 }
 
 .notes-page .memo-card:hover {

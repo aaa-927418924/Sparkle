@@ -492,6 +492,25 @@ async function saveLinkModal() {
   }
 }
 
+async function deleteNote(id, options = {}) {
+  const note = state.notes.find((item) => item.id === id);
+  if (!note) return;
+  const label = note.title || "無題のメモ";
+  if (!(await window.confirmDeletion(`「${label}」を削除します。`, options))) return;
+  try {
+    await api(`/notes/${id}`, { method: "DELETE" });
+    state.selected.delete(id);
+    state.notes = state.notes.filter((item) => item.id !== id);
+    renderTasks();
+    renderNotes();
+    updateBatchBar();
+    await window.refreshAllPinned?.("note");
+    await window.refreshAllPinnedProjects?.();
+  } catch {
+    alert("メモを削除できませんでした。もう一度お試しください。");
+  }
+}
+
 els.linkSearch.addEventListener("input", (e) => renderLinkList(e.target.value));
 els.linkCancel.addEventListener("click", closeLinkModal);
 els.linkSave.addEventListener("click", saveLinkModal);
@@ -521,7 +540,10 @@ function renderNotes() {
       const entryStyle = animateInitial ? ` style="--page-enter-index:${index}"` : "";
       return `
         <article class="memo-card${selected}${entryClass}"${entryStyle} data-id="${n.id}">
-          <button class="pin-btn${pinned ? ' on' : ''}" data-pin="${n.id}" data-pin-type="note" title="ピン止め"><img class="icon icon-btn" src="icons/pin.svg" alt="" /></button>
+          <div class="memo-card-actions" aria-label="メモ操作">
+            <button class="act-btn pin-btn${pinned ? ' on' : ''}" data-pin="${n.id}" data-pin-type="note" title="${pinned ? "ピン止めを解除" : "ピン止め"}" aria-label="${pinned ? "ピン止めを解除" : "ピン止め"}"><img class="icon icon-btn" src="icons/pin.svg" alt="" /></button>
+            <button class="act-btn memo-del-btn" data-del="${n.id}" title="削除" aria-label="削除"><img class="icon icon-btn" src="icons/trash.svg" alt="" /></button>
+          </div>
           ${clips ? `<div class="memo-clips">${clips}</div>` : ""}
           <h3 class="memo-title">${escapeHtml(n.title)}</h3>
           ${taskBadge}
@@ -549,6 +571,15 @@ function renderNotes() {
       e.stopPropagation();
       const url = el.dataset.url;
       if (url) window.open(url, "_blank", "noopener");
+    });
+  });
+  els.memoGrid.querySelectorAll(".memo-del-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteNote(Number(btn.dataset.del), {
+        anchor: btn.closest(".memo-card"),
+        immediate: e.shiftKey,
+      });
     });
   });
   els.memoGrid.querySelectorAll("[data-pin]").forEach((btn) => {

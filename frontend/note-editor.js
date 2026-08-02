@@ -19,7 +19,6 @@ const els = {
   bodyPreview: $("noteBodyPreview"),
   modeEdit: $("modeEdit"),
   modeView: $("modeView"),
-  noteDelete: $("noteDelete"),
   backLink: $("backLink"),
 };
 
@@ -268,23 +267,6 @@ document.addEventListener("keydown", (e) => {
   if (e.ctrlKey && (e.key === "e" || e.key === "E")) {
     e.preventDefault();
     setMode(state.mode === "edit" ? "view" : "edit");
-  }
-});
-
-// --- 関連タスク ---
-// --- 保存 / 削除 ---
-els.noteDelete.addEventListener("click", async (event) => {
-  if (state.noteId == null) return;
-  if (!(await window.confirmDeletion("このメモを削除します。", {
-    anchor: event.currentTarget,
-    immediate: event.shiftKey,
-  }))) return;
-  try {
-    await api(`/notes/${state.noteId}`, { method: "DELETE" });
-    clearNoteDraft();
-    location.href = "/Notes";
-  } catch (e) {
-    alert("削除に失敗しました。");
   }
 });
 

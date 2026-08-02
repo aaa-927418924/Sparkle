@@ -79,6 +79,21 @@
                 <div class="sort-option" data-value="random">ランダム</div>
               </div>
             </div>
+            <script>
+              (() => {
+                const labels = {
+                  date_desc: "最近追加した順",
+                  title: "アルファベット順（タイトル）",
+                  recent_opened: "最近開いた順",
+                  random: "ランダム",
+                };
+                try {
+                  const saved = localStorage.getItem("clipSortMode");
+                  const label = document.querySelector("#sortSelect .sort-label");
+                  if (label && labels[saved]) label.textContent = labels[saved];
+                } catch {}
+              })();
+            </script>
           </div>
 
           <div class="heading-row">
@@ -284,7 +299,7 @@
       </defs>
     </svg>
 
-    <script src="pins.js?v=pins-ui-20260802-name-stability-v1"></script>
+    <script src="pins.js?v=pins-ui-20260802-name-stability-v2"></script>
     <script src="search-history.js"></script>
     <script src="app.js?v=home-ui-20260802-page-entry-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260802-delete-confirm-v1"></script>

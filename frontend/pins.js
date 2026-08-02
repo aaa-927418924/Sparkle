@@ -81,22 +81,62 @@ function getStoredPinName(pin) {
   return typeof pin?.name === "string" ? pin.name.trim() : "";
 }
 
-function rememberPinName(pinItem, name) {
-  if (!pinItem || !name) return;
-  const id = Number(pinItem.dataset.id);
-  const type = pinItem.dataset.type;
+function rememberPinMetadata(id, type, { name = "", counts = null } = {}) {
+  if (!Number.isInteger(Number(id)) || !type) return;
   const pins = getPins();
-  const pin = pins.find((item) => Number(item.id) === id && item.type === type);
-  if (!pin || pin.name === name) return;
-  pin.name = name;
+  const pin = pins.find((item) => Number(item.id) === Number(id) && item.type === type);
+  if (!pin) return;
+  let changed = false;
+  if (name && pin.name !== name) {
+    pin.name = name;
+    changed = true;
+  }
+  if (counts && (
+    pin.counts?.clips !== counts.clips ||
+    pin.counts?.tasks !== counts.tasks ||
+    pin.counts?.notes !== counts.notes
+  )) {
+    pin.counts = { clips: counts.clips, tasks: counts.tasks, notes: counts.notes };
+    changed = true;
+  }
+  if (!changed) return;
   savePins(pins);
 }
 
-function buildProjectPinCounts(data) {
+function rememberPinName(pinItem, name) {
+  if (!pinItem || !name) return;
+  rememberPinMetadata(Number(pinItem.dataset.id), pinItem.dataset.type, { name });
+}
+
+function rememberPinCounts(pinItem, counts) {
+  if (!pinItem || !counts) return;
+  rememberPinMetadata(Number(pinItem.dataset.id), pinItem.dataset.type, { counts });
+}
+
+function getProjectPinCountValues(data) {
+  return {
+    clips: Array.isArray(data?._clips) ? data._clips.length : 0,
+    tasks: Array.isArray(data?._tasks) ? data._tasks.length : 0,
+    notes: Array.isArray(data?._notes) ? data._notes.length : 0,
+  };
+}
+
+function getStoredPinCounts(pin) {
+  if (pin?.type !== "project" || !pin.counts) return null;
+  const counts = {
+    clips: Number(pin.counts.clips),
+    tasks: Number(pin.counts.tasks),
+    notes: Number(pin.counts.notes),
+  };
+  if (Object.values(counts).every((value) => Number.isInteger(value) && value >= 0)) return counts;
+  return null;
+}
+
+function buildProjectPinCountsFromValues(values) {
   const counts = [
-    { icon: "icons/clip.svg", label: "クリップ", value: (data._clips || []).length },
-    { icon: "icons/checkbox.svg", label: "タスク", value: (data._tasks || []).length },
-    { icon: "icons/clipboard.svg", label: "メモ", value: (data._notes || []).length },
+    { icon: "icons/clip.svg", label: "クリップ", value: values.clips },
+    { icon: "icons/checkbox.svg", label: "タスク", value: values.tasks },
+    { icon: "icons/clipboard.svg", label: "メモ", value: values.notes },
   ];
   return counts.map((item) => {
     const label = `${item.label} ${item.value}件`;
@@ -104,6 +144,10 @@ function buildProjectPinCounts(data) {
       <img class="icon icon-inline icon-pin-count" src="${item.icon}" alt="" />${item.value}
     </span>`;
   }).join("");
+}
+
+function buildProjectPinCounts(data) {
+  return buildProjectPinCountsFromValues(getProjectPinCountValues(data));
 }
 
 function applyPinData(pinItem, data, type) {
@@ -117,8 +161,10 @@ function applyPinData(pinItem, data, type) {
   }
   if (!countsEl) return;
   if (type === "project" && data) {
-    countsEl.innerHTML = buildProjectPinCounts(data);
+    const countValues = getProjectPinCountValues(data);
+    countsEl.innerHTML = buildProjectPinCountsFromValues(countValues);
     countsEl.hidden = false;
+    rememberPinCounts(pinItem, countValues);
   } else {
     countsEl.replaceChildren();
     countsEl.hidden = true;
@@ -311,6 +357,16 @@ async function openPinClip(id) {
   }
 }
 
+async function primeMissingPinMetadata(pins) {
+  await Promise.all(pins.map(async (pin) => {
+    const data = await fetchPinData(Number(pin.id), pin.type);
+    if (!data) return;
+    const name = getPinName(data, pin.type);
+    const counts = pin.type === "project" ? getProjectPinCountValues(data) : null;
+    rememberPinMetadata(Number(pin.id), pin.type, { name, counts });
+  }));
+}
+
 function renderSidebarPins() {
   hideTooltip();
   const sidebar = document.querySelector(".sidebar");
@@ -330,15 +386,18 @@ function renderSidebarPins() {
     return;
   }
   section.style.display = "";
-  section.innerHTML = pins.map((p, i) =>
-    `<div class="pin-item${i === 0 ? " pin-first" : ""}" draggable="true"
+  section.innerHTML = pins.map((p, i) => {
+    const name = getStoredPinName(p);
+    const counts = getStoredPinCounts(p);
+    const countsMarkup = counts ? buildProjectPinCountsFromValues(counts) : "";
+    return `<div class="pin-item${i === 0 ? " pin-first" : ""}" draggable="true"
        data-id="${p.id}" data-type="${p.type}" data-order="${i}"
-       title="${escapeAttr(getStoredPinName(p))}">
+       title="${escapeAttr(name)}">
       <img class="icon icon-pin" src="${getPinIcon(p.type)}" alt="" />
-      <span class="pin-item-name">${escapeHtml(getStoredPinName(p))}</span>
-      <span class="pin-item-counts" hidden></span>
-    </div>`
-  ).join("");
+      <span class="pin-item-name">${escapeHtml(name)}</span>
+      <span class="pin-item-counts"${counts ? "" : " hidden"}>${countsMarkup}</span>
+    </div>`;
+  }).join("");
   // Attach events
   let dragJustStarted = false;
   section.querySelectorAll(".pin-item").forEach((el) => {
@@ -739,7 +798,12 @@ window.openSettings = function () {
   if (m) m.hidden = false;
 };
 
-function initPinSettings() {
+async function initPinSettings() {
+  const pins = getPins();
+  const missingMetadata = pins.filter((pin) =>
+    !getStoredPinName(pin) || (pin.type === "project" && !getStoredPinCounts(pin))
+  );
+  if (missingMetadata.length) await primeMissingPinMetadata(missingMetadata);
   renderSidebarPins();
   initSettings();
 }

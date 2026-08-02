@@ -354,6 +354,11 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   will-change: opacity, transform;
 }
 
+/* Clips are denser than the other preview lists, so reveal them with a shorter stagger. */
+.home-page .page-enter-card {
+  animation-delay: calc(var(--page-enter-index, 0) * 12ms);
+}
+
 .home-page .search-liquid,
 .home-page #favOnly,
 .home-page #addLocalBtn,

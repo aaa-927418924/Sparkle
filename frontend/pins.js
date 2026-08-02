@@ -77,6 +77,21 @@ function getPinName(data, type) {
   return typeof name === "string" ? name.trim() : "";
 }
 
+function getStoredPinName(pin) {
+  return typeof pin?.name === "string" ? pin.name.trim() : "";
+}
+
+function rememberPinName(pinItem, name) {
+  if (!pinItem || !name) return;
+  const id = Number(pinItem.dataset.id);
+  const type = pinItem.dataset.type;
+  const pins = getPins();
+  const pin = pins.find((item) => Number(item.id) === id && item.type === type);
+  if (!pin || pin.name === name) return;
+  pin.name = name;
+  savePins(pins);
+}
+
 function buildProjectPinCounts(data) {
   const counts = [
     { icon: "icons/clip.svg", label: "クリップ", value: (data._clips || []).length },
@@ -98,6 +113,7 @@ function applyPinData(pinItem, data, type) {
   if (name && nameEl) {
     nameEl.textContent = name;
     pinItem.title = name;
+    rememberPinName(pinItem, name);
   }
   if (!countsEl) return;
   if (type === "project" && data) {
@@ -317,9 +333,9 @@ function renderSidebarPins() {
   section.innerHTML = pins.map((p, i) =>
     `<div class="pin-item${i === 0 ? " pin-first" : ""}" draggable="true"
        data-id="${p.id}" data-type="${p.type}" data-order="${i}"
-       title="${getPinLabel(p.type)} #${p.id}">
-      <img class="icon icon-pin" src="${getPinIcon(p.type)}" alt="${getPinLabel(p.type)}" />
-      <span class="pin-item-name">${getPinLabel(p.type)}</span>
+       title="${escapeAttr(getStoredPinName(p))}">
+      <img class="icon icon-pin" src="${getPinIcon(p.type)}" alt="" />
+      <span class="pin-item-name">${escapeHtml(getStoredPinName(p))}</span>
       <span class="pin-item-counts" hidden></span>
     </div>`
   ).join("");

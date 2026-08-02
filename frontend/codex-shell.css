@@ -354,9 +354,10 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   will-change: opacity, transform;
 }
 
-/* Clips are denser than the other preview lists, so reveal them with a shorter stagger. */
+/* Temporarily disable the home clip entrance animation for comparison. */
 .home-page .page-enter-card {
-  animation-delay: calc(var(--page-enter-index, 0) * 4ms);
+  animation: none;
+  will-change: auto;
 }
 
 .home-page .search-liquid,
@@ -369,6 +370,12 @@ html:not([data-theme="dark"]) .home-page .card-ph {
 .projects-page #newProjectBtn,
 .notes-page .status-tabs,
 .notes-page #newNote {
+  animation: none;
+}
+
+/* Override the more specific page button rules that add the legacy fade-in. */
+.projects-page #newProjectBtn.fav-only.active,
+.notes-page #newNote.fav-only.active {
   animation: none;
 }
 

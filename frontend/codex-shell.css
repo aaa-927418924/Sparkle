@@ -1293,13 +1293,16 @@ html:not([data-theme="dark"]) .notes-page {
 }
 
 .notes-page #newNote.fav-only.active {
-  height: 40px;
+  height: 34px;
   min-height: 40px;
   box-sizing: border-box;
+  padding: 0 14px;
   border-color: var(--border);
   border-radius: 999px;
   background: var(--surface);
   color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .notes-page #newNote.fav-only.active:hover {
@@ -1329,7 +1332,7 @@ html:not([data-theme="dark"]) .notes-page {
   height: 40px;
   min-height: 40px;
   box-sizing: border-box;
-  padding: 0 14px;
+  padding: 6px 14px 8px;
   border: 1px solid var(--border);
   border-radius: 11px;
   color: var(--muted);

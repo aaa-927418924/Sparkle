@@ -552,7 +552,6 @@ function renderNotes() {
         </article>`;
     })
     .join("");
-  markMemoTopRow();
   if (animateInitial) {
     bindPageEntryAnimation(els.memoGrid);
     notesHaveRendered = true;
@@ -596,20 +595,6 @@ function renderNotes() {
     });
   });
 }
-
-function markMemoTopRow() {
-  const cards = [...els.memoGrid.querySelectorAll(".memo-card")];
-  cards.forEach((card) => card.classList.remove("memo-card-top-row"));
-  if (!cards.length) return;
-  const firstRowTop = Math.min(...cards.map((card) => card.offsetTop));
-  cards
-    .filter((card) => card.offsetTop === firstRowTop)
-    .forEach((card) => card.classList.add("memo-card-top-row"));
-}
-
-window.addEventListener("resize", () => {
-  requestAnimationFrame(markMemoTopRow);
-});
 
 function bindPageEntryAnimation(container) {
   container.querySelectorAll(".page-enter-card").forEach((card) => {

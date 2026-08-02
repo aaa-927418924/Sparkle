@@ -1530,11 +1530,24 @@ html[data-theme="dark"] #projectModal #projectModalSave {
   padding-top: 0;
 }
 
-/* The scroll viewport clips a translated card at its top edge. Keep the
-   first row stationary on hover so its frame remains fully visible without
-   adding a permanent gap above the memo grid. */
-.notes-page .memo-card.memo-card-top-row:hover {
-  transform: translateY(0);
+/* Notes memo hover is intentionally static: no lift, fade, or button scale. */
+.notes-page .memo-card,
+.notes-page .memo-card:hover {
+  transition: none;
+  transform: none;
+}
+
+.notes-page .memo-card .memo-card-actions,
+.notes-page .memo-card .memo-card-actions .act-btn,
+.notes-page .memo-card .memo-card-actions .act-btn:hover,
+.notes-page .memo-card .memo-card-actions .act-btn:focus-visible,
+.notes-page .memo-card .pin-btn {
+  transition: none;
+}
+
+.notes-page .memo-card .memo-card-actions .act-btn:hover,
+.notes-page .memo-card .memo-card-actions .act-btn:focus-visible {
+  transform: none;
 }
 
 /* Projects and Notes share the same top edge for filters and content. */

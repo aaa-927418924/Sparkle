@@ -374,11 +374,11 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
   color: var(--notes-text);
   box-shadow: none;
   overflow: hidden;
-  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  transition: none;
 }
 
 .notes-page .memo-card:hover {
-  transform: translateY(-2px);
+  transform: none;
   background: color-mix(in srgb, var(--notes-text) 5%, transparent);
   box-shadow: none;
 }
@@ -639,7 +639,7 @@ html[data-theme="dark"] .notes-page .task-note {
 }
 
 .notes-page .memo-card:hover {
-  transform: translateY(-1px);
+  transform: none;
 }
  
 /* Link-note dialog: match the task edit dialog surface and spacing. */

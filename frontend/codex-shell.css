@@ -1393,6 +1393,11 @@ html[data-theme="dark"] #projectModal #projectModalSave {
   padding-top: 0;
 }
 
+/* Projects and Notes share the same top edge for filters and content. */
+.projects-page .main {
+  padding-top: 22px;
+}
+
 /* Notes has a page-specific modal palette; keep the settings dialog identical
    to the shared settings dialog used on the other screens. */
 .notes-page #settingsModal .modal-box {

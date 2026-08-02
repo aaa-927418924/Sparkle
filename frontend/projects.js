@@ -174,7 +174,7 @@ function renderProjectList() {
   els.projectGrid.querySelectorAll(".project-card").forEach((card) => {
     card.addEventListener("click", (e) => {
       if (e.target.closest(".proj-edit-btn") || e.target.closest(".proj-del-btn") || e.target.closest(".proj-done-cb")) return;
-      if (e.ctrlKey || e.metaKey) {
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
         toggleSelection(Number(card.dataset.id));
         return;
       }
@@ -862,6 +862,7 @@ let rubberBandActive = false;
 let rubberBandStartX = 0;
 let rubberBandStartY = 0;
 let rubberBandEl = null;
+let rubberBandAdditive = false;
 
 function rectsOverlap(a, b) {
   return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
@@ -924,6 +925,7 @@ projMainEl.addEventListener("mousedown", (e) => {
   cancelRubberBand();
   if (e.target.closest(".project-card") || e.target.closest("button") || e.target.closest("select") || e.target.closest("input") || e.target.closest("a")) return;
   state.dragOccurred = false;
+  rubberBandAdditive = e.shiftKey || e.ctrlKey || e.metaKey;
   rubberBandActive = true;
   rubberBandStartX = e.clientX + window.scrollX;
   rubberBandStartY = e.clientY + window.scrollY;
@@ -956,14 +958,15 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("mouseup", (e) => {
   if (rubberBandActive && rubberBandEl) {
     const bandRect = rubberBandEl.getBoundingClientRect();
+    const preserveSelection = rubberBandAdditive || e.shiftKey || e.ctrlKey || e.metaKey;
     cancelRubberBand();
     if (!state.dragOccurred) {
       if (!e.target.closest(".project-card") && !e.target.closest("button") && !e.target.closest("select") && !e.target.closest("input") && !e.target.closest("a")) {
-        if (state.selectedIds.size > 0) clearSelection();
+        if (state.selectedIds.size > 0 && !preserveSelection) clearSelection();
       }
       return;
     }
-    if (!(e.ctrlKey || e.metaKey)) clearSelection();
+    if (!preserveSelection) clearSelection();
     els.projectGrid.querySelectorAll(".project-card").forEach((card) => {
       const cardRect = card.getBoundingClientRect();
       if (rectsOverlap(bandRect, cardRect)) {

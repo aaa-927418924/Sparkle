@@ -259,7 +259,10 @@ function renderTasks() {
   els.taskList.querySelectorAll("[data-del]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      deleteTask(Number(btn.dataset.del));
+      deleteTask(Number(btn.dataset.del), {
+        anchor: btn.closest(".task-item"),
+        immediate: e.shiftKey,
+      });
     });
   });
   els.taskList.querySelectorAll("[data-link]").forEach((btn) => {
@@ -286,8 +289,8 @@ async function toggleTask(id, cb) {
   }
 }
 
-async function deleteTask(id) {
-  if (!confirm("このタスクを削除しますか？")) return;
+async function deleteTask(id, options = {}) {
+  if (!(await window.confirmDeletion("このタスクを削除します。", options))) return;
   try {
     await api(`/tasks/${id}`, { method: "DELETE" });
     state.tasks = state.tasks.filter((t) => t.id !== id);
@@ -609,10 +612,13 @@ function updateBatchBar() {
   if (n > 0) els.batchCount.textContent = `${n}件を選択`;
 }
 
-async function batchDeleteSelected() {
+async function batchDeleteSelected(event) {
   const items = [...state.selected];
   if (!items.length) return;
-  if (!confirm(`${items.length}件を削除しますか？`)) return;
+  if (!(await window.confirmDeletion(`${items.length}件を削除します。`, {
+    anchor: els.batchDelBtn,
+    immediate: Boolean(event?.shiftKey),
+  }))) return;
   clearSelection();
   let ok = 0, fail = 0;
   for (const [id, type] of items) {

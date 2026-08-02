@@ -269,9 +269,12 @@ document.addEventListener("keydown", (e) => {
 
 // --- 関連タスク ---
 // --- 保存 / 削除 ---
-els.noteDelete.addEventListener("click", async () => {
+els.noteDelete.addEventListener("click", async (event) => {
   if (state.noteId == null) return;
-  if (!confirm("このメモを削除しますか？")) return;
+  if (!(await window.confirmDeletion("このメモを削除します。", {
+    anchor: event.currentTarget,
+    immediate: event.shiftKey,
+  }))) return;
   try {
     await api(`/notes/${state.noteId}`, { method: "DELETE" });
     clearNoteDraft();

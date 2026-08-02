@@ -26,6 +26,139 @@
 })();
 
 (() => {
+  let dialog = null;
+  let activeRequest = null;
+  let hideTimer = null;
+
+  function ensureDialog() {
+    if (dialog) return dialog;
+
+    dialog = document.createElement("div");
+    dialog.className = "app-confirm-popover";
+    dialog.hidden = true;
+    dialog.tabIndex = -1;
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-labelledby", "appConfirmTitle");
+    dialog.setAttribute("aria-describedby", "appConfirmMessage");
+    dialog.setAttribute("aria-hidden", "true");
+    dialog.innerHTML = `
+      <div class="app-confirm-card">
+        <div class="app-confirm-mark" aria-hidden="true">!</div>
+        <div class="app-confirm-copy">
+          <h2 id="appConfirmTitle" class="app-confirm-title">本当に削除しますか？</h2>
+          <p id="appConfirmMessage" class="app-confirm-message"></p>
+        </div>
+        <div class="app-confirm-actions">
+          <button class="app-confirm-btn app-confirm-cancel" type="button" data-confirm-cancel>キャンセル</button>
+          <button class="app-confirm-btn app-confirm-submit" type="button" data-confirm-submit>削除する</button>
+        </div>
+      </div>`;
+
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) finish(false);
+    });
+    dialog.querySelector("[data-confirm-cancel]").addEventListener("click", () => finish(false));
+    dialog.querySelector("[data-confirm-submit]").addEventListener("click", () => finish(true));
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      finish(false);
+    });
+    document.body.appendChild(dialog);
+    return dialog;
+  }
+
+  function position(request) {
+    if (!dialog || dialog.hidden) return;
+
+    const margin = 12;
+    const gap = 10;
+    const anchor = request.anchor && typeof request.anchor.getBoundingClientRect === "function"
+      ? request.anchor
+      : null;
+    const anchorRect = anchor?.isConnected ? anchor.getBoundingClientRect() : null;
+    const rect = dialog.getBoundingClientRect();
+    const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
+    let left = anchorRect
+      ? anchorRect.left + (anchorRect.width - rect.width) / 2
+      : (window.innerWidth - rect.width) / 2;
+    let top = anchorRect ? anchorRect.top - rect.height - gap : (window.innerHeight - rect.height) / 2;
+    let placement = "above";
+
+    if (anchorRect && top < margin) {
+      top = anchorRect.bottom + gap;
+      placement = "below";
+    }
+
+    left = Math.min(Math.max(left, margin), maxLeft);
+    top = Math.min(Math.max(top, margin), Math.max(margin, window.innerHeight - rect.height - margin));
+    dialog.style.left = `${Math.round(left)}px`;
+    dialog.style.top = `${Math.round(top)}px`;
+    dialog.dataset.placement = placement;
+  }
+
+  function finish(result) {
+    if (!activeRequest || !dialog) return;
+    const request = activeRequest;
+    activeRequest = null;
+    window.removeEventListener("resize", request.reposition);
+    window.removeEventListener("scroll", request.reposition, true);
+    clearTimeout(hideTimer);
+    dialog.classList.remove("is-open");
+    dialog.setAttribute("aria-hidden", "true");
+    hideTimer = window.setTimeout(() => {
+      if (!activeRequest) dialog.hidden = true;
+    }, 160);
+    if (!result && request.returnFocus?.isConnected) {
+      request.returnFocus.focus({ preventScroll: true });
+    }
+    request.resolve(result);
+  }
+
+  window.appConfirm = (message, options = {}) => {
+    if (!document.body) return Promise.resolve(window.confirm(message));
+    const nextDialog = ensureDialog();
+    if (activeRequest) finish(false);
+    clearTimeout(hideTimer);
+
+    nextDialog.querySelector(".app-confirm-title").textContent = options.title || "本当に削除しますか？";
+    nextDialog.querySelector(".app-confirm-message").textContent = message || "この操作は元に戻せません。";
+    nextDialog.hidden = false;
+    nextDialog.setAttribute("aria-hidden", "false");
+    const request = {
+      anchor: options.anchor,
+      returnFocus: document.activeElement,
+      reposition: null,
+      resolve: null,
+    };
+    request.reposition = () => position(request);
+
+    const promise = new Promise((resolve) => {
+      request.resolve = resolve;
+      activeRequest = request;
+    });
+    position(request);
+    window.addEventListener("resize", request.reposition);
+    window.addEventListener("scroll", request.reposition, true);
+    requestAnimationFrame(() => {
+      if (activeRequest !== request) return;
+      nextDialog.classList.add("is-open");
+      nextDialog.querySelector("[data-confirm-cancel]").focus();
+    });
+    return promise;
+  };
+
+  window.confirmDeletion = (message, options = {}) => {
+    if (options.immediate) return Promise.resolve(true);
+    if (typeof window.appConfirm === "function") {
+      return window.appConfirm(message, { anchor: options.anchor, title: options.title });
+    }
+    return Promise.resolve(window.confirm(message));
+  };
+})();
+
+(() => {
   const focusableSelector = [
     "button:not([disabled])",
     "[href]",
@@ -36,7 +169,7 @@
   ].join(",");
   const openState = new WeakMap();
   const returnFocus = new WeakMap();
-  const modalSelector = ".modal, .md-cheatsheet";
+  const modalSelector = ".modal, .md-cheatsheet, .app-confirm-popover";
 
   function focusables(modal) {
     return [...modal.querySelectorAll(focusableSelector)].filter((element) => {
@@ -48,7 +181,7 @@
   function prepareModal(modal) {
     modal.setAttribute("role", "dialog");
     modal.setAttribute("aria-modal", "true");
-    const title = modal.querySelector(".modal-title, h2, h1");
+    const title = modal.querySelector(".modal-title, .app-confirm-title, h2, h1");
     if (title) {
       if (!title.id) title.id = `${modal.id || "modal"}-title`;
       modal.setAttribute("aria-labelledby", title.id);

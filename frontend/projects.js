@@ -196,7 +196,13 @@ function renderProjectList() {
     btn.addEventListener("click", (e) => { e.stopPropagation(); openEditModal(Number(btn.dataset.id)); });
   });
   els.projectGrid.querySelectorAll(".proj-del-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => { e.stopPropagation(); deleteProject(Number(btn.dataset.id)); });
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteProject(Number(btn.dataset.id), {
+        anchor: btn.closest(".project-card"),
+        immediate: e.shiftKey,
+      });
+    });
   });
   els.projectGrid.querySelectorAll(".proj-done-cb").forEach((cb) => {
     cb.addEventListener("change", (e) => {
@@ -471,10 +477,13 @@ async function saveProject() {
   await loadAll();
 }
 
-async function deleteProject(id) {
+async function deleteProject(id, options = {}) {
   const proj = state.projects.find((p) => p.id === id);
   if (!proj) return;
-  if (!confirm(`「${proj.name}」を削除しますか？\nプロジェクト内のクリップ・タスク・メモは削除されません。`)) return;
+  if (!(await window.confirmDeletion(
+    `「${proj.name}」を削除します。\nプロジェクト内のクリップ・タスク・メモは削除されません。`,
+    options,
+  ))) return;
   await api(`/projects/${id}`, { method: "DELETE" });
   if (state.currentProjectId === id) {
     await showProjectList();
@@ -783,7 +792,10 @@ function bindEvents() {
     syncRouteFromLocation().catch((e) => console.warn("プロジェクト画面の同期に失敗しました", e));
   });
   $("detailEditBtn").addEventListener("click", () => openEditModal(state.currentProjectId));
-  $("detailDeleteBtn").addEventListener("click", () => deleteProject(state.currentProjectId));
+  $("detailDeleteBtn").addEventListener("click", (e) => deleteProject(state.currentProjectId, {
+    anchor: e.currentTarget,
+    immediate: e.shiftKey,
+  }));
   $("detailDoneCb").addEventListener("change", () => toggleProject(state.currentProjectId));
 
   // Filter tabs
@@ -886,10 +898,13 @@ function updateBatchBar() {
   if (n > 0) els.batchCount.textContent = `${n}件選択`;
 }
 
-async function batchDeleteSelected() {
+async function batchDeleteSelected(event) {
   const ids = [...state.selectedIds];
   if (!ids.length) return;
-  if (!confirm(`${ids.length}件のプロジェクトを削除しますか？`)) return;
+  if (!(await window.confirmDeletion(`${ids.length}件のプロジェクトを削除します。`, {
+    anchor: els.batchDelBtn,
+    immediate: Boolean(event?.shiftKey),
+  }))) return;
   clearSelection();
   let ok = 0, fail = 0;
   for (const id of ids) {

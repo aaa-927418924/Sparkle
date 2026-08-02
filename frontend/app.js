@@ -116,7 +116,7 @@ function renderCategories() {
       e.stopPropagation();
       const cat = state.categories.find((c) => c.name === name);
       if (!cat) return;
-      showContextMenu(e, [{ label: "カテゴリを削除", action: () => deleteManaged("category", cat.id) }]);
+      showContextMenu(e, [{ label: "カテゴリを削除", action: () => deleteManaged("category", cat.id, { anchor: btn }) }]);
     });
   });
 }
@@ -282,7 +282,7 @@ function render() {
       const name = btn.dataset.tag;
       const tag = state.tags.find((t) => t.name === name);
       if (!tag) return;
-      showContextMenu(e, [{ label: "タグを削除", action: () => deleteManaged("tag", tag.id) }]);
+      showContextMenu(e, [{ label: "タグを削除", action: () => deleteManaged("tag", tag.id, { anchor: btn }) }]);
     });
   });
 
@@ -337,7 +337,10 @@ function render() {
   els.grid.querySelectorAll("[data-del]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      deleteClip(Number(btn.dataset.del));
+      deleteClip(Number(btn.dataset.del), {
+        anchor: btn.closest(".card"),
+        immediate: e.shiftKey,
+      });
     });
   });
 
@@ -538,10 +541,13 @@ async function batchCategory() {
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
 }
 
-async function batchDelete() {
+async function batchDelete(event) {
   const ids = [...state.selectedIds];
   if (!ids.length) return;
-  if (!confirm(`${ids.length}件のクリップを削除しますか？`)) return;
+  if (!(await window.confirmDeletion(`${ids.length}件のクリップを削除します。`, {
+    anchor: els.batchDelBtn,
+    immediate: Boolean(event?.shiftKey),
+  }))) return;
   clearSelection();
   let ok = 0, fail = 0;
   for (const id of ids) {
@@ -571,8 +577,8 @@ async function toggleFav(id, btn) {
   }
 }
 
-async function deleteClip(id) {
-  if (!confirm("このクリップを削除しますか？")) return;
+async function deleteClip(id, options = {}) {
+  if (!(await window.confirmDeletion("このクリップを削除します。", options))) return;
   try {
     const res = await fetch(`${API}/clips/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -734,9 +740,12 @@ editEls.save.addEventListener("click", async () => {
 });
 
 // --- 設定モーダル（カテゴリ・タグ管理） ---
-async function deleteManaged(type, id) {
+async function deleteManaged(type, id, options = {}) {
   const path = type === "category" ? `/categories/${id}` : `/tags/${id}`;
-  if (!confirm(`この${type === "category" ? "カテゴリ" : "タグ"}を削除しますか？`)) return;
+  if (!(await window.confirmDeletion(
+    `この${type === "category" ? "カテゴリ" : "タグ"}を削除します。`,
+    options,
+  ))) return;
   try {
     const res = await fetch(API + path, { method: "DELETE" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

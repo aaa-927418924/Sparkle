@@ -439,24 +439,32 @@ async function refreshState() {
   state.notes = notes;
 }
 
+async function refreshProjectPin(projectId = state.currentProjectId) {
+  if (projectId == null) return;
+  await window.refreshPinnedData?.("project", projectId);
+}
+
 // ==================== Unlink ====================
 
 async function unlinkClip(clipId) {
   await api(`/projects/${state.currentProjectId}/clips/${clipId}`, { method: "DELETE" });
   await refreshState();
   await reloadDetail();
+  await refreshProjectPin();
 }
 
 async function unlinkTask(taskId) {
   await api(`/tasks/${taskId}`, { method: "PUT", body: JSON.stringify({ project_id: null }) });
   await refreshState();
   await reloadDetail();
+  await refreshProjectPin();
 }
 
 async function unlinkNote(noteId) {
   await api(`/projects/${state.currentProjectId}/notes/${noteId}`, { method: "DELETE" });
   await refreshState();
   await reloadDetail();
+  await refreshProjectPin();
 }
 
 // ==================== Project CRUD ====================
@@ -485,13 +493,15 @@ async function saveProject() {
   const name = els.projectName.value.trim();
   if (!name) return;
   const body = { name, description: els.projectDesc.value.trim() || null };
-  if (state.editingId) {
-    await api(`/projects/${state.editingId}`, { method: "PUT", body: JSON.stringify(body) });
+  const editingId = state.editingId;
+  if (editingId) {
+    await api(`/projects/${editingId}`, { method: "PUT", body: JSON.stringify(body) });
   } else {
     await api("/projects", { method: "POST", body: JSON.stringify(body) });
   }
   els.projectModal.hidden = true;
   await loadAll();
+  if (editingId) await refreshProjectPin(editingId);
 }
 
 async function deleteProject(id, options = {}) {
@@ -507,6 +517,7 @@ async function deleteProject(id, options = {}) {
     return;
   }
   await loadAll();
+  await refreshProjectPin(id);
 }
 
 async function toggleProject(id) {
@@ -528,6 +539,7 @@ async function toggleProject(id) {
     renderDetailMemos(notes);
   }
   await loadAll();
+  await refreshProjectPin(id);
 }
 
 // ==================== Task Modal ====================
@@ -603,6 +615,7 @@ async function linkTask() {
   renderTaskUnlinked();
   els.taskUnlinkedSelect.value = "";
   await reloadDetail();
+  await refreshProjectPin();
 }
 
 async function createAndAddTask() {
@@ -623,6 +636,7 @@ async function createAndAddTask() {
   renderTaskLinked();
   renderTaskUnlinked();
   await reloadDetail();
+  await refreshProjectPin();
 }
 
 // ==================== Note Modal ====================
@@ -669,6 +683,7 @@ async function linkNote() {
   renderNoteUnlinked();
   els.noteUnlinkedSelect.value = "";
   await reloadDetail();
+  await refreshProjectPin();
 }
 
 async function createAndAddNote() {
@@ -686,6 +701,7 @@ async function createAndAddNote() {
   renderNoteLinked();
   renderNoteUnlinked();
   await reloadDetail();
+  await refreshProjectPin();
 }
 
 // ==================== Clip Modal ====================
@@ -793,6 +809,7 @@ async function linkClip(clipId) {
   renderClipLinked();
   renderClipPicker();
   await reloadDetail();
+  await refreshProjectPin();
 }
 
 // ==================== Event Binding ====================

@@ -547,6 +547,8 @@ async function batchTag() {
     } catch { fail++; }
   }
   await loadAll();
+  await Promise.all(ids.map((id) => window.refreshPinnedData?.("clip", id)));
+  await window.refreshAllPinnedProjects?.();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
 }
 
@@ -571,6 +573,8 @@ async function batchCategory() {
     } catch { fail++; }
   }
   await loadAll();
+  await Promise.all(ids.map((id) => window.refreshPinnedData?.("clip", id)));
+  await window.refreshAllPinnedProjects?.();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
 }
 
@@ -590,6 +594,8 @@ async function batchDelete(event) {
     } catch { fail++; }
   }
   await loadAll();
+  await window.refreshAllPinned?.("clip");
+  await window.refreshAllPinnedProjects?.();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
 }
 
@@ -759,6 +765,7 @@ editEls.save.addEventListener("click", async () => {
     payload.thumbnail_url = editThumbnailUrl;
   }
   try {
+    const clipId = editTargetId;
     const res = await fetch(`${API}/clips/${editTargetId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -767,6 +774,8 @@ editEls.save.addEventListener("click", async () => {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     closeEditModal();
     await loadAll(); // クリップ・カテゴリ・タグを全部再取得して同期する
+    await window.refreshPinnedData?.("clip", clipId);
+    await window.refreshAllPinnedProjects?.();
   } catch (e) {
     alert("更新に失敗しました。");
   }
@@ -783,6 +792,8 @@ async function deleteManaged(type, id, options = {}) {
     const res = await fetch(API + path, { method: "DELETE" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     await loadAll();
+    if (type === "tag") await window.refreshAllPinned?.("clip");
+    await window.refreshAllPinnedProjects?.();
   } catch (e) {
     alert("削除に失敗しました。");
   }

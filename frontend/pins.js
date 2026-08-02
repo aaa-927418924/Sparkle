@@ -58,7 +58,9 @@ function escapeAttr(str) {
 let tooltipEl = null;
 let tooltipTimer = null;
 let tooltipDataCache = {};
+const tooltipDataRevisions = new Map();
 let tooltipGen = 0;
+let activeTooltipPin = null;
 
 function getPinIcon(type) {
   return type === "clip" ? "icons/clip3.svg" :
@@ -172,8 +174,11 @@ function applyPinData(pinItem, data, type) {
 }
 
 async function hydratePinItem(pinItem, pin) {
+  const key = `${pin.type}_${Number(pin.id)}`;
+  const revision = tooltipDataRevisions.get(key) || 0;
   const data = await fetchPinData(Number(pin.id), pin.type);
   if (!data || !pinItem.isConnected) return;
+  if ((tooltipDataRevisions.get(key) || 0) !== revision) return;
   if (pinItem.dataset.id !== String(pin.id) || pinItem.dataset.type !== pin.type) return;
   applyPinData(pinItem, data, pin.type);
 }
@@ -181,6 +186,7 @@ async function hydratePinItem(pinItem, pin) {
 async function fetchPinData(id, type) {
   const key = `${type}_${id}`;
   if (tooltipDataCache[key]) return tooltipDataCache[key];
+  const revision = tooltipDataRevisions.get(key) || 0;
   try {
     const res = await fetch(`${API}/${type === "clip" ? "clips" : type === "note" ? "notes" : "projects"}/${id}`);
     if (!res.ok) return null;
@@ -196,20 +202,26 @@ async function fetchPinData(id, type) {
       data._tasks = tasks;
       data._notes = notes;
     }
-    tooltipDataCache[key] = data;
+    if ((tooltipDataRevisions.get(key) || 0) === revision) {
+      tooltipDataCache[key] = data;
+    }
     return data;
   } catch { return null; }
 }
 
 function showTooltip(pinItem, id, type) {
   hideTooltip();
+  const tooltipPin = { pinItem, id: Number(id), type };
+  activeTooltipPin = tooltipPin;
   const gen = ++tooltipGen;
   tooltipTimer = setTimeout(async () => {
     const data = await fetchPinData(id, type);
-    if (!data || gen !== tooltipGen) return;
+    if (!data || gen !== tooltipGen || activeTooltipPin !== tooltipPin) return;
     const rect = pinItem.getBoundingClientRect();
     tooltipEl = document.createElement("div");
     tooltipEl.className = `pin-tooltip pin-tooltip-${type}`;
+    tooltipEl.dataset.pinId = String(id);
+    tooltipEl.dataset.pinType = type;
     tooltipEl.innerHTML = buildTooltipHtml(data, type);
     document.body.appendChild(tooltipEl);
     const tRect = tooltipEl.getBoundingClientRect();
@@ -218,7 +230,7 @@ function showTooltip(pinItem, id, type) {
     if (left + tRect.width > window.innerWidth - 10) left = rect.left - tRect.width - 10;
     if (top + tRect.height > window.innerHeight - 10) top = window.innerHeight - tRect.height - 10;
     if (top < 10) top = 10;
-    if (gen !== tooltipGen) { tooltipEl.remove(); tooltipEl = null; return; }
+    if (gen !== tooltipGen || activeTooltipPin !== tooltipPin) { tooltipEl.remove(); tooltipEl = null; return; }
     tooltipEl.style.left = left + "px";
     tooltipEl.style.top = top + "px";
     tooltipEl.style.opacity = "1";
@@ -230,8 +242,54 @@ function showTooltip(pinItem, id, type) {
 function hideTooltip() {
   clearTimeout(tooltipTimer);
   ++tooltipGen;
+  activeTooltipPin = null;
   if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
 }
+
+function invalidatePinData(type, id) {
+  const key = `${type}_${Number(id)}`;
+  const revision = (tooltipDataRevisions.get(key) || 0) + 1;
+  tooltipDataRevisions.set(key, revision);
+  delete tooltipDataCache[key];
+  return revision;
+}
+
+// 編集・紐づけ後に、表示中のピンとホバー内容を同じページ内で即時同期する。
+async function refreshPinnedData(type, id) {
+  const numericId = Number(id);
+  if (!type || !Number.isInteger(numericId)) return null;
+
+  const pinItems = [...document.querySelectorAll(".pin-item")].filter((item) =>
+    Number(item.dataset.id) === numericId && item.dataset.type === type
+  );
+  const activePin = activeTooltipPin &&
+    activeTooltipPin.id === numericId && activeTooltipPin.type === type
+    ? activeTooltipPin.pinItem
+    : null;
+  if (!pinItems.length && !activePin) return null;
+
+  const revision = invalidatePinData(type, numericId);
+  if (activePin) hideTooltip();
+  const data = await fetchPinData(numericId, type);
+  if (!data || (tooltipDataRevisions.get(`${type}_${numericId}`) || 0) !== revision) return data;
+
+  pinItems.forEach((item) => {
+    if (item.isConnected) applyPinData(item, data, type);
+  });
+  if (activePin && activePin.isConnected && activePin.matches(":hover")) {
+    showTooltip(activePin, numericId, type);
+  }
+  return data;
+}
+
+async function refreshAllPinned(type) {
+  const pins = getPins().filter((pin) => pin.type === type);
+  await Promise.all(pins.map((pin) => refreshPinnedData(type, pin.id)));
+}
+
+window.refreshPinnedData = refreshPinnedData;
+window.refreshAllPinned = refreshAllPinned;
+window.refreshAllPinnedProjects = () => refreshAllPinned("project");
 
 // Hide tooltip on any click outside tooltip/pin
 document.addEventListener("click", () => hideTooltip());

@@ -147,13 +147,17 @@ async function autoSaveNote() {
   const draftKeyBeforeSave = noteDraftKey();
   state.autoSaveInFlight = true;
   try {
+    let savedNoteId = state.noteId;
     if (state.noteId == null) {
       const saved = await api("/notes", { method: "POST", body: JSON.stringify(payload) });
       state.noteId = Number(saved.id);
+      savedNoteId = state.noteId;
       history.replaceState(null, "", "?id=" + state.noteId);
     } else {
       await api(`/notes/${state.noteId}`, { method: "PUT", body: JSON.stringify(payload) });
     }
+    await window.refreshPinnedData?.("note", savedNoteId);
+    await window.refreshAllPinnedProjects?.();
     if (version === state.autoSaveVersion) {
       state.dirty = false;
       removeNoteDraft(draftKeyBeforeSave);

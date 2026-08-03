@@ -215,6 +215,13 @@ els.nameInput.addEventListener("blur", () => commitName(true));
 
 // ---- Recommended clips ----
 
+function pickThumbSrc(clip) {
+  const src = clip.thumbnail_url;
+  if (!src) return "";
+  if (src.startsWith("/") || src.startsWith(API_ROOT) || src.startsWith("data:")) return src;
+  return `${API_ROOT}/thumbnail-proxy?url=${encodeURIComponent(src)}`;
+}
+
 function renderPicks() {
   const picks = profile.picks || [];
   els.picksLimit.textContent = `${picks.length} / 3`;
@@ -224,8 +231,8 @@ function renderPicks() {
     return;
   }
   els.picks.innerHTML = picks.map((clip) => {
-    const thumb = clip.thumbnail_url
-      ? `<img class="profile-pick-thumb" src="${String(clip.thumbnail_url).replace(/"/g, "&quot;")}" alt="" />`
+    const thumb = pickThumbSrc(clip)
+      ? `<img class="profile-pick-thumb" src="${String(pickThumbSrc(clip)).replace(/"/g, "&quot;")}" alt="" />`
       : `<div class="profile-pick-thumb profile-pick-thumb-ph">🔗</div>`;
     const title = clip.title || clip.url || "(無題)";
     return `<div class="profile-pick">
@@ -269,8 +276,8 @@ function renderPickList() {
   const list = allClips.filter((clip) => !pickedIds.has(clip.id) && (!q || clipMatches(clip, q)));
   els.pickEmpty.hidden = list.length > 0;
   els.pickList.innerHTML = list.map((clip) => {
-    const thumb = clip.thumbnail_url
-      ? `<img class="clip-pick-thumb" src="${String(clip.thumbnail_url).replace(/"/g, "&quot;")}" alt="" />`
+    const thumb = pickThumbSrc(clip)
+      ? `<img class="clip-pick-thumb" src="${String(pickThumbSrc(clip)).replace(/"/g, "&quot;")}" alt="" />`
       : `<div class="clip-pick-thumb clip-pick-thumb-ph">🔗</div>`;
     return `<li class="clip-pick-item" data-id="${clip.id}" role="button" tabindex="0">
       ${thumb}

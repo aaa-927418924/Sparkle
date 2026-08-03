@@ -988,16 +988,19 @@ select {
 }
 
 .edit-cat-row > .edit-suggest-wrap {
-  flex: 1 1 auto;
+  flex: 1 1 0;
 }
 
 .edit-suggest-wrap > .modal-input {
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .edit-suggest {
   position: absolute;
-  top: calc(100% + 6px);
+  top: auto;
+  bottom: calc(100% + 6px);
   left: 0;
   right: 0;
   z-index: 60;
@@ -1069,6 +1072,7 @@ select {
   flex: 0 0 auto;
   width: 34px;
   height: 34px;
+  box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);

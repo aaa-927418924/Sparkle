@@ -53,6 +53,11 @@ async function api(path, options = {}) {
 function setShareStatus(msg, kind = "") {
   els.shareStatus.textContent = msg;
   els.shareStatus.className = "profile-share-status" + (kind ? " " + kind : "");
+  clearTimeout(setShareStatus._timer);
+  setShareStatus._timer = setTimeout(() => {
+    els.shareStatus.textContent = "";
+    els.shareStatus.className = "profile-share-status";
+  }, 2000);
 }
 
 async function loadProfile() {
@@ -305,12 +310,17 @@ els.pickSearch.addEventListener("keydown", (e) => {
 
 function loadCardImage(src) {
   if (!src) return Promise.resolve(null);
+  const sameOrigin =
+    src.startsWith("/") ||
+    src.startsWith(window.location.origin) ||
+    src.startsWith("data:");
+  const url = sameOrigin ? src : `${API_ROOT}/thumbnail-proxy?url=${encodeURIComponent(src)}`;
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
-    img.src = src;
+    img.src = url;
   });
 }
 

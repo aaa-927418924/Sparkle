@@ -51,6 +51,9 @@
 
         <section class="settings-page-card profile-card" aria-labelledby="profilePageTitle">
           <h2 id="profilePageTitle" class="sr-only">プロフィールの内容</h2>
+          <button id="profileShare" class="profile-share-btn" type="button" title="共有画像をコピー" aria-label="共有画像をコピー">
+            <img class="profile-share-icon" src="icons/share.svg" alt="" draggable="false" />
+          </button>
 
           <div class="profile-head">
             <button id="profileIconBtn" class="profile-avatar-btn" type="button" title="アイコンを変更" aria-label="プロフィールアイコンを変更">
@@ -88,10 +91,7 @@
           <div id="profilePicks" class="profile-picks"></div>
           <p id="profilePicksEmpty" class="profile-picks-empty" hidden>おすすめはまだありません。「クリップを追加」から登録しましょう。</p>
 
-          <div class="profile-share-row">
-            <button id="profileShare" class="modal-btn" type="button">共有画像をコピー</button>
-            <span id="profileShareStatus" class="profile-share-status" role="status" aria-live="polite"></span>
-          </div>
+          <p id="profileShareStatus" class="profile-share-status" role="status" aria-live="polite"></p>
         </section>
       </main>
     </div>

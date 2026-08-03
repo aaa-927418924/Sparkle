@@ -10,6 +10,7 @@ import shutil
 import sqlite3
 import subprocess
 import tempfile
+import urllib.request
 import uuid
 import zipfile
 from datetime import datetime
@@ -17,7 +18,7 @@ from pathlib import Path, PurePosixPath
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 from sqlite3 import Connection
@@ -304,6 +305,20 @@ def _resolve_category(conn: Connection, name: Optional[str]) -> Optional[int]:
 
 
 # --- Categories ---------------------------------------------------------
+
+
+@router.get("/thumbnail-proxy", include_in_schema=False)
+def thumbnail_proxy(url: str = Query(...)):
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="unsupported url scheme")
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = resp.read(4 * 1024 * 1024)
+            content_type = resp.headers.get("Content-Type", "image/png")
+    except Exception:
+        raise HTTPException(status_code=502, detail="failed to fetch image")
+    return Response(content=data, media_type=content_type)
 
 
 @router.get("/categories", response_model=List[CategoryOut])

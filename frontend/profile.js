@@ -389,9 +389,9 @@ async function buildShareCanvas() {
     let drawW = avatarSize;
     let drawH = avatarSize;
     if (ratio > 1) {
-      drawH = avatarSize / ratio;
-    } else {
       drawW = avatarSize * ratio;
+    } else {
+      drawH = avatarSize / ratio;
     }
     ctx.drawImage(
       avatar,

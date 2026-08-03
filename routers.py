@@ -15,7 +15,7 @@ import tempfile
 import urllib.request
 import uuid
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import List, Optional
 
@@ -1363,12 +1363,19 @@ def _build_profile_response(request: Request, db: Connection) -> ProfileOut:
     ).fetchone()
     total_saved = int(row["value"]) if row and row["value"].isdigit() else 0
     first_used = _ensure_profile_first_used(db)
+    week_cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    week_count = db.execute(
+        "SELECT COUNT(*) AS c FROM clips WHERE created_at >= ?", (week_cutoff,)
+    ).fetchone()["c"]
     return ProfileOut(
         username=_get_profile_username(db),
         icon_url=_get_profile_icon_url(request),
         total_saved=total_saved,
         first_used_at=first_used[:10],
         days_since_first=_days_since(first_used),
+        saved_last_7_days=week_count,
         picks=_get_profile_picks(db),
     )
 

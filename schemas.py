@@ -196,4 +196,5 @@ class ProfileOut(BaseModel):
     total_saved: int = 0
     first_used_at: Optional[str] = None
     days_since_first: int = 0
+    saved_last_7_days: int = 0
     picks: List[ClipOut] = []

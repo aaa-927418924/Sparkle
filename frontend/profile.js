@@ -8,6 +8,7 @@ const els = {
   nameInput: $("profileNameInput"),
   totalSaved: $("profileTotalSaved"),
   firstUsed: $("profileFirstUsed"),
+  weekSaved: $("profileWeekSaved"),
   days: $("profileDays"),
   picks: $("profilePicks"),
   picksEmpty: $("profilePicksEmpty"),
@@ -75,12 +76,18 @@ async function refreshProfile() {
     }
     const prevCount = profile.total_saved;
     const prevDays = profile.days_since_first;
+    const prevWeek = profile.saved_last_7_days;
     const prevPicks = profile.picks.length;
     profile = data;
-    if (profile.total_saved !== prevCount || profile.days_since_first !== prevDays) {
+    if (
+      profile.total_saved !== prevCount ||
+      profile.days_since_first !== prevDays ||
+      profile.saved_last_7_days !== prevWeek
+    ) {
       els.totalSaved.textContent = String(profile.total_saved);
-      els.firstUsed.textContent = profile.first_used_at || "—";
+      els.firstUsed.textContent = `初回利用日: ${profile.first_used_at || "—"}`;
       els.days.textContent = `${profile.days_since_first}日`;
+      els.weekSaved.textContent = String(profile.saved_last_7_days);
     }
     if (typeof window.initProfileSidebar === "function") window.initProfileSidebar();
     if (!naming && els.pickModal.hidden && !shareBusy && profile.picks.length !== prevPicks) {
@@ -98,8 +105,9 @@ function renderProfile() {
   const name = profile.username || "ユーザー";
   els.nameBtn.textContent = name.length > 15 ? name.slice(0, 15) + "…" : name;
   els.totalSaved.textContent = String(profile.total_saved);
-  els.firstUsed.textContent = profile.first_used_at || "—";
+  els.firstUsed.textContent = `初回利用日: ${profile.first_used_at || "—"}`;
   els.days.textContent = `${profile.days_since_first}日`;
+  els.weekSaved.textContent = String(profile.saved_last_7_days);
   renderPicks();
   if (typeof window.initProfileSidebar === "function") window.initProfileSidebar();
 }
@@ -412,7 +420,7 @@ async function buildShareCanvas() {
 
   const stats = [
     ["累計保存クリップ", `${profile.total_saved}件`],
-    ["初回利用日", profile.first_used_at || "—"],
+    ["一週間の保存クリップ", `${profile.saved_last_7_days}件`],
     ["登録からの日数", `${profile.days_since_first}日`],
   ];
   const statY = avatarY + avatarSize + 42;

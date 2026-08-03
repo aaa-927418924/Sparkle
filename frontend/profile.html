@@ -65,7 +65,7 @@
             <div class="profile-head-copy">
               <button id="profileNameBtn" class="profile-name" type="button" title="クリックでユーザー名を変更">ユーザー</button>
               <input id="profileNameInput" class="profile-name-input" type="text" maxlength="15" autocomplete="off" hidden />
-              <p class="profile-name-hint">アイコンとユーザー名はクリックすると変更できます</p>
+              <p id="profileFirstUsed" class="profile-name-hint">初回利用日: —</p>
             </div>
           </div>
           <input id="profileIconFile" type="file" accept="image/*" hidden />
@@ -76,8 +76,8 @@
               <span class="profile-stat-label">累計保存クリップ</span>
             </div>
             <div class="profile-stat">
-              <span id="profileFirstUsed" class="profile-stat-value">—</span>
-              <span class="profile-stat-label">初回利用日</span>
+              <span id="profileWeekSaved" class="profile-stat-value">0</span>
+              <span class="profile-stat-label">一週間の保存クリップ</span>
             </div>
             <div class="profile-stat">
               <span id="profileDays" class="profile-stat-value">0日</span>

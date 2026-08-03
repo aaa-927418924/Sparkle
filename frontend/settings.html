@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle — 設定</title>
-    <link rel="stylesheet" href="style.css?v=editor-tall-20260803-v1" />
+    <link rel="stylesheet" href="style.css?v=settings-operation-lock-20260803-v1" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
     <script>document.documentElement.setAttribute("data-theme", "dark");</script>
   </head>
@@ -125,7 +125,21 @@
       </main>
     </div>
 
-    <script src="pins.js?v=pins-ui-20260803-ai-export-v1"></script>
+    <div id="settingsOperationLock" class="modal settings-operation-lock" hidden aria-hidden="true">
+      <div class="settings-operation-lock-card" role="alertdialog" aria-modal="true" aria-labelledby="settingsOperationLockTitle" aria-describedby="settingsOperationLockDescription" tabindex="-1">
+        <div class="settings-operation-lock-mark" aria-hidden="true">↻</div>
+        <h2 id="settingsOperationLockTitle" class="modal-title">バックアップを処理しています</h2>
+        <p id="settingsOperationLockDescription" class="settings-operation-lock-description">
+          完了するまでアプリを閉じたり、ページを移動したりしないでください。
+        </p>
+        <div class="settings-operation-lock-status" role="status" aria-live="polite" aria-atomic="true">
+          <span class="settings-operation-spinner" aria-hidden="true"></span>
+          <span id="settingsOperationLockMessage">処理を実行しています…</span>
+        </div>
+      </div>
+    </div>
+
+    <script src="pins.js?v=pins-ui-20260803-operation-lock-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260803-window-profile-v1"></script>
   </body>
 </html>

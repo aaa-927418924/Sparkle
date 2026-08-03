@@ -647,7 +647,92 @@ async function loadAIExportSettings() {
   }
 }
 
+let settingsOperationActive = false;
+let settingsOperationReturnFocus = null;
+let settingsOperationGuardInstalled = false;
+
+function getSettingsOperationLock() {
+  return document.getElementById("settingsOperationLock");
+}
+
+function setSettingsOperationLockMessage(message) {
+  const messageEl = document.getElementById("settingsOperationLockMessage");
+  if (messageEl && message) messageEl.textContent = message;
+}
+
+function installSettingsOperationGuard() {
+  if (settingsOperationGuardInstalled) return;
+  settingsOperationGuardInstalled = true;
+
+  document.addEventListener("keydown", (event) => {
+    if (!settingsOperationActive) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
+
+  document.addEventListener("pointerdown", (event) => {
+    if (!settingsOperationActive) return;
+    const lock = getSettingsOperationLock();
+    if (lock?.contains(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
+
+  document.addEventListener("focusin", (event) => {
+    if (!settingsOperationActive) return;
+    const lock = getSettingsOperationLock();
+    if (lock?.contains(event.target)) return;
+    event.preventDefault();
+    lock?.querySelector(".settings-operation-lock-card")?.focus({ preventScroll: true });
+  }, true);
+
+  window.addEventListener("beforeunload", (event) => {
+    if (!settingsOperationActive) return;
+    event.preventDefault();
+    event.returnValue = "バックアップ処理中です。";
+  });
+}
+
+function setSettingsOperationLock(active, message = "処理を実行しています…") {
+  const lock = getSettingsOperationLock();
+  if (!lock) return;
+  installSettingsOperationGuard();
+
+  if (active) {
+    if (!settingsOperationActive) settingsOperationReturnFocus = document.activeElement;
+    settingsOperationActive = true;
+    setSettingsOperationLockMessage(message);
+    lock.hidden = false;
+    lock.setAttribute("aria-hidden", "false");
+    document.body.classList.add("settings-operation-active");
+    const layout = document.querySelector(".settings-page .layout");
+    if (layout) layout.inert = true;
+    requestAnimationFrame(() => {
+      lock.querySelector(".settings-operation-lock-card")?.focus({ preventScroll: true });
+    });
+    return;
+  }
+
+  settingsOperationActive = false;
+  document.body.classList.remove("settings-operation-active");
+  const layout = document.querySelector(".settings-page .layout");
+  if (layout) layout.inert = false;
+  lock.hidden = true;
+  lock.setAttribute("aria-hidden", "true");
+  const previous = settingsOperationReturnFocus;
+  settingsOperationReturnFocus = null;
+  if (previous?.isConnected && typeof previous.focus === "function") {
+    previous.focus({ preventScroll: true });
+  }
+}
+
+function waitForSettingsOperationNotice(message, duration = 650) {
+  setSettingsOperationLockMessage(message);
+  return new Promise((resolve) => window.setTimeout(resolve, duration));
+}
+
 function initSettings() {
+  if (getSettingsOperationLock()) installSettingsOperationGuard();
   // autoCreateNote
   const acn = document.getElementById("autoCreateNote");
   if (acn) acn.addEventListener("change", () => {
@@ -805,9 +890,14 @@ function initSettings() {
   const dbApi = API_ROOT;
 
   if (dbExport) dbExport.addEventListener("click", async () => {
+    if (settingsOperationActive) return;
     const original = dbExport.textContent;
+    const originalImport = dbImport?.textContent;
+    setSettingsOperationLock(true, "保存先を選択しています…");
     dbExport.disabled = true;
-    dbExport.textContent = "保存先を選択中…";
+    if (dbImport) dbImport.disabled = true;
+    if (dbImportFile) dbImportFile.disabled = true;
+    dbExport.textContent = "エクスポート中…";
     try {
       const res = await fetch(`${dbApi}/data/export-backup`, {
         method: "POST",
@@ -816,27 +906,50 @@ function initSettings() {
       let data = {};
       try { data = await res.json(); } catch {}
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-      if (!data.cancelled) {
-        alert(`バックアップを保存しました。\n${data.filename || "Sparkle-backup.zip"}`);
+      if (data.cancelled) {
+        await waitForSettingsOperationNotice("保存先の選択をキャンセルしました。", 350);
+      } else {
+        await waitForSettingsOperationNotice(`バックアップを保存しました。${data.filename || "Sparkle-backup.zip"}`, 750);
       }
     } catch (e) {
-      alert(`バックアップのエクスポートに失敗しました。${e.message ? `\n${e.message}` : ""}`);
+      await waitForSettingsOperationNotice(`エクスポートに失敗しました。${e.message || "もう一度お試しください。"}`, 1200);
     } finally {
+      setSettingsOperationLock(false);
       dbExport.disabled = false;
+      if (dbImport) {
+        dbImport.disabled = false;
+        if (originalImport) dbImport.textContent = originalImport;
+      }
+      if (dbImportFile) dbImportFile.disabled = false;
       dbExport.textContent = original;
     }
   });
 
   if (dbImport && dbImportFile) {
-    dbImport.addEventListener("click", () => dbImportFile.click());
+    dbImport.addEventListener("click", () => {
+      if (settingsOperationActive) return;
+      dbImportFile.click();
+    });
     dbImportFile.addEventListener("change", async () => {
       const file = dbImportFile.files?.[0];
       dbImportFile.value = "";
       if (!file) return;
-      if (!confirm("このZIPに含まれるclips.dbを既存データへ結合し、uploadsをアプリ内へ展開します。続行しますか？")) return;
+      const importMessage = "このZIPのclips.dbを既存データへ結合し、uploadsをアプリ内へ展開します。";
+      const confirmed = typeof window.confirmDeletion === "function"
+        ? await window.confirmDeletion(importMessage, {
+          anchor: dbImport,
+          title: "バックアップをインポートしますか？",
+          confirmLabel: "インポートする",
+        })
+        : window.confirm(`${importMessage}\n続行しますか？`);
+      if (!confirmed) return;
 
       const original = dbImport.textContent;
+      const originalExport = dbExport?.textContent;
+      setSettingsOperationLock(true, "バックアップをインポートしています…");
       dbImport.disabled = true;
+      if (dbExport) dbExport.disabled = true;
+      dbImportFile.disabled = true;
       dbImport.textContent = "展開中…";
       try {
         const form = new FormData();
@@ -852,12 +965,19 @@ function initSettings() {
           detail = data.detail || data.message || "";
         } catch {}
         if (!res.ok) throw new Error(detail || `HTTP ${res.status}`);
-        alert("バックアップをインポートしました。画面を更新します。");
+        await waitForSettingsOperationNotice("バックアップをインポートしました。画面を更新します…", 350);
+        setSettingsOperationLock(false);
         location.reload();
       } catch (e) {
-        alert(`バックアップのインポートに失敗しました。${e.message ? `\n${e.message}` : ""}`);
+        await waitForSettingsOperationNotice(`インポートに失敗しました。${e.message || "もう一度お試しください。"}`, 1200);
       } finally {
+        setSettingsOperationLock(false);
         dbImport.disabled = false;
+        if (dbExport) {
+          dbExport.disabled = false;
+          if (originalExport) dbExport.textContent = originalExport;
+        }
+        dbImportFile.disabled = false;
         dbImport.textContent = original;
       }
     });

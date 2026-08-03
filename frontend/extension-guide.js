@@ -17,7 +17,7 @@
     if (description) {
       description.textContent = "Sparkleへの移行が完了しました。Chrome拡張も新しいSparkleに合わせて更新して、これまでどおりページを保存できるようにしましょう。あとから設定することもできます。";
     }
-    doneButton.textContent = "更新を確認して始める";
+    doneButton.textContent = "Sparkleを始める";
   }
 
   async function finish() {

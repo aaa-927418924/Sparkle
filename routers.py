@@ -61,7 +61,7 @@ from schemas import (
 
 
 def _run_windows_forms_dialog(script: str) -> List[str]:
-    """Run a Windows Forms picker and return record-separator-delimited paths."""
+    """Run a Windows picker and return record-separator-delimited paths."""
     if os.name != "nt":
         raise RuntimeError("Windowsのファイル選択ダイアログは利用できません")
 
@@ -118,14 +118,105 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 def _choose_directory_with_windows_dialog() -> Optional[str]:
     paths = _run_windows_forms_dialog(
         r"""
-Add-Type -AssemblyName System.Windows.Forms
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = 'バックアップの保存先を選択'
-$dialog.ShowNewFolderButton = $true
-if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-    [Console]::Write($dialog.SelectedPath)
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+
+[Flags]
+public enum SparkleFileOpenOptions : uint
+{
+    FOS_OVERWRITEPROMPT = 0x00000002,
+    FOS_STRICTFILETYPES = 0x00000004,
+    FOS_NOCHANGEDIR = 0x00000008,
+    FOS_PICKFOLDERS = 0x00000020,
+    FOS_FORCEFILESYSTEM = 0x00000040,
+    FOS_PATHMUSTEXIST = 0x00000800,
+    FOS_FILEMUSTEXIST = 0x00001000,
 }
+
+public enum SparkleSigdn : uint
+{
+    SIGDN_FILESYSPATH = 0x80058000,
+}
+
+[ComImport]
+[Guid("42f85136-db7e-439c-85f1-e4075d135fc8")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface SparkleIFileDialog
+{
+    [PreserveSig] int Show(IntPtr parent);
+    [PreserveSig] int SetFileTypes(uint count, IntPtr filters);
+    [PreserveSig] int SetFileTypeIndex(uint index);
+    [PreserveSig] int GetFileTypeIndex(out uint index);
+    [PreserveSig] int Advise(IntPtr events, out uint cookie);
+    [PreserveSig] int Unadvise(uint cookie);
+    [PreserveSig] int SetOptions(SparkleFileOpenOptions options);
+    [PreserveSig] int GetOptions(out SparkleFileOpenOptions options);
+    [PreserveSig] int SetDefaultFolder(SparkleIShellItem item);
+    [PreserveSig] int SetFolder(SparkleIShellItem item);
+    [PreserveSig] int GetFolder(out SparkleIShellItem item);
+    [PreserveSig] int GetCurrentSelection(out SparkleIShellItem item);
+    [PreserveSig] int SetFileName([MarshalAs(UnmanagedType.LPWStr)] string name);
+    [PreserveSig] int GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string name);
+    [PreserveSig] int SetTitle([MarshalAs(UnmanagedType.LPWStr)] string title);
+    [PreserveSig] int SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string label);
+    [PreserveSig] int SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string label);
+    [PreserveSig] int GetResult(out SparkleIShellItem item);
+    [PreserveSig] int AddPlace(SparkleIShellItem item, uint placement);
+    [PreserveSig] int SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string extension);
+    [PreserveSig] int Close(int result);
+    [PreserveSig] int SetClientGuid(ref Guid guid);
+    [PreserveSig] int ClearClientData();
+    [PreserveSig] int SetFilter(IntPtr filter);
+}
+
+[ComImport]
+[Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface SparkleIShellItem
+{
+    [PreserveSig] int BindToHandler(IntPtr bindingContext, ref Guid handlerId, ref Guid interfaceId, out IntPtr result);
+    [PreserveSig] int GetParent(out SparkleIShellItem parent);
+    [PreserveSig] int GetDisplayName(SparkleSigdn nameType, out IntPtr name);
+    [PreserveSig] int GetAttributes(uint mask, out uint attributes);
+    [PreserveSig] int Compare(SparkleIShellItem item, uint hint, out int order);
+}
+
+public static class SparkleFolderPicker
+{
+    public static string Pick()
+    {
+        var dialogType = Type.GetTypeFromCLSID(new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7"));
+        var dialog = (SparkleIFileDialog)Activator.CreateInstance(dialogType);
+        try
+        {
+            SparkleFileOpenOptions options;
+            dialog.GetOptions(out options);
+            options |= SparkleFileOpenOptions.FOS_PICKFOLDERS
+                | SparkleFileOpenOptions.FOS_FORCEFILESYSTEM
+                | SparkleFileOpenOptions.FOS_PATHMUSTEXIST;
+            dialog.SetOptions(options);
+            dialog.SetTitle("バックアップの保存先を選択");
+            dialog.SetOkButtonLabel("このフォルダーを選択");
+            if (dialog.Show(IntPtr.Zero) != 0) return string.Empty;
+
+            SparkleIShellItem item;
+            if (dialog.GetResult(out item) != 0 || item == null) return string.Empty;
+            IntPtr name;
+            if (item.GetDisplayName(SparkleSigdn.SIGDN_FILESYSPATH, out name) != 0 || name == IntPtr.Zero) return string.Empty;
+            try { return Marshal.PtrToStringUni(name) ?? string.Empty; }
+            finally { Marshal.FreeCoTaskMem(name); }
+        }
+        finally
+        {
+            if (dialog != null) Marshal.ReleaseComObject(dialog);
+        }
+    }
+}
+'@
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$selected = [SparkleFolderPicker]::Pick()
+if ($selected) { [Console]::Write($selected) }
 """
     )
     return paths[0] if paths else None

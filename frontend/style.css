@@ -3429,3 +3429,85 @@ html.projects-route-pending #listView {
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* Settings data operations: keep the native window and page state stable. */
+body.settings-operation-active {
+  overflow: hidden;
+}
+
+.settings-operation-lock {
+  z-index: 500;
+  background: color-mix(in srgb, var(--bg) 74%, rgba(0, 0, 0, 0.78));
+  backdrop-filter: blur(8px);
+  cursor: wait;
+  user-select: none;
+}
+
+.settings-operation-lock[hidden] {
+  display: none;
+}
+
+.settings-operation-lock-card {
+  width: min(460px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 26px 28px 24px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, #fff 12%);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-raised) 94%, transparent);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  text-align: center;
+}
+
+.settings-operation-lock-mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 14px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--text) 32%, var(--border));
+  border-radius: 50%;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.settings-operation-lock-card .modal-title {
+  margin-bottom: 10px;
+}
+
+.settings-operation-lock-description {
+  max-width: 36em;
+  margin: 0 auto;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.settings-operation-lock-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 18px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-operation-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--text) 24%, transparent);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: settings-operation-spin 800ms linear infinite;
+}
+
+@keyframes settings-operation-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-operation-spinner {
+    animation: none;
+  }
+}

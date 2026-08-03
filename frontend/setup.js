@@ -11,7 +11,6 @@
   const status = document.getElementById("setupStatus");
   const completeButton = document.getElementById("setupComplete");
   const exitButton = document.getElementById("setupExit");
-  const extensionGuideDebugButton = document.getElementById("setupExtensionGuideDebug");
 
   const defaults = {
     file_save_method: "reference",
@@ -41,7 +40,6 @@
   function setBusy(busy) {
     completeButton.disabled = busy;
     exitButton.disabled = busy;
-    extensionGuideDebugButton.disabled = busy;
     fileSaveMethod.disabled = busy;
     taskAutoDelete.disabled = busy;
     autoCreateNoteOnTask.disabled = busy;
@@ -62,7 +60,6 @@
       if (debugMode) {
         debugNote.hidden = false;
         exitButton.textContent = "閉じる";
-        extensionGuideDebugButton.hidden = false;
         status.textContent = "デバッグ用に初期設定画面を表示しています。";
       }
     } catch (error) {
@@ -93,7 +90,7 @@
       }
       localStorage.setItem("autoCreateNoteOnTask", payload.auto_create_note_on_task ? "true" : "false");
       localStorage.setItem("autoCreateNoteOnProject", payload.auto_create_note_on_project ? "true" : "false");
-      status.textContent = "設定が完了しました。Sparkleを起動しています…";
+      status.textContent = "設定が完了しました。Chrome拡張の案内を表示します…";
       const guideQuery = debugMode ? "?source=setup&debug=extension" : "?source=setup";
       window.location.replace(`/ExtensionGuide${guideQuery}`);
     } catch (error) {
@@ -128,8 +125,5 @@
   });
   completeButton.addEventListener("click", completeSetup);
   exitButton.addEventListener("click", exitSetup);
-  extensionGuideDebugButton.addEventListener("click", () => {
-    window.location.replace("/ExtensionGuide?source=setup&debug=extension");
-  });
   loadStatus();
 })();

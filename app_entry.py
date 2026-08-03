@@ -61,6 +61,14 @@ DEBUG_SETUP_FLAG = "--debug-setup"
 DEBUG_EXTENSION_GUIDE_FLAG = "--debug-extension-guide"
 DEFAULT_WINDOW_SIZE = (1510, 820)
 DEFAULT_MIN_WINDOW_SIZE = (960, 640)
+# The onboarding screens start at this size, but the native window remains
+# freely resizable. Change this tuple to adjust the onboarding layout without
+# introducing an aspect-ratio lock.
+ONBOARDING_WINDOW_SIZE = (958, 885)
+ONBOARDING_MIN_WINDOW_SIZE = (720, 560)
+DEFAULT_WINDOW_PROFILE = "default"
+ONBOARDING_WINDOW_PROFILE = "onboarding"
+ONBOARDING_PAGES = {"Migration", "Setup", "ExtensionGuide"}
 WINDOW_SCREEN_MARGIN = 24
 
 
@@ -92,15 +100,15 @@ APP_REG_NAME = "Sparkle"
 server_ref = {}
 window_ref = {}
 exit_requested = threading.Event()
-window_state = {"maximized": False}
+window_state = {"maximized": False, "profile": DEFAULT_WINDOW_PROFILE}
 native_drop_condition = threading.Condition()
 native_drop_paths = []
 native_drop_document = None
 native_drop_targets = []
 
 
-def _get_work_area_size():
-    """Return the current primary work area in the process's DPI units."""
+def _get_work_area_bounds():
+    """Return the primary work area in the process's DPI units."""
     if os.name != "nt":
         return None
 
@@ -133,13 +141,32 @@ def _get_work_area_size():
         height = int(rect.bottom - rect.top)
         if width <= 0 or height <= 0:
             return None
-        return width, height
+        return int(rect.left), int(rect.top), width, height
     except Exception:
         return None
 
 
-def _get_window_size_config():
-    """Keep the initial window inside the usable display area at any DPI."""
+def _get_work_area_size():
+    bounds = _get_work_area_bounds()
+    return bounds[2:] if bounds else None
+
+
+def _get_window_size_config(profile=DEFAULT_WINDOW_PROFILE):
+    """Keep the selected window profile inside the usable display area at any DPI."""
+    if profile == ONBOARDING_WINDOW_PROFILE:
+        width, height = ONBOARDING_WINDOW_SIZE
+        minimum_width, minimum_height = ONBOARDING_MIN_WINDOW_SIZE
+        work_area = _get_work_area_size()
+        if work_area:
+            available_width = max(work_area[0] - WINDOW_SCREEN_MARGIN, 1)
+            available_height = max(work_area[1] - WINDOW_SCREEN_MARGIN, 1)
+            scale = min(1.0, available_width / width, available_height / height)
+            width = max(1, int(round(width * scale)))
+            height = max(1, int(round(height * scale)))
+            minimum_width = min(minimum_width, width)
+            minimum_height = min(minimum_height, height)
+        return width, height, (minimum_width, minimum_height)
+
     width, height = DEFAULT_WINDOW_SIZE
     minimum_width, minimum_height = DEFAULT_MIN_WINDOW_SIZE
     work_area = _get_work_area_size()
@@ -152,6 +179,11 @@ def _get_window_size_config():
         minimum_height = min(minimum_height, height)
 
     return width, height, (minimum_width, minimum_height)
+
+
+def _window_profile_for_page(page: str) -> str:
+    page_name = str(page or "").split("?", 1)[0].strip("/")
+    return ONBOARDING_WINDOW_PROFILE if page_name in ONBOARDING_PAGES else DEFAULT_WINDOW_PROFILE
 
 
 def _show_error(message: str) -> None:
@@ -295,11 +327,16 @@ def _get_window_geometry(window, restored: bool = False):
     if window is None:
         return None
     try:
+        minimum_width, minimum_height = _get_window_size_config(
+            window_state.get("profile", DEFAULT_WINDOW_PROFILE)
+        )[2]
         return {
             "x": int(window.x),
             "y": int(window.y),
             "width": int(window.width),
             "height": int(window.height),
+            "minimum_width": int(minimum_width),
+            "minimum_height": int(minimum_height),
             "restored": restored,
         }
     except Exception:
@@ -379,6 +416,56 @@ def _enable_native_resize(window) -> None:
         )
     except Exception:
         pass
+
+
+def _resize_window_for_profile(profile: str):
+    if profile not in {DEFAULT_WINDOW_PROFILE, ONBOARDING_WINDOW_PROFILE}:
+        profile = DEFAULT_WINDOW_PROFILE
+
+    window = window_ref.get("window")
+    if window is None:
+        window_state["profile"] = profile
+        return None
+
+    if window_state.get("profile") == profile:
+        return _get_window_geometry(window)
+
+    is_maximized = bool(window_state.get("maximized"))
+    try:
+        is_maximized = is_maximized or "maximized" in str(window.state).lower()
+    except Exception:
+        pass
+    if is_maximized:
+        try:
+            window.restore()
+            window_state["maximized"] = False
+        except Exception:
+            return _get_window_geometry(window)
+
+    current = _get_window_geometry(window)
+    width, height, minimum_size = _get_window_size_config(profile)
+    x = current["x"] if current else 0
+    y = current["y"] if current else 0
+    if current:
+        x += (current["width"] - width) // 2
+        y += (current["height"] - height) // 2
+
+    work_area = _get_work_area_bounds()
+    if work_area:
+        left, top, work_width, work_height = work_area
+        x = min(max(x, left), left + max(work_width - width, 0))
+        y = min(max(y, top), top + max(work_height - height, 0))
+
+    # pywebview stores min_size for new native resize requests. The custom
+    # resize handles also receive these limits through _get_window_geometry.
+    window.min_size = minimum_size
+    window_state["profile"] = profile
+    try:
+        window.move(int(x), int(y))
+        window.resize(int(width), int(height))
+    except Exception:
+        return _get_window_geometry(window)
+    return _get_window_geometry(window)
 
 
 def _activate_window() -> None:
@@ -590,6 +677,11 @@ class NativeWindowApi:
         window.resize(int(width), int(height))
 
     @staticmethod
+    def set_window_profile(profile: str):
+        """Switch between the editable onboarding and default window profiles."""
+        return _resize_window_for_profile(str(profile or ""))
+
+    @staticmethod
     def close_window() -> None:
         window = window_ref.get("window")
         if window is not None:
@@ -762,7 +854,9 @@ def main() -> None:
         else:
             initial_page = "Home"
 
-        window_width, window_height, minimum_window_size = _get_window_size_config()
+        initial_window_profile = _window_profile_for_page(initial_page)
+        window_state["profile"] = initial_window_profile
+        window_width, window_height, minimum_window_size = _get_window_size_config(initial_window_profile)
         window = webview.create_window(
             "Sparkle",
             url=f"http://{HOST}:{PORT}/{initial_page}",

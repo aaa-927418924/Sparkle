@@ -39,6 +39,37 @@
 })();
 
 (() => {
+  // The migration, initial setup, and extension guide share the onboarding
+  // window profile. The native API keeps the profile editable while leaving
+  // the window freely resizable (there is no aspect-ratio lock).
+  let attempts = 0;
+
+  function syncWindowProfile() {
+    const api = window.pywebview?.api;
+    if (!api || typeof api.set_window_profile !== "function") {
+      if (attempts < 30) {
+        attempts += 1;
+        window.setTimeout(syncWindowProfile, 100);
+      }
+      return;
+    }
+
+    attempts = 0;
+    const profile = document.body?.classList.contains("migration-page")
+      ? "onboarding"
+      : "default";
+    void api.set_window_profile(profile).catch(() => {});
+  }
+
+  window.addEventListener("pywebviewready", syncWindowProfile);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", syncWindowProfile, { once: true });
+  } else {
+    syncWindowProfile();
+  }
+})();
+
+(() => {
   // ファイルはホーム画面(index.html)だけで受け付ける。
   // ピンの並べ替えなど、text/plain を使う既存のドラッグ操作は対象外。
   if (document.body?.classList.contains("home-page")) return;
@@ -453,8 +484,12 @@
 
       const deltaX = moveEvent.screenX - resize.startScreenX;
       const deltaY = moveEvent.screenY - resize.startScreenY;
-      const minimumWidth = 960;
-      const minimumHeight = 640;
+      const minimumWidth = Number.isFinite(resize.geometry.minimum_width)
+        ? resize.geometry.minimum_width
+        : 960;
+      const minimumHeight = Number.isFinite(resize.geometry.minimum_height)
+        ? resize.geometry.minimum_height
+        : 640;
       let { x, y, width, height } = resize.geometry;
 
       if (direction.includes("w")) {

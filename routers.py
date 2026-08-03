@@ -3,6 +3,7 @@
 import base64
 import binascii
 import ctypes
+import hashlib
 import io
 import json
 import os
@@ -378,10 +379,25 @@ def copy_image_to_clipboard(payload: ClipboardImage):
     return {"ok": True}
 
 
+PROXY_CACHE_DIR = THUMBNAILS_DIR / "proxy"
+
+
 @router.get("/thumbnail-proxy", include_in_schema=False)
 def thumbnail_proxy(url: str = Query(...)):
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="unsupported url scheme")
+    key = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    cached_img = PROXY_CACHE_DIR / f"{key}.img"
+    cached_mime = PROXY_CACHE_DIR / f"{key}.mime"
+    if cached_img.is_file():
+        content_type = (
+            cached_mime.read_text().strip() if cached_mime.is_file() else "image/png"
+        )
+        return Response(
+            content=cached_img.read_bytes(),
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=604800"},
+        )
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -389,7 +405,17 @@ def thumbnail_proxy(url: str = Query(...)):
             content_type = resp.headers.get("Content-Type", "image/png")
     except Exception:
         raise HTTPException(status_code=502, detail="failed to fetch image")
-    return Response(content=data, media_type=content_type)
+    try:
+        PROXY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cached_img.write_bytes(data)
+        cached_mime.write_text(content_type or "image/png")
+    except OSError:
+        pass
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=604800"},
+    )
 
 
 @router.get("/categories", response_model=List[CategoryOut])

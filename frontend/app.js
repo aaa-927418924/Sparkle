@@ -194,13 +194,20 @@ function fileIconHtml(ext) {
   return '';
 }
 
+function cardThumbnailSrc(clip) {
+  const src = clip.thumbnail_url;
+  if (!src) return "";
+  if (src.startsWith("/") || src.startsWith(API) || src.startsWith("data:")) return src;
+  return `${API}/thumbnail-proxy?url=${encodeURIComponent(src)}`;
+}
+
 function cardHtml(clip, { animate = false, index = 0 } = {}) {
   const local = isLocalClip(clip);
   const ext = local ? localFileExt(clip) : "";
 
   let imgHtml;
   if (clip.thumbnail_url) {
-    imgHtml = `<img class="card-img" src="${escapeAttr(clip.thumbnail_url)}" alt="" loading="lazy" draggable="false"
+    imgHtml = `<img class="card-img" src="${escapeAttr(cardThumbnailSrc(clip))}" alt="" loading="lazy" draggable="false"
          onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'card-ph',textContent:'🖼'}))" />`;
   } else if (local && isTextExt(ext)) {
     imgHtml = `<div class="card-ph card-ph-text" data-text-preview="${clip.id}"><div class="card-text-loading">読み込み中…</div></div>`;
@@ -903,8 +910,14 @@ editEls.categoryClear.addEventListener("click", () => {
   editEls.category.value = "";
   closeEditSuggestions("category");
 });
+// ドラッグしてダイアログの外で離すと click の target が共通祖先(モーダル全体)になるため、
+// 押下がモーダル内部で始まった場合は外側クリックとみなさず閉じない。
+let editPressStartedOnBackdrop = false;
+editEls.modal.addEventListener("pointerdown", (e) => {
+  editPressStartedOnBackdrop = e.target === editEls.modal;
+});
 editEls.modal.addEventListener("click", (e) => {
-  if (e.target === editEls.modal) closeEditModal();
+  if (e.target === editEls.modal && editPressStartedOnBackdrop) closeEditModal();
 });
 
 editEls.save.addEventListener("click", async () => {

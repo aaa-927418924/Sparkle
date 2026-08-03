@@ -199,7 +199,7 @@
 
 .profile-picks {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -398,6 +398,12 @@
 /* Remove the scrollable gap at the bottom of the profile page. */
 .profile-page .main {
   padding-bottom: 24px;
+}
+
+/* The profile card uses the wider 1120px treatment so picks stay in one row. */
+.profile-page .settings-page-card {
+  width: min(1120px, calc(100vw - 48px));
+  max-width: calc(100vw - 48px);
 }
 
 .profile-document {

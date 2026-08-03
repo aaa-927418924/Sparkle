@@ -385,7 +385,21 @@ async function buildShareCanvas() {
   ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2);
   ctx.clip();
   if (avatar) {
-    ctx.drawImage(avatar, avatarX, avatarY, avatarSize, avatarSize);
+    const ratio = avatar.naturalWidth / Math.max(avatar.naturalHeight, 1);
+    let drawW = avatarSize;
+    let drawH = avatarSize;
+    if (ratio > 1) {
+      drawH = avatarSize / ratio;
+    } else {
+      drawW = avatarSize * ratio;
+    }
+    ctx.drawImage(
+      avatar,
+      avatarX + (avatarSize - drawW) / 2,
+      avatarY + (avatarSize - drawH) / 2,
+      drawW,
+      drawH
+    );
   } else {
     ctx.fillStyle = "#4f46e5";
     ctx.fillRect(avatarX, avatarY, avatarSize, avatarSize);
@@ -434,6 +448,8 @@ async function buildShareCanvas() {
     if (!clip) continue;
 
     const thumbH = 92;
+    const thumbPad = 8;
+    const thumbAreaH = thumbH - thumbPad;
     const thumb = await loadCardImage(clip.thumbnail_url);
     ctx.save();
     ctx.beginPath();
@@ -442,16 +458,15 @@ async function buildShareCanvas() {
     if (thumb) {
       const ratio = thumb.naturalWidth / Math.max(thumb.naturalHeight, 1);
       let drawW = cardW;
-      let drawH = thumbH;
-      if (ratio > cardW / thumbH) {
-        drawW = thumbH * ratio;
-      } else {
-        drawH = cardW / Math.max(ratio, 0.01);
+      let drawH = cardW / Math.max(ratio, 0.01);
+      if (drawH > thumbAreaH) {
+        drawH = thumbAreaH;
+        drawW = thumbAreaH * ratio;
       }
       ctx.drawImage(
         thumb,
         cardX + (cardW - drawW) / 2,
-        cardY + (thumbH - drawH) / 2,
+        cardY + thumbPad + (thumbAreaH - drawH) / 2,
         drawW,
         drawH
       );

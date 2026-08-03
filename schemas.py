@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProjectCreate(BaseModel):
@@ -175,7 +175,7 @@ class NoteOut(BaseModel):
 
 
 class ProfileNameUpdate(BaseModel):
-    name: str
+    name: str = Field(..., max_length=15)
 
 
 class ProfileIconUpdate(BaseModel):

@@ -67,7 +67,8 @@ async function loadProfile() {
 
 function renderProfile() {
   els.icon.src = profile.icon_url || "/icon.png";
-  els.nameBtn.textContent = profile.username || "ユーザー";
+  const name = profile.username || "ユーザー";
+  els.nameBtn.textContent = name.length > 15 ? name.slice(0, 15) + "…" : name;
   els.totalSaved.textContent = String(profile.total_saved);
   els.firstUsed.textContent = profile.first_used_at || "—";
   els.days.textContent = `${profile.days_since_first}日`;
@@ -144,7 +145,7 @@ function startNameEdit() {
 async function commitName(save) {
   if (!naming) return;
   naming = false;
-  const value = els.nameInput.value.trim();
+  const value = els.nameInput.value.trim().slice(0, 15);
   els.nameInput.hidden = true;
   els.nameBtn.hidden = false;
   if (!save || !value || value === (profile.username || "")) return;

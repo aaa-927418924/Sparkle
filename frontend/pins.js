@@ -1046,15 +1046,8 @@ function initProfileSidebar() {
       if (!data || !avatar.isConnected) return;
       if (data.icon_url) avatar.src = data.icon_url;
       const name = (data.username || "ユーザー").trim();
-      const label = `${name} — プロフィール`;
-      avatar.title = label;
-      const btn = avatar.closest(".side-btn");
-      if (btn) btn.title = label;
       const span = document.getElementById("sidebarUsername");
-      if (span) {
-        span.textContent = name.length > 16 ? name.slice(0, 16) + "…" : name;
-        span.title = name;
-      }
+      if (span) span.textContent = name.length > 15 ? name.slice(0, 15) + "…" : name;
     })
     .catch(() => {});
 }

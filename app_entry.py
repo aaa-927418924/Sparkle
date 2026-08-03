@@ -58,6 +58,7 @@ from setup import get_setup_status
 
 HOST = "127.0.0.1"
 DEBUG_SETUP_FLAG = "--debug-setup"
+DEBUG_EXTENSION_GUIDE_FLAG = "--debug-extension-guide"
 DEFAULT_WINDOW_SIZE = (1510, 820)
 DEFAULT_MIN_WINDOW_SIZE = (960, 640)
 WINDOW_SCREEN_MARGIN = 24
@@ -706,6 +707,7 @@ def main() -> None:
         migration_required = bool(get_migration_status().get("required"))
         setup_required = bool(get_setup_status().get("required"))
         debug_setup = DEBUG_SETUP_FLAG in sys.argv[1:]
+        debug_extension_guide = DEBUG_EXTENSION_GUIDE_FLAG in sys.argv[1:]
         if _is_app_server_running():
             # 既に起動中(二重起動) → 既存のネイティブウィンドウを前面表示
             _activate_existing_app()
@@ -751,7 +753,9 @@ def main() -> None:
         webview.settings["ALLOW_DOWNLOADS"] = True
 
         os.environ["SPARKLE_EXECUTABLE"] = _get_exe_path()
-        if migration_required:
+        if debug_extension_guide:
+            initial_page = "ExtensionGuide?debug=extension"
+        elif migration_required:
             initial_page = "Migration"
         elif setup_required or debug_setup:
             initial_page = "Setup?debug=setup" if debug_setup else "Setup"
@@ -779,6 +783,7 @@ def main() -> None:
                 and not migration_required
                 and not setup_required
                 and not debug_setup
+                and not debug_extension_guide
             ),
             js_api=NativeWindowApi(),
         )

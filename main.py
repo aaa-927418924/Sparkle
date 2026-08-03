@@ -155,6 +155,11 @@ def setup_page():
     return _frontend_page("setup.html")
 
 
+@app.get("/ExtensionGuide", include_in_schema=False)
+def extension_guide_page():
+    return _frontend_page("extension-guide.html")
+
+
 @app.get("/Notes", include_in_schema=False)
 def notes_page():
     return _frontend_page("notes.html")

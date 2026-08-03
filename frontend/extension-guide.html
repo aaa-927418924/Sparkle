@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja" class="extension-guide-document" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chrome拡張機能の案内</title>
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-no-autocomplete-v1" />
+    <link rel="stylesheet" href="migration.css?v=migration-ui-20260802-v2" />
+    <link rel="stylesheet" href="extension-guide.css?v=extension-guide-ui-20260803-v1" />
+  </head>
+  <body class="migration-page extension-guide-page">
+    <main class="migration-window extension-guide-window">
+      <header class="migration-titlebar window-drag-region">
+        <div class="migration-brand">
+          <img src="/icon.png" alt="" aria-hidden="true" />
+          <strong>Sparkle</strong>
+        </div>
+        <div class="window-controls" aria-label="ウィンドウ操作">
+          <button class="window-control" type="button" title="最小化" aria-label="最小化" data-window-action="minimize_window">
+            <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
+          </button>
+          <button class="window-control" type="button" title="最大化" aria-label="最大化" data-window-action="toggle_maximize_window">
+            <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z" /></svg>
+          </button>
+          <button class="window-control window-control-close" type="button" title="閉じる" aria-label="閉じる" data-window-action="close_window">
+            <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="migration-card extension-guide-card" role="dialog" aria-modal="true" aria-labelledby="extensionGuideTitle" aria-describedby="extensionGuideDescription">
+        <p class="migration-eyebrow">おすすめのセットアップ</p>
+        <p id="extensionGuideDebugNote" class="extension-guide-debug-note" hidden>開発用デバッグ表示</p>
+        <h1 id="extensionGuideTitle">Chrome拡張をインストールしましょう</h1>
+        <p id="extensionGuideDescription" class="migration-description">
+          Chrome拡張を入れると、閲覧中のページをワンクリックでSparkleへ保存できます。あとから設定することもできます。
+        </p>
+
+        <ol class="extension-guide-steps" aria-label="Chrome拡張のインストール手順">
+          <li class="extension-guide-step">
+            <span class="extension-guide-step-number" aria-hidden="true">1</span>
+            <div>
+              <strong>Chromeの拡張機能画面を開く</strong>
+              <p>アドレスバーに <code>chrome://extensions</code> と入力します。</p>
+            </div>
+          </li>
+          <li class="extension-guide-step">
+            <span class="extension-guide-step-number" aria-hidden="true">2</span>
+            <div>
+              <strong>デベロッパーモードをオンにする</strong>
+              <p>画面右上のスイッチをオンにして、開発用の拡張機能を読み込めるようにします。</p>
+            </div>
+          </li>
+          <li class="extension-guide-step">
+            <span class="extension-guide-step-number" aria-hidden="true">3</span>
+            <div>
+              <strong>「パッケージ化されていない拡張機能を読み込む」を選ぶ</strong>
+              <p>プロジェクト内の <code>extension</code> フォルダを選択すると、Sparkle拡張が追加されます。</p>
+            </div>
+          </li>
+        </ol>
+
+        <p id="extensionGuideStatus" class="migration-status" role="status" aria-live="polite"></p>
+        <div class="migration-actions">
+          <button id="extensionGuideSkip" class="migration-secondary" type="button">今回はスキップ</button>
+          <button id="extensionGuideDone" class="migration-primary" type="button">Sparkleを始める</button>
+        </div>
+      </section>
+    </main>
+    <script src="codex-shell.js?v=codex-shell-20260803-no-autocomplete-v1"></script>
+    <script src="extension-guide.js?v=extension-guide-ui-20260803-v1"></script>
+  </body>
+</html>

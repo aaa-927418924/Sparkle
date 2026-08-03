@@ -69,7 +69,7 @@
       statusEl.textContent = result.warnings?.length
         ? `移行は完了しました。一部の項目は後で確認してください。`
         : "移行が完了しました。Sparkleを起動しています…";
-      window.location.replace("/Home");
+      window.location.replace("/ExtensionGuide?source=migration");
     } catch (error) {
       exitButton.disabled = false;
       runButton.disabled = false;

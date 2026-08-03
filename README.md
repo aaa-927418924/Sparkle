@@ -76,6 +76,23 @@ Windows の Microsoft Edge WebView2 Runtime が必要。通常の Windows 11 環
 旧バックアップ名、旧スタートアップ登録を検証してから一括移行する。移行後は旧保存先を削除し、
 旧バックアップの内容はそのまま保ったままファイル名だけSparkleへ変更する。
 
+移行または初期設定が完了した直後に、Chrome拡張機能の案内が表示される。
+案内は「今回はスキップ」で閉じることができる。開発版では、Chromeの拡張機能画面で
+デベロッパーモードをオンにし、「パッケージ化されていない拡張機能を読み込む」から
+プロジェクト内の`extension`フォルダを選択する。
+
+初期設定のデバッグ表示は次で起動できる。初期設定画面からChrome拡張の案内も表示できる。
+
+```powershell
+.\dist\Sparkle.exe --debug-setup
+```
+
+Chrome拡張の案内だけを確認したい場合は次を使う。
+
+```powershell
+.\dist\Sparkle.exe --debug-extension-guide
+```
+
 ## exe ビルド
 
 依存パッケージと PyInstaller を仮想環境へインストールしたあと、次を実行する。

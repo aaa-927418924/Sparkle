@@ -186,6 +186,10 @@ class ClipboardImage(BaseModel):
     data_url: str
 
 
+class BackupExportPayload(BaseModel):
+    browser_settings: dict = {}
+
+
 class ProfilePickAdd(BaseModel):
     clip_id: int
 

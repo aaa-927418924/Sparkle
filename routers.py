@@ -41,6 +41,7 @@ from maintenance import (
     run_maintenance,
 )
 from schemas import (
+    BackupExportPayload,
     CategoryCreate,
     CategoryOut,
     ClipboardImage,
@@ -1758,12 +1759,22 @@ def _merge_database(source: sqlite3.Connection, dest: Connection) -> dict:
                 (task_id, note_id),
             )
 
-    # Keep the current app's settings when keys collide; add only missing keys.
+    # Restore app settings and profile data from the source (migration semantics:
+    # the imported backup wins on key collisions).
     for row in _source_rows(source, "settings"):
         dest.execute(
-            "INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)",
+            "INSERT INTO settings(key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (row["key"], row["value"]),
         )
+
+    for row in _source_rows(source, "profile_picks"):
+        clip_id = clip_map.get(_source_id(row["clip_id"]))
+        if clip_id is not None:
+            dest.execute(
+                "INSERT OR IGNORE INTO profile_picks(clip_id, position) VALUES (?, ?)",
+                (clip_id, int(row["position"] or 0)),
+            )
 
     return {
         "categories": len(category_map),
@@ -1868,6 +1879,7 @@ def _safe_backup_member_name(raw_name: str) -> str:
 def _inspect_backup_zip(archive: zipfile.ZipFile):
     db_info = None
     upload_infos = []
+    settings_info = None
     total_size = 0
     for info in archive.infolist():
         name = _safe_backup_member_name(info.filename)
@@ -1881,12 +1893,14 @@ def _inspect_backup_zip(archive: zipfile.ZipFile):
             raise ValueError("ZIP内に対応していないリンクがあります")
         if name == "clips.db" and not info.is_dir():
             db_info = info
+        elif name == "settings.json" and not info.is_dir():
+            settings_info = info
         elif name == "uploads" or name.startswith("uploads/"):
             upload_infos.append((info, name))
 
     if db_info is None:
         raise ValueError("ZIP内にclips.dbがありません")
-    return db_info, upload_infos
+    return db_info, upload_infos, settings_info
 
 
 def _copy_zip_member(archive: zipfile.ZipFile, info: zipfile.ZipInfo, name: str, root: Path) -> None:
@@ -1901,8 +1915,8 @@ def _copy_zip_member(archive: zipfile.ZipFile, info: zipfile.ZipInfo, name: str,
 
 
 @router.post("/data/export-backup")
-def export_backup_archive():
-    """Create a ZIP containing clips.db and the complete uploads directory."""
+def export_backup_archive(payload: Optional[BackupExportPayload] = None):
+    """Create a ZIP containing clips.db, the uploads directory, and app settings."""
     if not DB_PATH.is_file():
         init_db()
     selected_dir = _choose_backup_directory()
@@ -1925,8 +1939,14 @@ def export_backup_archive():
         with sqlite3.connect(str(DB_PATH)) as source, sqlite3.connect(str(snapshot_path)) as target:
             source.backup(target)
         uploads_dir = get_uploads_dir()
+        settings_payload = {
+            "browser": payload.browser_settings if payload else {},
+        }
         with zipfile.ZipFile(temp_archive, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.write(snapshot_path, "clips.db")
+            archive.writestr(
+                "settings.json", json.dumps(settings_payload, ensure_ascii=False)
+            )
             archive.writestr("uploads/", b"")
             for path in uploads_dir.rglob("*"):
                 relative = path.relative_to(uploads_dir)
@@ -1946,7 +1966,7 @@ def export_backup_archive():
         "ok": True,
         "filename": archive_path.name,
         "path": str(archive_path),
-        "message": "clips.dbとuploadsをZIPに保存しました。",
+        "message": "clips.db、uploads、設定・プロフィール情報をZIPに保存しました。",
     }
 
 
@@ -1974,11 +1994,21 @@ async def import_backup_archive(file: UploadFile = File(...)):
 
         try:
             with zipfile.ZipFile(zip_path, "r") as archive:
-                db_info, upload_infos = _inspect_backup_zip(archive)
+                db_info, upload_infos, settings_info = _inspect_backup_zip(archive)
                 if archive.testzip() is not None:
                     raise ValueError("ZIP内のファイルを読み込めません")
                 with archive.open(db_info, "r") as source, snapshot_path.open("wb") as output:
                     shutil.copyfileobj(source, output, length=1024 * 1024)
+                settings_data = {}
+                if settings_info is not None:
+                    with archive.open(settings_info, "r") as source:
+                        raw_settings = source.read(1024 * 1024)
+                    try:
+                        parsed = json.loads(raw_settings.decode("utf-8"))
+                        if isinstance(parsed, dict):
+                            settings_data = parsed
+                    except (ValueError, UnicodeDecodeError):
+                        settings_data = {}
                 uploads_staging.mkdir(parents=True, exist_ok=True)
                 for info, name in upload_infos:
                     _copy_zip_member(archive, info, name, uploads_staging)
@@ -2000,8 +2030,9 @@ async def import_backup_archive(file: UploadFile = File(...)):
 
         return {
             "ok": True,
-            "message": "clips.dbを既存データに結合し、uploadsをアプリ内へ展開しました。",
+            "message": "clips.dbを既存データに結合し、uploadsと設定・プロフィール情報を復元しました。",
             "merged": merged,
+            "settings": settings_data,
         }
     except HTTPException:
         raise

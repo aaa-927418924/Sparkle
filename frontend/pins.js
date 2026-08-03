@@ -913,6 +913,35 @@ function initSettings() {
   const dbImport = document.getElementById("dbImportBtn");
   const dbImportFile = document.getElementById("dbImportFile");
   const dbApi = API_ROOT;
+  const BROWSER_SETTINGS_KEYS = [
+    "clipSortMode",
+    "autoCreateNoteOnTask",
+    "autoCreateNoteOnProject",
+    "hideAutoCheatsheet",
+    "clipSearchHistory",
+    "pins",
+  ];
+
+  function collectBrowserSettings() {
+    const out = {};
+    for (const key of BROWSER_SETTINGS_KEYS) {
+      try {
+        const value = localStorage.getItem(key);
+        if (value !== null) out[key] = value;
+      } catch (e) {}
+    }
+    return out;
+  }
+
+  function applyBrowserSettings(settings) {
+    const browser = settings && typeof settings === "object" ? settings.browser : null;
+    if (!browser) return;
+    for (const [key, value] of Object.entries(browser)) {
+      try {
+        localStorage.setItem(key, value);
+      } catch (e) {}
+    }
+  }
 
   if (dbExport) dbExport.addEventListener("click", async () => {
     if (settingsOperationActive) return;
@@ -926,7 +955,8 @@ function initSettings() {
     try {
       const res = await fetch(`${dbApi}/data/export-backup`, {
         method: "POST",
-        headers: { Accept: "application/json" },
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ browser_settings: collectBrowserSettings() }),
       });
       let data = {};
       try { data = await res.json(); } catch {}
@@ -959,7 +989,7 @@ function initSettings() {
       const file = dbImportFile.files?.[0];
       dbImportFile.value = "";
       if (!file) return;
-      const importMessage = "このZIPのclips.dbを既存データへ結合し、uploadsをアプリ内へ展開します。";
+      const importMessage = "このZIPのclips.dbを既存データへ結合し、uploadsと設定・プロフィール情報を復元します。";
       const confirmed = typeof window.confirmDeletion === "function"
         ? await window.confirmDeletion(importMessage, {
           anchor: dbImport,
@@ -985,11 +1015,13 @@ function initSettings() {
           headers: { Accept: "application/json" },
         });
         let detail = "";
+        let data = null;
         try {
-          const data = await res.json();
+          data = await res.json();
           detail = data.detail || data.message || "";
         } catch {}
         if (!res.ok) throw new Error(detail || `HTTP ${res.status}`);
+        if (data) applyBrowserSettings(data.settings);
         await waitForSettingsOperationNotice("バックアップをインポートしました。画面を更新します…", 350);
         setSettingsOperationLock(false);
         location.reload();

@@ -204,6 +204,11 @@ def settings_page():
     return _frontend_page("settings.html")
 
 
+@app.get("/Profile", include_in_schema=False)
+def profile_page():
+    return _frontend_page("profile.html")
+
+
 @app.get("/Note", include_in_schema=False)
 def note_page():
     return _frontend_page("note-editor.html")

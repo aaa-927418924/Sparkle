@@ -50,6 +50,12 @@ def get_local_files_dir() -> Path:
     return d
 
 
+def get_profile_dir() -> Path:
+    d = get_uploads_dir() / "profile"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def get_ai_export_dir() -> Path:
     """Return the human-readable export directory intended for AI tools."""
     documents = Path.home() / "Documents"

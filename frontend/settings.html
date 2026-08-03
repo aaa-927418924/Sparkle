@@ -34,6 +34,7 @@
         <a class="side-btn" title="プロジェクト" data-nav="projects" href="/Projects"><img class="icon icon-nav" src="icons/project.svg" alt="" /><span class="side-label">プロジェクト</span></a>
         <div class="side-spacer"></div>
         <div class="sidebar-tools" aria-label="サイドバー操作">
+          <a class="side-btn side-btn-profile" title="プロフィール" aria-label="プロフィール" data-nav="profile" href="/Profile"><img class="profile-avatar" id="profileAvatar" src="/icon.png" alt="" /></a>
           <a class="side-btn active" title="設定" aria-label="設定" aria-current="page" data-nav="settings" href="/Settings"><img class="icon icon-nav" src="icons/settings.svg" alt="" /></a>
         </div>
       </nav>
@@ -60,10 +61,14 @@
                 </select>
                 <span id="fileSaveMethodDesc" class="file-save-desc">リンク切れの心配はありませんが、その分データ容量が増えます。</span>
               </label>
-              <div class="setting-row">
-                <span>検索履歴</span>
-                <button id="clearSearchHistory" class="modal-btn ghost" type="button">すべて削除</button>
-              </div>
+            <div class="setting-row">
+              <span>検索履歴</span>
+              <button id="clearSearchHistory" class="modal-btn ghost" type="button">すべて削除</button>
+            </div>
+            <div class="setting-row">
+              <span>累計保存クリップ数</span>
+              <button id="resetProfileStats" class="modal-btn ghost" type="button">リセット</button>
+            </div>
             </div>
 
             <div class="settings-col">
@@ -139,7 +144,7 @@
       </div>
     </div>
 
-    <script src="pins.js?v=pins-ui-20260803-file-save-reference-v1"></script>
+    <script src="pins.js?v=pins-ui-20260803-profile-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260803-window-profile-v1"></script>
   </body>
 </html>

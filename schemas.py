@@ -172,3 +172,24 @@ class NoteOut(BaseModel):
     task_ids: List[int] = []
     project_id: Optional[int] = None
     project_ids: List[int] = []
+
+
+class ProfileNameUpdate(BaseModel):
+    name: str
+
+
+class ProfileIconUpdate(BaseModel):
+    data_url: str
+
+
+class ProfilePickAdd(BaseModel):
+    clip_id: int
+
+
+class ProfileOut(BaseModel):
+    username: str
+    icon_url: Optional[str] = None
+    total_saved: int = 0
+    first_used_at: Optional[str] = None
+    days_since_first: int = 0
+    picks: List[ClipOut] = []

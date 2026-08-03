@@ -30,7 +30,7 @@ from ai_export import (
     get_status as get_ai_export_status,
     open_export_folder,
 )
-from paths import get_local_files_dir, get_uploads_dir
+from paths import get_app_data_dir, get_local_files_dir, get_profile_dir, get_uploads_dir
 from ffmpeg_bootstrap import get_ffmpeg_path
 from maintenance import (
     THUMBNAILS_DIR,
@@ -49,6 +49,10 @@ from schemas import (
     NoteCreate,
     NoteOut,
     NoteUpdate,
+    ProfileIconUpdate,
+    ProfileNameUpdate,
+    ProfileOut,
+    ProfilePickAdd,
     ProjectCreate,
     ProjectOut,
     ProjectUpdate,
@@ -594,6 +598,7 @@ def create_clip(payload: ClipCreate, db: Connection = Depends(get_db)):
             "INSERT OR IGNORE INTO project_clips(project_id, clip_id) VALUES (?, ?)",
             (payload.project_id, clip_id),
         )
+    _increment_total_saved(db)
     db.commit()
     row = db.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
     return _row_to_clip(db, row)
@@ -1150,6 +1155,225 @@ def put_setting(key: str, payload: SettingValue, db: Connection = Depends(get_db
     if key == "ai_export_enabled" and value == "false":
         clear_exported_files()
     return SettingValue(value=value)
+
+
+# --- Profile --------------------------------------------------------------
+
+PROFILE_ICON_FILENAME = "icon.png"
+PROFILE_USERNAME_DEFAULT = "ユーザー"
+PROFILE_PICKS_LIMIT = 3
+STATS_TOTAL_SAVED_KEY = "stats_total_saved"
+PROFILE_FIRST_USED_KEY = "profile_first_used_at"
+
+
+def _increment_total_saved(db: Connection) -> None:
+    row = db.execute(
+        "SELECT value FROM settings WHERE key = ?", (STATS_TOTAL_SAVED_KEY,)
+    ).fetchone()
+    current = int(row["value"]) if row and row["value"].isdigit() else 0
+    db.execute(
+        "INSERT INTO settings(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (STATS_TOTAL_SAVED_KEY, str(current + 1)),
+    )
+
+
+def _get_profile_username(db: Connection) -> str:
+    row = db.execute(
+        "SELECT value FROM settings WHERE key = ?", ("profile_username",)
+    ).fetchone()
+    name = row["value"].strip() if row and row["value"] else ""
+    return name or PROFILE_USERNAME_DEFAULT
+
+
+def _get_profile_icon_url(request: Request) -> Optional[str]:
+    icon_file = get_profile_dir() / PROFILE_ICON_FILENAME
+    if not icon_file.is_file():
+        return None
+    base_url = str(request.base_url).rstrip("/")
+    return f"{base_url}/uploads/profile/{PROFILE_ICON_FILENAME}"
+
+
+def _ensure_profile_first_used(db: Connection) -> str:
+    row = db.execute(
+        "SELECT value FROM settings WHERE key = ?", (PROFILE_FIRST_USED_KEY,)
+    ).fetchone()
+    if row and row["value"]:
+        return row["value"]
+
+    earliest: Optional[str] = None
+    for table in ("clips", "tasks", "notes", "projects"):
+        result = db.execute(f"SELECT MIN(created_at) AS m FROM {table}").fetchone()
+        if result and result["m"]:
+            if earliest is None or result["m"] < earliest:
+                earliest = result["m"]
+    setup_marker = get_app_data_dir() / ".initial-setup-complete.json"
+    if setup_marker.is_file():
+        marker_time = datetime.fromtimestamp(setup_marker.stat().st_mtime).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        if earliest is None or marker_time < earliest:
+            earliest = marker_time
+    if earliest is None:
+        earliest = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    db.execute(
+        "INSERT INTO settings(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (PROFILE_FIRST_USED_KEY, earliest),
+    )
+    db.commit()
+    return earliest
+
+
+def _days_since(date_str: str) -> int:
+    try:
+        first = datetime.strptime(date_str[:10], "%Y-%m-%d").date()
+        return max((datetime.now().date() - first).days, 0)
+    except (ValueError, TypeError):
+        return 0
+
+
+def _get_profile_picks(db: Connection) -> List[ClipOut]:
+    rows = db.execute(
+        "SELECT clip_id FROM profile_picks ORDER BY position"
+    ).fetchall()
+    picks: List[ClipOut] = []
+    for row in rows:
+        clip = db.execute("SELECT * FROM clips WHERE id = ?", (row["clip_id"],)).fetchone()
+        if clip:
+            picks.append(_row_to_clip(db, clip))
+    return picks
+
+
+def _build_profile_response(request: Request, db: Connection) -> ProfileOut:
+    row = db.execute(
+        "SELECT value FROM settings WHERE key = ?", (STATS_TOTAL_SAVED_KEY,)
+    ).fetchone()
+    total_saved = int(row["value"]) if row and row["value"].isdigit() else 0
+    first_used = _ensure_profile_first_used(db)
+    return ProfileOut(
+        username=_get_profile_username(db),
+        icon_url=_get_profile_icon_url(request),
+        total_saved=total_saved,
+        first_used_at=first_used[:10],
+        days_since_first=_days_since(first_used),
+        picks=_get_profile_picks(db),
+    )
+
+
+@router.get("/profile", response_model=ProfileOut)
+def get_profile(request: Request, db: Connection = Depends(get_db)):
+    row = db.execute(
+        "SELECT value FROM settings WHERE key = ?", (STATS_TOTAL_SAVED_KEY,)
+    ).fetchone()
+    if not (row and row["value"].isdigit()):
+        total_saved = db.execute("SELECT COUNT(*) AS c FROM clips").fetchone()["c"]
+        db.execute(
+            "INSERT INTO settings(key, value) VALUES(?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (STATS_TOTAL_SAVED_KEY, str(total_saved)),
+        )
+        db.commit()
+    return _build_profile_response(request, db)
+
+
+@router.put("/profile/name", response_model=ProfileOut)
+def update_profile_name(
+    payload: ProfileNameUpdate, request: Request, db: Connection = Depends(get_db)
+):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="ユーザー名を入力してください。")
+    if len(name) > 30:
+        raise HTTPException(status_code=422, detail="ユーザー名は30文字以内にしてください。")
+    db.execute(
+        "INSERT INTO settings(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        ("profile_username", name),
+    )
+    db.commit()
+    return _build_profile_response(request, db)
+
+
+@router.post("/profile/icon", response_model=ProfileOut)
+def update_profile_icon(
+    payload: ProfileIconUpdate, request: Request, db: Connection = Depends(get_db)
+):
+    match = _DATA_URL_RE.match(payload.data_url.strip())
+    if not match:
+        raise HTTPException(status_code=400, detail="Invalid data URL format")
+    try:
+        raw = base64.b64decode(match.group("data"), validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid base64 data")
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty image data")
+
+    saved = raw
+    try:
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(raw))
+        img.thumbnail((256, 256))
+        if img.mode != "RGBA":
+            img = img.convert("RGBA")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        saved = buf.getvalue()
+    except Exception:
+        pass
+    profile_dir = get_profile_dir()
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    target = profile_dir / PROFILE_ICON_FILENAME
+    temporary = target.with_name(f"{target.name}.tmp")
+    temporary.write_bytes(saved)
+    temporary.replace(target)
+    return _build_profile_response(request, db)
+
+
+@router.post("/profile/picks", response_model=ProfileOut, status_code=201)
+def add_profile_pick(
+    payload: ProfilePickAdd, request: Request, db: Connection = Depends(get_db)
+):
+    count = db.execute("SELECT COUNT(*) AS c FROM profile_picks").fetchone()["c"]
+    if count >= PROFILE_PICKS_LIMIT:
+        raise HTTPException(status_code=400, detail="おすすめのクリップは3つまで登録できます。")
+    clip = db.execute("SELECT id FROM clips WHERE id = ?", (payload.clip_id,)).fetchone()
+    if not clip:
+        raise HTTPException(status_code=404, detail="Clip not found")
+    db.execute(
+        "INSERT OR IGNORE INTO profile_picks(clip_id, position) VALUES(?, ?)",
+        (payload.clip_id, count),
+    )
+    db.commit()
+    return _build_profile_response(request, db)
+
+
+@router.delete("/profile/picks/{clip_id}", response_model=ProfileOut)
+def remove_profile_pick(
+    clip_id: int, request: Request, db: Connection = Depends(get_db)
+):
+    db.execute("DELETE FROM profile_picks WHERE clip_id = ?", (clip_id,))
+    for position, row in enumerate(
+        db.execute("SELECT clip_id FROM profile_picks ORDER BY position").fetchall()
+    ):
+        db.execute(
+            "UPDATE profile_picks SET position = ? WHERE clip_id = ?",
+            (position, row["clip_id"]),
+        )
+    db.commit()
+    return _build_profile_response(request, db)
+
+
+@router.post("/profile/stats/reset", response_model=ProfileOut)
+def reset_profile_stats(request: Request, db: Connection = Depends(get_db)):
+    db.execute(
+        "INSERT INTO settings(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (STATS_TOTAL_SAVED_KEY, "0"),
+    )
+    db.commit()
+    return _build_profile_response(request, db)
 
 
 @router.get("/data/ai-export/status")
@@ -1810,6 +2034,7 @@ async def upload_local_clip(
     )
     clip_id = cur.lastrowid
     _set_tags(db, clip_id, tag_ids)
+    _increment_total_saved(db)
     db.commit()
     row = db.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
     return _row_to_clip(db, row)
@@ -1865,6 +2090,7 @@ def create_reference_clip(
     )
     clip_id = cur.lastrowid
     _set_tags(db, clip_id, tag_ids)
+    _increment_total_saved(db)
     db.commit()
     row = db.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
     return _row_to_clip(db, row)

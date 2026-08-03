@@ -1187,6 +1187,21 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   padding: 0;
 }
 
+.sidebar .sidebar-tools .side-btn-profile .profile-avatar,
+.home-page .sidebar-tools .side-btn-profile .profile-avatar,
+.notes-page .sidebar-tools .side-btn-profile .profile-avatar,
+.sidebar.sidebar--index .sidebar-tools .side-btn-profile .profile-avatar {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  filter: none !important;
+}
+
 .sidebar .sidebar-tools .side-btn .icon-nav,
 .home-page .sidebar-tools .side-btn .icon-nav,
 .notes-page .sidebar-tools .side-btn .icon-nav,

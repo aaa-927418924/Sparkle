@@ -981,6 +981,90 @@ select {
   width: auto;
 }
 
+/* クリップ編集用の登録済みタグ・カテゴリ候補 */
+.edit-suggest-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.edit-cat-row > .edit-suggest-wrap {
+  flex: 1 1 auto;
+}
+
+.edit-suggest-wrap > .modal-input {
+  width: 100%;
+}
+
+.edit-suggest {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  display: grid;
+  gap: 2px;
+  max-height: min(240px, 30vh);
+  padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 12px;
+  background: var(--surface-raised, var(--surface));
+  box-shadow: var(--shadow);
+}
+
+.edit-suggest[hidden] {
+  display: none;
+}
+
+.edit-suggest::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.edit-suggest-item {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.edit-suggest-item:hover,
+.edit-suggest-item.active {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+@media (forced-colors: active) {
+  .edit-suggest {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .edit-suggest-item {
+    color: CanvasText;
+  }
+
+  .edit-suggest-item:hover,
+  .edit-suggest-item.active {
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
 .cat-clear {
   flex: 0 0 auto;
   width: 34px;

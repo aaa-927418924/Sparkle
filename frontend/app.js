@@ -650,10 +650,10 @@ const editEls = {
   comment: $("editComment"),
   category: $("editCategory"),
   categoryClear: $("editCategoryClear"),
-  categoryList: $("editCategoryList"),
+  categorySuggest: $("editCategorySuggest"),
   tagBox: $("editTagBox"),
   tagInput: $("editTagInput"),
-  tagList: $("editTagList"),
+  tagSuggest: $("editTagSuggest"),
   thumbPreview: $("editThumbPreview"),
   thumbBtn: $("editThumbBtn"),
   thumbFile: $("editThumbFile"),
@@ -724,14 +724,155 @@ function addEditTag(value) {
   editEls.tagInput.value = "";
 }
 
-editEls.tagInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" || e.key === ",") {
-    e.preventDefault();
-    addEditTag(editEls.tagInput.value);
-  } else if (e.key === "Backspace" && editEls.tagInput.value === "" && editTags.length) {
+const editSuggestState = {
+  category: { index: -1, input: editEls.category, list: editEls.categorySuggest },
+  tag: { index: -1, input: editEls.tagInput, list: editEls.tagSuggest },
+};
+
+function getEditSuggestionNames(type) {
+  if (type === "category") return state.categories.map((category) => category.name);
+  return state.tags
+    .map((tag) => tag.name)
+    .filter((name) => !editTags.includes(name));
+}
+
+function closeEditSuggestions(type) {
+  const suggestion = editSuggestState[type];
+  if (!suggestion) return;
+  suggestion.index = -1;
+  suggestion.list.hidden = true;
+  suggestion.list.innerHTML = "";
+  suggestion.input.setAttribute("aria-expanded", "false");
+  suggestion.input.removeAttribute("aria-activedescendant");
+}
+
+function renderEditSuggestions(type) {
+  const suggestion = editSuggestState[type];
+  if (!suggestion) return;
+  const query = suggestion.input.value.trim().toLowerCase();
+  const names = getEditSuggestionNames(type)
+    .filter((name) => !query || name.toLowerCase().includes(query));
+
+  if (!names.length) {
+    closeEditSuggestions(type);
+    return;
+  }
+
+  suggestion.index = Math.min(suggestion.index, names.length - 1);
+  suggestion.list.innerHTML = names
+    .map((name, index) => {
+      const active = index === suggestion.index;
+      const optionId = `edit-${type}-suggest-${index}`;
+      return `<div id="${optionId}" class="edit-suggest-item${active ? " active" : ""}" role="option" aria-selected="${active}" data-value="${escapeAttr(name)}">${escapeHtml(name)}</div>`;
+    })
+    .join("");
+  suggestion.list.hidden = false;
+  suggestion.input.setAttribute("aria-expanded", "true");
+  if (suggestion.index >= 0) {
+    suggestion.input.setAttribute("aria-activedescendant", `edit-${type}-suggest-${suggestion.index}`);
+  } else {
+    suggestion.input.removeAttribute("aria-activedescendant");
+  }
+
+  suggestion.list.querySelectorAll(".edit-suggest-item").forEach((item) => {
+    item.addEventListener("mousedown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+    });
+    item.addEventListener("click", () => {
+      selectEditSuggestion(type, item.dataset.value || "");
+    });
+  });
+}
+
+function selectEditSuggestion(type, value) {
+  if (!value) return;
+  if (type === "category") {
+    editEls.category.value = value;
+  } else {
+    addEditTag(value);
+  }
+  closeEditSuggestions(type);
+}
+
+function moveEditSuggestion(type, direction) {
+  const suggestion = editSuggestState[type];
+  const items = suggestion.list.querySelectorAll(".edit-suggest-item");
+  if (!items.length) return false;
+  suggestion.index = suggestion.index < 0
+    ? (direction < 0 ? items.length - 1 : 0)
+    : Math.max(0, Math.min(suggestion.index + direction, items.length - 1));
+  renderEditSuggestions(type);
+  return true;
+}
+
+editEls.category.addEventListener("focus", () => renderEditSuggestions("category"));
+editEls.category.addEventListener("click", () => {
+  if (editEls.categorySuggest.hidden) renderEditSuggestions("category");
+});
+editEls.category.addEventListener("input", () => {
+  editSuggestState.category.index = -1;
+  renderEditSuggestions("category");
+});
+editEls.category.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown" && moveEditSuggestion("category", 1)) {
+    event.preventDefault();
+  } else if (event.key === "ArrowUp" && moveEditSuggestion("category", -1)) {
+    event.preventDefault();
+  } else if (event.key === "Enter" && editSuggestState.category.index >= 0) {
+    const item = editEls.categorySuggest.querySelectorAll(".edit-suggest-item")[editSuggestState.category.index];
+    if (item) {
+      event.preventDefault();
+      selectEditSuggestion("category", item.dataset.value || "");
+    }
+  } else if (event.key === "Escape") {
+    closeEditSuggestions("category");
+  }
+});
+
+editEls.tagInput.addEventListener("focus", () => renderEditSuggestions("tag"));
+editEls.tagInput.addEventListener("click", () => {
+  if (editEls.tagSuggest.hidden) renderEditSuggestions("tag");
+});
+editEls.tagInput.addEventListener("input", () => {
+  editSuggestState.tag.index = -1;
+  renderEditSuggestions("tag");
+});
+editEls.tagInput.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown" && moveEditSuggestion("tag", 1)) {
+    event.preventDefault();
+    return;
+  }
+  if (event.key === "ArrowUp" && moveEditSuggestion("tag", -1)) {
+    event.preventDefault();
+    return;
+  }
+  if (event.key === "Escape") {
+    closeEditSuggestions("tag");
+    return;
+  }
+  if (event.key === "Enter" || event.key === ",") {
+    event.preventDefault();
+    const items = editEls.tagSuggest.querySelectorAll(".edit-suggest-item");
+    const value = editSuggestState.tag.index >= 0 && items[editSuggestState.tag.index]
+      ? items[editSuggestState.tag.index].dataset.value
+      : editEls.tagInput.value;
+    addEditTag(value || "");
+    closeEditSuggestions("tag");
+  } else if (event.key === "Backspace" && editEls.tagInput.value === "" && editTags.length) {
     editTags.pop();
     renderEditTags();
+    renderEditSuggestions("tag");
   }
+});
+
+document.addEventListener("mousedown", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  Object.entries(editSuggestState).forEach(([type, suggestion]) => {
+    const wrap = suggestion.input.closest(".edit-suggest-wrap");
+    if (suggestion.list.hidden || (wrap && wrap.contains(target))) return;
+    closeEditSuggestions(type);
+  });
 });
 
 function openEditModal(id) {
@@ -745,16 +886,14 @@ function openEditModal(id) {
   editEls.category.value = state.catMap.get(clip.category_id) || "";
   editTags = (clip.tags || []).map((t) => t.name);
   renderEditTags();
-  editEls.categoryList.innerHTML = state.categories
-    .map((c) => `<option value="${escapeHtml(c.name)}">`)
-    .join("");
-  editEls.tagList.innerHTML = state.tags
-    .map((t) => `<option value="${escapeHtml(t.name)}">`)
-    .join("");
+  closeEditSuggestions("category");
+  closeEditSuggestions("tag");
   editEls.modal.hidden = false;
 }
 
 function closeEditModal() {
+  closeEditSuggestions("category");
+  closeEditSuggestions("tag");
   editEls.modal.hidden = true;
   editTargetId = null;
 }
@@ -762,6 +901,7 @@ function closeEditModal() {
 editEls.cancel.addEventListener("click", closeEditModal);
 editEls.categoryClear.addEventListener("click", () => {
   editEls.category.value = "";
+  closeEditSuggestions("category");
 });
 editEls.modal.addEventListener("click", (e) => {
   if (e.target === editEls.modal) closeEditModal();

@@ -190,16 +190,16 @@ textarea {
 .save {
   width: 100%;
   padding: 8px;
-  border: none;
+  border: 1px solid #ffffff;
   border-radius: 6px;
-  background: #ffffff;
-  color: #18181b;
+  background: transparent;
+  color: #ffffff;
   font-weight: 700;
   cursor: pointer;
 }
 
 .save:hover {
-  background: #e8e8e8;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .save:disabled {

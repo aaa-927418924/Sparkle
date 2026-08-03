@@ -829,31 +829,6 @@ function initSettings() {
     if (!confirmed) return;
     if (typeof SearchHistory !== "undefined") SearchHistory.clear();
   });
-  // reset profile stats
-  const rps = document.getElementById("resetProfileStats");
-  if (rps) rps.addEventListener("click", async () => {
-    const message = "累計保存クリップ数を0にリセットしますか？\n保存済みのクリップ自体は削除されません。";
-    const confirmed = typeof window.confirmDeletion === "function"
-      ? await window.confirmDeletion(message, {
-        anchor: rps,
-        title: "統計をリセットしますか？",
-        confirmLabel: "リセットする",
-      })
-      : window.confirm(message);
-    if (!confirmed) return;
-    try {
-      const res = await fetch(`${API_ROOT}/profile/stats/reset`, {
-        method: "POST",
-        headers: { Accept: "application/json" },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-      rps.textContent = "リセットしました";
-      setTimeout(() => { rps.textContent = "リセット"; }, 1500);
-    } catch {
-      alert("統計のリセットに失敗しました。");
-    }
-  });
   // settings reset button
   const sr = document.getElementById("settingsReset");
   if (sr) sr.addEventListener("click", async () => {

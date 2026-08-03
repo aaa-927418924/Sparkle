@@ -2053,6 +2053,7 @@ body.note-editor-page .main.editor-main {
 
 /* テキストファイル プレビュー表示 */
 .card-ph-text {
+  box-sizing: border-box;
   font-size: 11px;
   line-height: 1.5;
   color: var(--text);

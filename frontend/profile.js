@@ -110,6 +110,7 @@ function renderProfile() {
   els.weekSaved.textContent = String(profile.saved_last_7_days);
   renderPicks();
   if (typeof window.initProfileSidebar === "function") window.initProfileSidebar();
+  document.body.classList.remove("profile-loading");
 }
 
 // ---- Icon ----

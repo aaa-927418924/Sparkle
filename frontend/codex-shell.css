@@ -1226,6 +1226,11 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   color: var(--text);
 }
 
+body:not(.profile-sidebar-loaded) .sidebar-tools .side-btn-profile .profile-avatar,
+body:not(.profile-sidebar-loaded) .sidebar-tools .side-btn-profile .side-username {
+  visibility: hidden;
+}
+
 .sidebar .sidebar-tools .side-btn .icon-nav,
 .home-page .sidebar-tools .side-btn .icon-nav,
 .notes-page .sidebar-tools .side-btn .icon-nav,

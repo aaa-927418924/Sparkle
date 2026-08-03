@@ -287,6 +287,20 @@
   color: var(--muted);
 }
 
+/* Hide pre-load placeholders until /profile has been fetched. */
+.profile-loading .profile-share-btn,
+.profile-loading .profile-head,
+.profile-loading .profile-stats-row,
+.profile-loading .profile-picks-head,
+.profile-loading .profile-picks-empty,
+.profile-loading .profile-picks {
+  visibility: hidden;
+}
+
+.profile-loading .profile-picks {
+  min-height: 168px;
+}
+
 /* ---- Share ---- */
 
 .profile-share-status {

@@ -1072,6 +1072,9 @@ async function initPinSettings() {
 function initProfileSidebar() {
   const avatar = document.getElementById("profileAvatar");
   if (!avatar) return;
+  const showSidebarProfile = () => {
+    if (document.body) document.body.classList.add("profile-sidebar-loaded");
+  };
   fetch(`${API_ROOT}/profile`)
     .then((r) => r.ok ? r.json() : null)
     .then((data) => {
@@ -1081,7 +1084,8 @@ function initProfileSidebar() {
       const span = document.getElementById("sidebarUsername");
       if (span) span.textContent = name.length > 15 ? name.slice(0, 15) + "…" : name;
     })
-    .catch(() => {});
+    .catch(() => {})
+    .then(showSidebarProfile);
 }
 window.initProfileSidebar = initProfileSidebar;
 

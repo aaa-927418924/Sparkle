@@ -154,6 +154,10 @@ def _target_has_user_data(path: Path) -> bool:
     if not path.exists():
         return False
     allowed_runtime_files = {"app.log", "stdio.log"}
+    # WebView2 creates a complete browser profile before migration runs.
+    # It is runtime state, not Sparkle's clips/settings database, and must not
+    # make an otherwise empty target look like existing user data.
+    allowed_runtime_dirs = {"webview"}
     # Normal startup may create these empty upload buckets before migration.
     allowed_upload_dirs = {"local", "thumbnails"}
 
@@ -179,6 +183,8 @@ def _target_has_user_data(path: Path) -> bool:
 
     for child in path.iterdir():
         if child.name in allowed_runtime_files and child.is_file():
+            continue
+        if child.name in allowed_runtime_dirs and child.is_dir():
             continue
         if child.name == "uploads" and is_runtime_upload_directory(child):
             continue

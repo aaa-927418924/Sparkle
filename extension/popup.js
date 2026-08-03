@@ -7,7 +7,7 @@ const els = {
   pageUrl: $("pageUrl"),
   comment: $("comment"),
   category: $("category"),
-  categoryList: $("categoryList"),
+  categorySuggest: $("categorySuggest"),
   tagBox: $("tagBox"),
   tagInput: $("tagInput"),
   tagSuggest: $("tagSuggest"),
@@ -23,8 +23,10 @@ const els = {
 let pageInfo = null;
 let tags = [];
 let tagHistory = []; // 使用済みタグ履歴(新しい順、chrome.storage.localに永続化)
-let tagHistoryLoaded = false;
+let categoryNames = []; // APIから取得した既存カテゴリ
+let categoryHistory = []; // 保存済みカテゴリ履歴(新しい順、chrome.storage.localに永続化)
 let tagSuggestIndex = -1; // キーボードでハイライト中の候補index
+let categorySuggestIndex = -1; // キーボードでハイライト中のカテゴリ候補index
 let pendingThumbnail = null; // スクショで選んだ data URL (未選択なら null)
 
 async function api(path, options = {}) {
@@ -38,23 +40,27 @@ async function api(path, options = {}) {
 
 async function loadSuggestions() {
   try {
-    const [categories] = await Promise.all([
-      api("/categories"),
-    ]);
-    els.categoryList.innerHTML = categories
-      .map((c) => `<option value="${escapeHtml(c.name)}">`)
-      .join("");
+    const categories = await api("/categories");
+    categoryNames = Array.isArray(categories)
+      ? categories
+          .map((c) => (c && c.name ? String(c.name).trim() : ""))
+          .filter(Boolean)
+      : [];
   } catch (e) {
     // 候補の取得失敗は保存には影響しないため無視
   }
   try {
-    const data = await chrome.storage.local.get("tagHistory");
+    const data = await chrome.storage.local.get(["tagHistory", "categoryHistory"]);
     if (Array.isArray(data.tagHistory)) {
       tagHistory = data.tagHistory;
     }
-    tagHistoryLoaded = true;
+    if (Array.isArray(data.categoryHistory)) {
+      categoryHistory = data.categoryHistory
+        .map((name) => (typeof name === "string" ? name.trim() : ""))
+        .filter(Boolean);
+    }
   } catch (e) {
-    tagHistoryLoaded = true;
+    // 履歴の読み込み失敗は保存には影響しないため無視
   }
 }
 
@@ -106,6 +112,20 @@ function recordTagHistory(name) {
   } catch (e) { /* ストレージエラーは無視 */ }
 }
 
+function recordCategoryHistory(name) {
+  const value = name.trim();
+  if (!value) return;
+
+  // 既存履歴から削除して先頭に追加(新しい順)
+  const idx = categoryHistory.indexOf(value);
+  if (idx >= 0) categoryHistory.splice(idx, 1);
+  categoryHistory.unshift(value);
+  if (categoryHistory.length > 50) categoryHistory.length = 50;
+  try {
+    chrome.storage.local.set({ categoryHistory });
+  } catch (e) { /* ストレージエラーは無視 */ }
+}
+
 function renderTagSuggest(filterText) {
   const q = filterText.trim().toLowerCase();
   // ポップアップ内の残りスペースに合わせて表示件数を制限（最大7）
@@ -152,6 +172,68 @@ function closeTagSuggest() {
   tagSuggestIndex = -1;
 }
 
+function getCategorySuggestions() {
+  return [...categoryHistory, ...categoryNames].filter(
+    (name, index, list) => list.indexOf(name) === index
+  );
+}
+
+function renderCategorySuggest(filterText) {
+  const q = filterText.trim().toLowerCase();
+  // 入力欄の上側に表示するため、上に残っている高さで件数を制限（最大7）
+  const inputTop = els.category.getBoundingClientRect().top;
+  const availHeight = inputTop - 8;
+  const itemHeight = 38;
+  const maxCount = Math.max(1, Math.min(7, Math.floor(availHeight / itemHeight)));
+
+  const list = getCategorySuggestions()
+    .filter((name) => !q || name.toLowerCase().includes(q))
+    .slice(0, maxCount);
+  if (!list.length) {
+    closeCategorySuggest();
+    return;
+  }
+  categorySuggestIndex = Math.min(categorySuggestIndex, list.length - 1);
+
+  els.categorySuggest.innerHTML = list
+    .map(
+      (name, i) =>
+        `<div id="categorySuggestOption${i}" class="suggest-item${i === categorySuggestIndex ? " active" : ""}" role="option" aria-selected="${i === categorySuggestIndex}" data-name="${escapeHtml(name)}">${escapeHtml(name)}</div>`
+    )
+    .join("");
+  els.categorySuggest.style.maxHeight = list.length * itemHeight + 4 + "px";
+  els.categorySuggest.hidden = false;
+  els.category.setAttribute("aria-expanded", "true");
+  if (categorySuggestIndex >= 0) {
+    els.category.setAttribute("aria-activedescendant", `categorySuggestOption${categorySuggestIndex}`);
+  } else {
+    els.category.removeAttribute("aria-activedescendant");
+  }
+  els.categorySuggest.querySelectorAll(".suggest-item").forEach((el) => {
+    el.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      els.category.value = el.dataset.name;
+      saveDraft();
+      closeCategorySuggest();
+    });
+    el.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      els.category.blur();
+      closeCategorySuggest();
+    });
+  });
+}
+
+function closeCategorySuggest() {
+  els.categorySuggest.hidden = true;
+  els.categorySuggest.innerHTML = "";
+  els.categorySuggest.style.maxHeight = "";
+  els.category.setAttribute("aria-expanded", "false");
+  els.category.removeAttribute("aria-activedescendant");
+  categorySuggestIndex = -1;
+}
+
 els.tagInput.addEventListener("input", () => {
   tagSuggestIndex = -1;
   renderTagSuggest(els.tagInput.value);
@@ -169,17 +251,43 @@ els.tagInput.addEventListener("click", () => {
   }
 });
 
+els.category.addEventListener("input", () => {
+  categorySuggestIndex = -1;
+  renderCategorySuggest(els.category.value);
+  saveDraft();
+});
+
+els.category.addEventListener("focus", () => {
+  renderCategorySuggest(els.category.value);
+});
+
+// 既にフォーカスがある状態で空欄クリック → 履歴再表示
+els.category.addEventListener("click", () => {
+  if (els.categorySuggest.hidden) {
+    categorySuggestIndex = -1;
+    renderCategorySuggest(els.category.value);
+  }
+});
+
 // 候補リスト内のクリックでは入力欄からフォーカスを奪わない
 els.tagSuggest.addEventListener("mousedown", (e) => {
   e.preventDefault();
 });
 
+// 候補リスト内のクリックでは入力欄からフォーカスを奪わない
+els.categorySuggest.addEventListener("mousedown", (e) => {
+  e.preventDefault();
+});
+
 // 枠外クリックで候補を閉じる
 document.addEventListener("mousedown", (e) => {
-  if (els.tagSuggest.hidden) return;
-  const wrap = els.tagInput.closest(".suggest-wrap");
-  if (wrap && !wrap.contains(e.target)) {
+  const tagWrap = els.tagInput.closest(".suggest-wrap");
+  if (!els.tagSuggest.hidden && tagWrap && !tagWrap.contains(e.target)) {
     closeTagSuggest();
+  }
+  const categoryWrap = els.category.closest(".suggest-wrap");
+  if (!els.categorySuggest.hidden && categoryWrap && !categoryWrap.contains(e.target)) {
+    closeCategorySuggest();
   }
 });
 
@@ -223,8 +331,42 @@ els.tagInput.addEventListener("keydown", (e) => {
   }
 });
 
+els.category.addEventListener("keydown", (e) => {
+  const items = els.categorySuggest.querySelectorAll(".suggest-item");
+
+  if (e.key === "ArrowDown" && items.length) {
+    e.preventDefault();
+    categorySuggestIndex = Math.min(categorySuggestIndex + 1, items.length - 1);
+    renderCategorySuggest(els.category.value);
+    return;
+  }
+  if (e.key === "ArrowUp" && items.length) {
+    e.preventDefault();
+    categorySuggestIndex = Math.max(categorySuggestIndex - 1, 0);
+    renderCategorySuggest(els.category.value);
+    return;
+  }
+  if (e.key === "Tab" && items.length) {
+    e.preventDefault();
+    categorySuggestIndex = Math.min(categorySuggestIndex + 1, items.length - 1);
+    renderCategorySuggest(els.category.value);
+    return;
+  }
+  if (e.key === "Escape") {
+    closeCategorySuggest();
+    return;
+  }
+  if (e.key === "Enter") {
+    e.preventDefault();
+    if (categorySuggestIndex >= 0 && items[categorySuggestIndex]) {
+      els.category.value = items[categorySuggestIndex].dataset.name;
+      saveDraft();
+    }
+    closeCategorySuggest();
+  }
+});
+
 els.comment.addEventListener("input", saveDraft);
-els.category.addEventListener("input", saveDraft);
 els.favorite.addEventListener("change", saveDraft);
 
 function setStatus(msg, kind) {
@@ -329,6 +471,9 @@ async function save() {
       method: "POST",
       body: JSON.stringify(payload),
     });
+
+    // カテゴリ履歴は入力中や下書き保存では更新せず、クリップ保存成功時だけ追加する
+    recordCategoryHistory(payload.category || "");
 
     if (els.favorite.checked) {
       await api(`/clips/${created.id}/favorite`, { method: "PATCH" });

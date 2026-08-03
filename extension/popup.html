@@ -41,10 +41,28 @@
         <textarea id="comment" rows="3" placeholder="メモを入力…"></textarea>
       </div>
 
-      <div class="field">
-        <label>カテゴリ</label>
-        <input id="category" type="text" list="categoryList" placeholder="カテゴリ名" autocomplete="off" />
-        <datalist id="categoryList"></datalist>
+      <div class="field suggest-field category-suggest-field">
+        <label for="category">カテゴリ</label>
+        <div class="suggest-wrap category-suggest-wrap">
+          <input
+            id="category"
+            type="text"
+            placeholder="カテゴリ名"
+            autocomplete="off"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-haspopup="listbox"
+            aria-controls="categorySuggest"
+            aria-expanded="false"
+          />
+          <div
+            id="categorySuggest"
+            class="suggest-list"
+            hidden
+            role="listbox"
+            aria-label="カテゴリの入力履歴"
+          ></div>
+        </div>
       </div>
 
       <label class="fav">

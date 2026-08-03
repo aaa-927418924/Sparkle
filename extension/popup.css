@@ -193,6 +193,14 @@ textarea {
   margin-bottom: 20px;
 }
 
+.category-suggest-wrap .suggest-list {
+  top: auto;
+  bottom: calc(100% + 4px);
+  max-height: 220px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .suggest-list {
   position: absolute;
   top: calc(100% + 4px);

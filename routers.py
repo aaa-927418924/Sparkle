@@ -37,6 +37,7 @@ from paths import get_app_data_dir, get_local_files_dir, get_profile_dir, get_up
 from ffmpeg_bootstrap import get_ffmpeg_path
 from maintenance import (
     THUMBNAILS_DIR,
+    cleanup_orphan_tags,
     delete_thumbnail_file,
     run_maintenance,
 )
@@ -347,6 +348,7 @@ def _set_tags(conn: Connection, clip_id: int, tag_ids: List[int]) -> None:
             "INSERT OR IGNORE INTO clip_tags(clip_id, tag_id) VALUES (?, ?)",
             (clip_id, tag_id),
         )
+    cleanup_orphan_tags(conn)
 
 
 def _resolve_tags(conn: Connection, names: List[str]) -> List[int]:
@@ -829,6 +831,7 @@ def delete_clip(clip_id: int, db: Connection = Depends(get_db)):
     clip_url = row["url"]
     file_ref = row["file_ref"]
     db.execute("DELETE FROM clips WHERE id = ?", (clip_id,))
+    cleanup_orphan_tags(db)
     db.commit()
     delete_thumbnail_file(thumbnail_url)
     # Only delete the file from disk for copy mode (we own the file).
@@ -1775,6 +1778,8 @@ def _merge_database(source: sqlite3.Connection, dest: Connection) -> dict:
                 "INSERT OR IGNORE INTO profile_picks(clip_id, position) VALUES (?, ?)",
                 (clip_id, int(row["position"] or 0)),
             )
+
+    cleanup_orphan_tags(dest)
 
     return {
         "categories": len(category_map),

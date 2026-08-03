@@ -106,11 +106,20 @@ def delete_thumbnail_file(url: str) -> None:
         pass
 
 
+def cleanup_orphan_tags(db: Connection) -> int:
+    """Delete tags that are not used by any clip. Categories are kept."""
+    cur = db.execute(
+        "DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM clip_tags)"
+    )
+    return cur.rowcount
+
+
 # Registry of cleanup jobs. Add new callables here to extend maintenance
 # (e.g. other cache types) without changing startup wiring.
 CLEANERS: List[Callable[[Connection], int]] = [
     cleanup_expired_tasks,
     cleanup_orphan_thumbnails,
+    cleanup_orphan_tags,
 ]
 
 

@@ -1202,6 +1202,30 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   filter: none !important;
 }
 
+.sidebar .sidebar-tools .side-btn-profile,
+.home-page .sidebar-tools .side-btn-profile,
+.notes-page .sidebar-tools .side-btn-profile,
+.sidebar.sidebar--index .sidebar-tools .side-btn-profile {
+  width: auto;
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 6px;
+}
+
+.sidebar .sidebar-tools .side-btn-profile .side-username,
+.home-page .sidebar-tools .side-btn-profile .side-username,
+.notes-page .sidebar-tools .side-btn-profile .side-username,
+.sidebar.sidebar--index .sidebar-tools .side-btn-profile .side-username {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
 .sidebar .sidebar-tools .side-btn .icon-nav,
 .home-page .sidebar-tools .side-btn .icon-nav,
 .notes-page .sidebar-tools .side-btn .icon-nav,

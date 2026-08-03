@@ -67,9 +67,9 @@
         throw new Error(result.error || "移行に失敗しました。");
       }
       statusEl.textContent = result.warnings?.length
-        ? `移行は完了しました。一部の項目は後で確認してください。`
-        : "移行が完了しました。Sparkleを起動しています…";
-      window.location.replace("/ExtensionGuide?source=migration");
+        ? "移行は完了しました。一部の項目を確認したあと、設定の確認へ進みます。"
+        : "移行が完了しました。続いてSparkleの設定を確認します…";
+      window.location.replace("/Setup?source=migration");
     } catch (error) {
       exitButton.disabled = false;
       runButton.disabled = false;

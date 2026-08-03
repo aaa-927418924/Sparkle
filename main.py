@@ -15,7 +15,14 @@ from maintenance import SETTING_DEFAULTS, run_maintenance
 from paths import get_uploads_dir, get_thumbnails_dir, get_local_files_dir, get_resource_dir
 from ffmpeg_bootstrap import ensure_ffmpeg_async
 from migration import get_migration_status, run_migration
-from setup import get_setup_status, mark_setup_complete
+from setup import (
+    advance_post_migration_onboarding,
+    begin_post_migration_onboarding,
+    complete_post_migration_onboarding,
+    get_post_migration_onboarding_status,
+    get_setup_status,
+    mark_setup_complete,
+)
 
 UPLOADS_DIR = get_uploads_dir()
 get_thumbnails_dir()
@@ -48,6 +55,7 @@ def _initialize_application_data() -> None:
 
 
 class InitialSetupPayload(BaseModel):
+    flow: str = "initial"
     file_save_method: str = SETTING_DEFAULTS["file_save_method"]
     task_auto_delete: str = SETTING_DEFAULTS["task_auto_delete"]
     auto_create_note_on_task: bool = False
@@ -65,6 +73,8 @@ def migration_run():
     result = run_migration(os.environ.get("SPARKLE_EXECUTABLE"))
     if result.get("ok"):
         _initialize_application_data()
+        if not result.get("already_done"):
+            begin_post_migration_onboarding()
     return result
 
 
@@ -77,6 +87,12 @@ def setup_status():
 def setup_complete(payload: InitialSetupPayload):
     if get_migration_status().get("required"):
         raise HTTPException(status_code=409, detail="先にデータ移行を完了してください。")
+    if payload.flow not in {"initial", "migration"}:
+        raise HTTPException(status_code=422, detail="初期設定フローが不正です。")
+    if payload.flow == "migration":
+        onboarding = get_post_migration_onboarding_status()
+        if not onboarding.get("required") or onboarding.get("stage") != "setup":
+            raise HTTPException(status_code=409, detail="移行後の設定確認はすでに完了しています。")
 
     if payload.file_save_method not in {"copy", "reference"}:
         raise HTTPException(status_code=422, detail="ファイル保存方式が不正です。")
@@ -104,8 +120,21 @@ def setup_complete(payload: InitialSetupPayload):
 
     if not payload.ai_export_enabled:
         clear_exported_files()
-    mark_setup_complete(payload.model_dump())
+    mark_setup_complete(payload.model_dump(exclude={"flow"}))
+    if payload.flow == "migration":
+        advance_post_migration_onboarding("extension")
     return {"ok": True, "status": get_setup_status()}
+
+
+@app.post("/setup/post-migration/complete", include_in_schema=False)
+def complete_post_migration_setup():
+    onboarding = get_post_migration_onboarding_status()
+    if not onboarding.get("required"):
+        return {"ok": True, "already_done": True}
+    if onboarding.get("stage") != "extension":
+        raise HTTPException(status_code=409, detail="先に移行後の設定確認を完了してください。")
+    complete_post_migration_onboarding()
+    return {"ok": True}
 
 
 @app.get("/health")

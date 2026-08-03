@@ -50,6 +50,10 @@ body.setup-page .migration-window {
   font-weight: 700;
 }
 
+.setup-debug-note[hidden] {
+  display: none;
+}
+
 .setup-panel {
   overflow: hidden;
   border: 1px solid var(--border);

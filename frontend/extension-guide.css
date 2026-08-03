@@ -36,6 +36,10 @@ body.extension-guide-page .extension-guide-window {
   font-weight: 700;
 }
 
+.extension-guide-debug-note[hidden] {
+  display: none;
+}
+
 .extension-guide-steps {
   display: grid;
   gap: 10px;

@@ -19,8 +19,12 @@ set "LEGACY_EXPORT_ROOT=%USERPROFILE%\Documents\AIClipSaveApp"
 
 tasklist /FI "IMAGENAME eq Sparkle.exe" 2>NUL | find /I "Sparkle.exe" >NUL
 if not errorlevel 1 (
-  echo Sparkle.exe is running. Close Sparkle and run this file again.
-  exit /b 3
+  echo Sparkle.exe is running.
+  echo Close Sparkle, including its tray process, before continuing.
+  choice /C YN /N /M "Press Y after closing Sparkle to recheck, or N to cancel. [Y/N] "
+  if errorlevel 2 goto :cancel
+  tasklist /FI "IMAGENAME eq Sparkle.exe" 2>NUL | find /I "Sparkle.exe" >NUL
+  if not errorlevel 1 goto :failed_running
 )
 
 echo.
@@ -36,32 +40,21 @@ choice /C YN /N /M "Continue? [Y/N] "
 if errorlevel 2 goto :cancel
 if not errorlevel 1 goto :cancel
 
-call :remove_tree "%CURRENT_DATA%"
-if errorlevel 1 goto :failed
-call :remove_tree "%CURRENT_EXPORT%"
-if errorlevel 1 goto :failed
-call :remove_tree "%LEGACY_DATA%"
-if errorlevel 1 goto :failed
-call :remove_tree "%LEGACY_EXPORT_ROOT%"
-if errorlevel 1 goto :failed
+if exist "%CURRENT_DATA%\" rmdir /s /q "%CURRENT_DATA%"
+if exist "%CURRENT_DATA%\" goto :failed
+if exist "%CURRENT_EXPORT%\" rmdir /s /q "%CURRENT_EXPORT%"
+if exist "%CURRENT_EXPORT%\" goto :failed
+if exist "%LEGACY_DATA%\" rmdir /s /q "%LEGACY_DATA%"
+if exist "%LEGACY_DATA%\" goto :failed
+if exist "%LEGACY_EXPORT_ROOT%\" rmdir /s /q "%LEGACY_EXPORT_ROOT%"
+if exist "%LEGACY_EXPORT_ROOT%\" goto :failed
 
-call :remove_empty_dir "%CURRENT_EXPORT_ROOT%"
+if exist "%CURRENT_EXPORT_ROOT%\" rmdir "%CURRENT_EXPORT_ROOT%" 2>NUL
 echo.
 echo New user test state is ready.
 echo If a legacy backup or legacy executable remains outside these folders,
 echo Sparkle may still show the migration screen by design.
 pause
-exit /b 0
-
-:remove_tree
-if not exist "%~1\" exit /b 0
-rmdir /s /q "%~1"
-if exist "%~1\" exit /b 1
-exit /b 0
-
-:remove_empty_dir
-if not exist "%~1\" exit /b 0
-rmdir "%~1" 2>NUL
 exit /b 0
 
 :cancel
@@ -71,3 +64,7 @@ exit /b 1
 :failed
 echo A folder could not be removed. Check that no file is open and try again.
 exit /b 4
+
+:failed_running
+echo Sparkle.exe is still running. No data was deleted.
+exit /b 5

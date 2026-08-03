@@ -997,6 +997,10 @@ select {
   box-sizing: border-box;
 }
 
+.home-page #editModal .modal-input {
+  box-sizing: border-box;
+}
+
 .edit-suggest {
   position: absolute;
   top: auto;

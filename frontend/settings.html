@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ja" class="settings-document">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sparkle — 設定</title>
+    <link rel="stylesheet" href="style.css?v=settings-operation-lock-20260803-v1" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
+    <script>document.documentElement.setAttribute("data-theme", "dark");</script>
+  </head>
+  <body class="settings-page">
+    <a class="skip-link" href="#mainContent">本文へ移動</a>
+    <div class="layout">
+      <nav class="sidebar sidebar--index" aria-label="メインナビゲーション">
+        <div class="sidebar-titlebar">
+          <div class="sidebar-brand">
+            <img class="sidebar-brand-icon" src="/icon.png" alt="" draggable="false" />
+            <strong class="sidebar-title">Sparkle</strong>
+          </div>
+          <div class="window-controls" aria-label="ウィンドウ操作">
+            <button class="window-control" type="button" title="最小化" aria-label="最小化" data-window-action="minimize_window">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
+            </button>
+            <button class="window-control" type="button" title="最大化" aria-label="最大化" data-window-action="toggle_maximize_window">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z" /></svg>
+            </button>
+            <button class="window-control window-control-close" type="button" title="閉じる" aria-label="閉じる" data-window-action="close_window">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+            </button>
+          </div>
+        </div>
+        <a class="side-btn" title="ホーム" data-nav="home" href="/Home"><img class="icon icon-nav" src="icons/home.svg" alt="" /><span class="side-label">ホーム</span></a>
+        <a class="side-btn" title="タスク・メモ" data-nav="memo" href="/Notes"><img class="icon icon-nav" src="icons/memo.svg" alt="" /><span class="side-label">タスク・メモ</span></a>
+        <a class="side-btn" title="プロジェクト" data-nav="projects" href="/Projects"><img class="icon icon-nav" src="icons/project.svg" alt="" /><span class="side-label">プロジェクト</span></a>
+        <div class="side-spacer"></div>
+        <div class="sidebar-tools" aria-label="サイドバー操作">
+          <a class="side-btn side-btn-profile" title="プロフィール" aria-label="プロフィール" data-nav="profile" href="/Profile"><img class="profile-avatar" id="profileAvatar" src="/icon.png" alt="" /><span class="side-username" id="sidebarUsername"></span></a>
+          <a class="side-btn active" title="設定" aria-label="設定" aria-current="page" data-nav="settings" href="/Settings"><img class="icon icon-nav" src="icons/settings.svg" alt="" /></a>
+        </div>
+      </nav>
+
+      <main id="mainContent" class="main settings-main">
+        <header class="settings-page-header">
+          <div>
+            <p class="settings-page-kicker">SPARKLE</p>
+            <h1 class="settings-page-title">設定</h1>
+            <p class="settings-page-description">アプリの動作とデータの保存方法を管理します。</p>
+          </div>
+        </header>
+
+        <section class="settings-page-card" aria-labelledby="settingsPageTitle">
+          <h2 id="settingsPageTitle" class="sr-only">Sparkleの設定項目</h2>
+          <div class="settings-columns">
+            <div class="settings-col">
+              <h3 class="modal-sub">ホームの設定</h3>
+              <label class="setting-row column">
+                <span>ファイル保存方式</span>
+                <select id="fileSaveMethod" class="setting-select">
+                  <option value="copy">アプリ内へコピー</option>
+                  <option value="reference">元ファイル参照</option>
+                </select>
+                <span id="fileSaveMethodDesc" class="file-save-desc">リンク切れの心配はありませんが、その分データ容量が増えます。</span>
+              </label>
+            <div class="setting-row">
+              <span>検索履歴</span>
+              <button id="clearSearchHistory" class="modal-btn ghost" type="button">すべて削除</button>
+            </div>
+            </div>
+
+            <div class="settings-col">
+              <h3 class="modal-sub">タスクの設定</h3>
+              <label class="setting-row">
+                <span>タスク作成時に同名の空メモを自動作成する</span>
+                <input type="checkbox" id="autoCreateNote" />
+              </label>
+              <label class="setting-row column">
+                <span>完了したタスクを自動削除</span>
+                <select id="taskAutoDelete" class="setting-select">
+                  <option value="3d">3日後</option>
+                  <option value="1w">1週間後</option>
+                  <option value="1m">1か月後</option>
+                  <option value="never">自動削除しない</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="settings-col">
+              <h3 class="modal-sub">プロジェクトの設定</h3>
+              <label class="setting-row">
+                <span>プロジェクト作成時に同名の空メモを自動作成する</span>
+                <input type="checkbox" id="autoCreateNoteOnProject" />
+              </label>
+            </div>
+
+            <div class="settings-col settings-data-col">
+              <h3 class="modal-sub">データ移行</h3>
+              <div class="setting-row column">
+                <span>データベース</span>
+                <div class="settings-data-actions">
+                  <button id="dbExportBtn" class="modal-btn ghost" type="button">エクスポート</button>
+                  <button id="dbImportBtn" class="modal-btn ghost" type="button">インポート</button>
+                  <input id="dbImportFile" type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden />
+                </div>
+                <span class="file-save-desc">保存データをZIPでエクスポート出来ます。</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-col settings-ai-col">
+            <h3 class="modal-sub">AI向けエクスポート</h3>
+            <label class="setting-row">
+              <span>AI向けエクスポートを有効にする</span>
+              <input id="aiExportEnabled" type="checkbox" checked disabled />
+            </label>
+            <span id="aiExportDesc" class="file-save-desc">保存先のMarkdownをClaudeのFileSystemMCPやOpenCodeなどから読み込めます。</span>
+            <div id="aiExportStatus" class="ai-export-status" role="status" aria-live="polite">状態を確認中…</div>
+            <div class="settings-data-actions">
+              <button id="aiExportOpen" class="modal-btn ghost" type="button">フォルダを開く</button>
+            </div>
+          </div>
+
+          <div class="settings-page-actions">
+            <button id="settingsReset" class="modal-btn ghost" type="button">設定をすべてデフォルトに戻す</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="settingsOperationLock" class="modal settings-operation-lock" hidden aria-hidden="true">
+      <div class="settings-operation-lock-card" role="alertdialog" aria-modal="true" aria-labelledby="settingsOperationLockTitle" aria-describedby="settingsOperationLockDescription" tabindex="-1">
+        <div class="settings-operation-lock-mark" aria-hidden="true">↻</div>
+        <h2 id="settingsOperationLockTitle" class="modal-title">バックアップを処理しています</h2>
+        <p id="settingsOperationLockDescription" class="settings-operation-lock-description">
+          完了するまでアプリを閉じたり、ページを移動したりしないでください。
+        </p>
+        <div class="settings-operation-lock-status" role="status" aria-live="polite" aria-atomic="true">
+          <span class="settings-operation-spinner" aria-hidden="true"></span>
+          <span id="settingsOperationLockMessage">処理を実行しています…</span>
+        </div>
+      </div>
+    </div>
+
+    <script src="pins.js?v=pins-ui-20260803-profile-v1"></script>
+    <script src="codex-shell.js?v=codex-shell-20260803-window-profile-v1"></script>
+  </body>
+</html>

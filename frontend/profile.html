@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ja" class="profile-document">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sparkle — プロフィール</title>
+    <link rel="stylesheet" href="style.css?v=profile-20260803-v1" />
+    <link rel="stylesheet" href="profile-figma.css?v=profile-ui-20260803-v1" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
+    <script>document.documentElement.setAttribute("data-theme", "dark");</script>
+  </head>
+  <body class="profile-page profile-loading">
+    <a class="skip-link" href="#mainContent">本文へ移動</a>
+    <div class="layout">
+      <nav class="sidebar sidebar--index" aria-label="メインナビゲーション">
+        <div class="sidebar-titlebar">
+          <div class="sidebar-brand">
+            <img class="sidebar-brand-icon" src="/icon.png" alt="" draggable="false" />
+            <strong class="sidebar-title">Sparkle</strong>
+          </div>
+          <div class="window-controls" aria-label="ウィンドウ操作">
+            <button class="window-control" type="button" title="最小化" aria-label="最小化" data-window-action="minimize_window">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
+            </button>
+            <button class="window-control" type="button" title="最大化" aria-label="最大化" data-window-action="toggle_maximize_window">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z" /></svg>
+            </button>
+            <button class="window-control window-control-close" type="button" title="閉じる" aria-label="閉じる" data-window-action="close_window">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+            </button>
+          </div>
+        </div>
+        <a class="side-btn" title="ホーム" data-nav="home" href="/Home"><img class="icon icon-nav" src="icons/home.svg" alt="" /><span class="side-label">ホーム</span></a>
+        <a class="side-btn" title="タスク・メモ" data-nav="memo" href="/Notes"><img class="icon icon-nav" src="icons/memo.svg" alt="" /><span class="side-label">タスク・メモ</span></a>
+        <a class="side-btn" title="プロジェクト" data-nav="projects" href="/Projects"><img class="icon icon-nav" src="icons/project.svg" alt="" /><span class="side-label">プロジェクト</span></a>
+        <div class="side-spacer"></div>
+        <div class="sidebar-tools" aria-label="サイドバー操作">
+          <a class="side-btn side-btn-profile active" title="プロフィール" aria-label="プロフィール" aria-current="page" data-nav="profile" href="/Profile"><img class="profile-avatar" id="profileAvatar" src="/icon.png" alt="" /><span class="side-username" id="sidebarUsername"></span></a>
+          <a class="side-btn" title="設定" aria-label="設定" data-nav="settings" href="/Settings"><img class="icon icon-nav" src="icons/settings.svg" alt="" /></a>
+        </div>
+      </nav>
+
+      <main id="mainContent" class="main settings-main">
+        <header class="settings-page-header">
+          <div>
+            <p class="settings-page-kicker">SPARKLE</p>
+            <h1 class="settings-page-title">プロフィール</h1>
+            <p class="settings-page-description">あなたの利用状況と、共有できるおすすめクリップを管理します。</p>
+          </div>
+        </header>
+
+        <section class="settings-page-card profile-card" aria-labelledby="profilePageTitle">
+          <h2 id="profilePageTitle" class="sr-only">プロフィールの内容</h2>
+          <button id="profileShare" class="profile-share-btn" type="button" title="共有画像をコピー" aria-label="共有画像をコピー">
+            <img class="profile-share-icon" src="icons/share.svg" alt="" draggable="false" />
+          </button>
+
+          <div class="profile-head">
+            <button id="profileIconBtn" class="profile-avatar-btn" type="button" title="アイコンを変更" aria-label="プロフィールアイコンを変更">
+              <img id="profileIcon" class="profile-avatar profile-avatar-lg" src="/icon.png" alt="" />
+              <span class="profile-avatar-edit" aria-hidden="true">
+                <img class="profile-avatar-cam" src="icons/cam.svg" alt="" draggable="false" />
+              </span>
+            </button>
+            <div class="profile-head-copy">
+              <button id="profileNameBtn" class="profile-name" type="button" title="クリックでユーザー名を変更">ユーザー</button>
+              <input id="profileNameInput" class="profile-name-input" type="text" maxlength="15" autocomplete="off" hidden />
+              <p id="profileFirstUsed" class="profile-name-hint">初回利用日: —</p>
+            </div>
+          </div>
+          <input id="profileIconFile" type="file" accept="image/*" hidden />
+
+          <div class="profile-stats-row" aria-label="プロフィール統計">
+            <div class="profile-stat">
+              <span id="profileTotalSaved" class="profile-stat-value">0</span>
+              <span class="profile-stat-label">累計保存クリップ</span>
+            </div>
+            <div class="profile-stat">
+              <span id="profileWeekSaved" class="profile-stat-value">0</span>
+              <span class="profile-stat-label">一週間の保存クリップ</span>
+            </div>
+            <div class="profile-stat">
+              <span id="profileDays" class="profile-stat-value">0日</span>
+              <span class="profile-stat-label">登録からの日数</span>
+            </div>
+          </div>
+
+          <div class="profile-picks-head">
+            <h2 class="profile-picks-title">おすすめのクリップ</h2>
+            <span class="profile-picks-limit" id="profilePicksLimit">0 / 3</span>
+            <button id="profilePickAdd" class="modal-btn ghost" type="button">＋ クリップを追加</button>
+          </div>
+          <div id="profilePicks" class="profile-picks"></div>
+          <p id="profilePicksEmpty" class="profile-picks-empty" hidden>おすすめはまだありません。「クリップを追加」から登録しましょう。</p>
+
+          <p id="profileShareStatus" class="profile-share-status" role="status" aria-live="polite"></p>
+        </section>
+      </main>
+    </div>
+
+    <div id="pickModal" class="modal" hidden>
+      <div class="modal-box wide">
+        <h2 class="modal-title">おすすめに追加するクリップ</h2>
+        <input id="pickSearch" class="modal-input" type="text" placeholder="クリップを検索…" autocomplete="off" />
+        <ul id="pickList" class="clip-pick-list"></ul>
+        <p id="pickEmpty" class="pick-empty" hidden>該当するクリップがありません</p>
+        <div class="modal-actions">
+          <button id="pickClose" class="modal-btn ghost">閉じる</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="shareModal" class="modal" hidden>
+      <div class="modal-box wide">
+        <h2 class="modal-title">共有画像</h2>
+        <p class="pick-empty">クリップボードにコピーできなかったため、画像を表示しています。右クリックから保存できます。</p>
+        <div class="share-preview-wrap">
+          <img id="sharePreview" class="share-preview" alt="共有画像プレビュー" />
+        </div>
+        <div class="modal-actions">
+          <button id="shareClose" class="modal-btn ghost">閉じる</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="pins.js?v=pins-ui-20260803-profile-v1"></script>
+    <script src="profile.js?v=profile-ui-20260803-v1"></script>
+    <script src="codex-shell.js?v=codex-shell-20260803-window-profile-v1"></script>
+  </body>
+</html>

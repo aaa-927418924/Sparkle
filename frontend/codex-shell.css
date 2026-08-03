@@ -1,0 +1,1669 @@
+/* Shared Windows workbench shell. Keep the existing page-specific layouts,
+   but give every screen the same quiet, Codex-inspired visual language. */
+:root {
+  --bg: #181818;
+  --surface: #202020;
+  --surface-raised: #252525;
+  --surface-hover: #2b2b2b;
+  --surface-active: #303030;
+  --border: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text: #f4f4f2;
+  --muted: #a1a1aa;
+  --accent: #d97957;
+  --accent-soft: rgba(217, 121, 87, 0.16);
+  --sidebar-press-scale: 1;
+  --shadow: 0 16px 42px rgba(0, 0, 0, 0.24);
+  color-scheme: dark;
+}
+
+html:not([data-theme="dark"]) {
+  --bg: #f4f3ef;
+  --surface: #ffffff;
+  --surface-raised: #fbfaf7;
+  --surface-hover: #f0eee9;
+  --surface-active: #ebe7e0;
+  --border: rgba(58, 54, 48, 0.14);
+  --border-strong: rgba(58, 54, 48, 0.22);
+  --text: #2e2b28;
+  --muted: #77716a;
+  --accent: #c86d4d;
+  --accent-soft: rgba(200, 109, 77, 0.12);
+  --shadow: 0 16px 42px rgba(52, 45, 38, 0.12);
+  color-scheme: light;
+}
+
+html,
+body {
+  min-width: 0;
+  background: var(--bg);
+}
+
+html.settings-document,
+body.settings-page {
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+html.settings-document::-webkit-scrollbar,
+body.settings-page::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a {
+  color: var(--text);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: fixed;
+  inset-inline-start: 16px;
+  top: 10px;
+  z-index: 300;
+  padding: 10px 14px;
+  border-radius: 10px;
+  color: #fff;
+  background: #111;
+  transform: translateY(-160%);
+  transition: transform 150ms ease-out;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.layout {
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 64px;
+  flex-basis: 64px;
+  left: 12px;
+  top: 12px;
+  bottom: 12px;
+  height: calc(100vh - 24px);
+  padding: 12px 8px;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.side-btn,
+.theme-toggle {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 13px;
+  color: var(--muted);
+}
+
+.side-btn:hover,
+.theme-toggle:hover,
+.side-btn:focus-visible,
+.theme-toggle:focus-visible {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.side-btn.active {
+  color: var(--accent);
+  background: var(--surface-active);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.side-btn.active .icon-nav,
+[data-theme="dark"] .side-btn.active .icon-nav {
+  filter: brightness(0) invert(1) !important;
+}
+
+.side-btn:focus-visible,
+.theme-toggle:focus-visible,
+.modal-btn:focus-visible,
+.fav-only:focus-visible,
+.cat-btn:focus-visible,
+.md-tb-btn:focus-visible,
+.back-link:focus-visible,
+.card:focus-visible,
+.memo-card:focus-visible,
+.project-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.main {
+  min-width: 0;
+  padding: 32px 40px 72px 104px;
+}
+
+.sticky-header {
+  margin: -32px -40px 0 -104px;
+  padding: 32px 40px 0 104px;
+}
+
+.sticky-header::before {
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in srgb, var(--bg) 88%, transparent) 96px,
+    color-mix(in srgb, var(--bg) 88%, transparent)
+  );
+}
+
+.topbar {
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.heading,
+.project-detail-title {
+  color: var(--text);
+  font-size: clamp(22px, 2vw, 30px);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+}
+
+.search-liquid {
+  animation: none;
+}
+
+.search-liquid .search {
+  height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.search-liquid .search:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 8px 24px rgba(0, 0, 0, 0.10);
+  outline: none;
+}
+
+.fav-only,
+.cat-btn,
+.sort-trigger {
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.fav-only,
+.cat-btn {
+  padding-inline: 14px;
+}
+
+.fav-only:hover,
+.cat-btn:hover,
+.sort-select:hover .sort-trigger,
+.fav-only.active,
+.cat-btn.active,
+.sort-select.open .sort-trigger {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--surface-active);
+}
+
+.fav-only.active {
+  color: var(--accent);
+}
+
+.sort-select {
+  min-width: 184px;
+}
+
+.sort-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-inline: 14px;
+}
+
+.sort-dropdown,
+.search-suggest,
+.pin-tooltip,
+.pin-ctx-menu {
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.categories {
+  gap: 8px;
+  margin-bottom: 28px;
+}
+
+.card,
+.home-page .card {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.card:hover,
+.home-page .card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.14);
+}
+
+.card::after,
+.home-page .card::after {
+  display: none;
+}
+
+.card-img,
+.card-ph,
+.home-page .card-img,
+.home-page .card-ph {
+  outline: 1px solid oklch(1 0 0 / 0.10);
+  outline-offset: -1px;
+}
+
+html:not([data-theme="dark"]) .card-img,
+html:not([data-theme="dark"]) .card-ph,
+html:not([data-theme="dark"]) .home-page .card-img,
+html:not([data-theme="dark"]) .home-page .card-ph {
+  outline-color: oklch(0 0 0 / 0.10);
+}
+
+.card-caption {
+  padding: 14px 15px 16px;
+}
+
+.card-caption .card-title,
+.card-caption .card-comment {
+  color: var(--text);
+}
+
+.card-caption .card-comment,
+.empty,
+.empty-sub,
+.project-detail-desc,
+.file-save-desc {
+  color: var(--muted);
+}
+
+.act-btn,
+.fav-btn,
+.pin-btn {
+  min-width: 40px;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-raised) 90%, transparent);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+.act-btn:hover,
+.fav-btn:hover,
+.pin-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.modal {
+  background: rgba(0, 0, 0, 0.66);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Initial content entrance: keep controls static and reveal previews in order. */
+@keyframes sparkle-page-preview-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.page-enter-card {
+  animation-name: sparkle-page-preview-in;
+  animation-duration: 240ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  animation-delay: calc(var(--page-enter-index, 0) * 24ms);
+  animation-fill-mode: both;
+  will-change: opacity, transform;
+}
+
+/* Home clips keep the fade direction, but enter together on reload. */
+.home-page .page-enter-card {
+  animation: sparkle-page-preview-in 240ms cubic-bezier(0.2, 0, 0, 1) 0ms both;
+  will-change: opacity, transform;
+}
+
+.home-page .search-liquid,
+.home-page #favOnly,
+.home-page #addLocalBtn,
+.home-page .sort-select,
+.home-page .categories,
+.home-page #categories,
+.projects-page .proj-filter-group,
+.projects-page #newProjectBtn,
+.notes-page .status-tabs,
+.notes-page #newNote {
+  animation: none;
+}
+
+/* Override the more specific page button rules that add the legacy fade-in. */
+.projects-page #newProjectBtn.fav-only.active,
+.notes-page #newNote.fav-only.active {
+  animation: none;
+}
+
+.app-confirm-popover {
+  position: fixed;
+  z-index: 4000;
+  width: min(360px, calc(100vw - 24px));
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px) scale(0.98);
+  transform-origin: center bottom;
+  transition-property: opacity, transform;
+  transition-duration: 160ms;
+  transition-timing-function: ease-out;
+}
+
+.app-confirm-popover[hidden] {
+  display: none;
+}
+
+.app-confirm-popover.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.app-confirm-card {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 58%, var(--border-strong));
+  border-radius: 16px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-raised) 96%, var(--accent-soft));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.36), 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.app-confirm-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  border-radius: 50%;
+  color: var(--accent);
+  font-weight: 750;
+  line-height: 1;
+}
+
+.app-confirm-copy {
+  min-width: 0;
+}
+
+.app-confirm-title {
+  margin: 1px 0 5px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.app-confirm-message {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+.app-confirm-actions {
+  grid-column: 2;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.app-confirm-btn {
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  color: var(--text);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition-property: background-color, border-color, color, scale;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+.app-confirm-btn:hover,
+.app-confirm-btn:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.app-confirm-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.app-confirm-submit {
+  border-color: var(--accent);
+  color: #1b1715;
+  background: var(--accent);
+}
+
+.app-confirm-submit:hover,
+.app-confirm-submit:focus-visible {
+  color: #1b1715;
+  background: color-mix(in srgb, var(--accent) 86%, white);
+}
+
+.app-confirm-btn:active {
+  scale: 0.96;
+}
+
+.upload-modal-box {
+  position: relative;
+  isolation: isolate;
+}
+
+.upload-duplicate-confirm {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  border-radius: inherit;
+  background: rgba(12, 12, 14, 0.76);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px) scale(0.98);
+  transition-property: opacity, transform;
+  transition-duration: 160ms;
+  transition-timing-function: ease-out;
+}
+
+.upload-duplicate-confirm[hidden] {
+  display: none;
+}
+
+.upload-duplicate-confirm.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.upload-duplicate-confirm .app-confirm-card {
+  width: min(390px, 100%);
+}
+
+.modal-box,
+.modal-box.wide {
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+  overscroll-behavior: contain;
+}
+
+.modal-title,
+.modal-sub,
+.panel-title,
+.project-section-title {
+  color: var(--text);
+}
+
+.modal-label {
+  color: var(--muted);
+}
+
+.modal-input,
+.setting-select,
+.task-add input,
+.clip-picker,
+.editor-body,
+.md-toolbar {
+  border-color: var(--border);
+  color: var(--text);
+  background: var(--surface);
+}
+
+.modal-input:focus,
+.setting-select:focus,
+.task-add input:focus,
+.editor-title:focus,
+.editor-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: none;
+}
+
+.modal-btn {
+  min-height: 40px;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  padding-inline: 16px;
+  transition-property: background-color, border-color, color, scale;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+.modal-btn:not(.ghost) {
+  border-color: var(--accent);
+  color: #1b1715;
+  background: var(--accent);
+}
+
+.modal-btn.ghost {
+  color: var(--muted);
+  background: transparent;
+}
+
+.modal-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+.modal-btn:not(.ghost):hover {
+  color: #1b1715;
+  background: color-mix(in srgb, var(--accent) 86%, white);
+}
+
+.modal-btn:active,
+.fav-only:active,
+.cat-btn:active,
+.theme-toggle:active {
+  scale: 0.96;
+}
+
+/* Comparison setting: change this variable to .96 to restore the press bounce. */
+.sidebar .side-btn:active {
+  scale: var(--sidebar-press-scale);
+}
+
+.batch-bar {
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.two-col,
+.task-panel,
+.memo-card,
+.project-card,
+.project-memos,
+.project-tasks,
+.editor-clips {
+  border-color: var(--border);
+}
+
+.task-panel,
+.memo-card,
+.project-card,
+.project-memos,
+.project-tasks,
+.editor-clips {
+  background: var(--surface-raised);
+}
+
+.memo-card,
+.project-card {
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.editor-top {
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.editor-title,
+.editor-textarea,
+.editor-preview {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.editor-title {
+  border-color: transparent;
+}
+
+.mode-toggle,
+.md-toolbar {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+
+.mode-btn,
+.md-tb-btn {
+  min-height: 36px;
+  border-radius: 9px;
+  color: var(--muted);
+}
+
+.mode-btn:hover,
+.md-tb-btn:hover,
+.mode-btn.active {
+  color: var(--text);
+  background: var(--surface-active);
+}
+
+.status-tabs,
+.proj-filter-group {
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--surface);
+}
+
+.project-detail-header {
+  gap: 14px;
+  padding-bottom: 20px;
+  border-bottom-color: var(--border);
+}
+
+/* home-figma.css intentionally has a more specific selector set; keep the
+   shared shell authoritative by mirroring the key shell selectors here. */
+.home-page .sidebar {
+  width: 64px;
+  flex-basis: 64px;
+  left: 12px;
+  top: 12px;
+  bottom: 12px;
+  height: calc(100vh - 24px);
+  padding: 12px 8px;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16);
+}
+
+.home-page .side-btn,
+.home-page .theme-toggle {
+  width: 44px;
+  height: 44px;
+  flex-basis: 44px;
+  border-radius: 13px;
+}
+
+.home-page .main {
+  padding: 32px 40px 72px 104px;
+}
+
+.home-page .sticky-header {
+  margin: -32px -40px 0 -104px;
+  padding: 32px 40px 0 104px;
+}
+
+.home-page .search-liquid {
+  height: 48px;
+  border-radius: 24px;
+  background: var(--surface-raised);
+}
+
+.home-page .search-liquid .search {
+  height: 48px;
+  border-radius: 24px;
+  background: var(--surface-raised);
+}
+
+.home-page .topbar {
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+@media (max-width: 900px) {
+  .main {
+    padding-inline-end: 24px;
+    padding-inline-start: 92px;
+  }
+
+  .home-page .main {
+    padding-inline-end: 24px;
+    padding-inline-start: 92px;
+  }
+
+  .sticky-header {
+    margin-inline-end: -24px;
+    margin-inline-start: -92px;
+    padding-inline-end: 24px;
+    padding-inline-start: 92px;
+  }
+
+  .home-page .sticky-header {
+    margin-inline-end: -24px;
+    margin-inline-start: -92px;
+    padding-inline-end: 24px;
+    padding-inline-start: 92px;
+  }
+}
+
+@media (max-width: 640px) {
+  .sidebar {
+    left: 8px;
+    top: 8px;
+    bottom: 8px;
+    height: calc(100vh - 16px);
+    width: 56px;
+    flex-basis: 56px;
+    padding-inline: 6px;
+    border-radius: 16px;
+  }
+
+  .side-btn,
+  .theme-toggle {
+    width: 42px;
+    min-width: 42px;
+  }
+
+  .main {
+    padding: 24px 18px 60px 78px;
+  }
+
+  .home-page .main {
+    padding: 24px 18px 60px 78px;
+  }
+
+  .sticky-header {
+    margin: -24px -18px 0 -78px;
+    padding: 24px 18px 0 78px;
+  }
+
+  .home-page .sticky-header {
+    margin: -24px -18px 0 -78px;
+    padding: 24px 18px 0 78px;
+  }
+
+  .topbar {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .topbar .search-wrap {
+    flex-basis: 100%;
+    order: -1;
+  }
+
+  .sort-select {
+    min-width: 0;
+    flex: 1 1 160px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .card:hover,
+  .home-page .card:hover {
+    transform: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .sidebar,
+  .modal-box,
+  .card,
+  .memo-card,
+  .project-card,
+  .modal-btn,
+  .fav-only,
+  .cat-btn,
+  .search-liquid .search {
+    border: 1px solid ButtonText;
+    forced-color-adjust: auto;
+  }
+
+  :focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 3px;
+  }
+}
+
+/* Expanded navigation: labels stay readable while the utility controls remain icon-only. */
+.sidebar,
+.home-page .sidebar,
+.notes-page .sidebar,
+.sidebar.sidebar--index {
+  width: 240px;
+  flex: 0 0 240px;
+  box-sizing: border-box;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  height: 100vh;
+  padding: 14px 12px;
+  align-items: stretch;
+  gap: 4px;
+  overflow-y: hidden;
+  border-radius: 0;
+}
+
+.sidebar-titlebar,
+.home-page .sidebar-titlebar,
+.notes-page .sidebar-titlebar,
+.sidebar.sidebar--index .sidebar-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  flex: 0 0 30px;
+  padding: 0 4px;
+  color: var(--text);
+  cursor: move;
+  user-select: none;
+}
+
+.sidebar-title {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 8px;
+}
+
+.sidebar-brand-icon {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  flex: 0 0 18px;
+  object-fit: contain;
+  filter: none;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 1px;
+}
+
+.window-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  min-width: 30px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.window-control:hover,
+.window-control:focus-visible {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.window-control:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.window-control-close:hover,
+.window-control-close:focus-visible {
+  color: #fff;
+  background: #c42b1c;
+}
+
+.window-control-icon {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.window-resize-handle {
+  position: fixed;
+  z-index: 2147483646;
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.window-resize-n,
+.window-resize-s {
+  left: 8px;
+  right: 8px;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.window-resize-n { top: 0; }
+.window-resize-s { bottom: 0; }
+
+.window-resize-e,
+.window-resize-w {
+  top: 8px;
+  bottom: 8px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.window-resize-e { right: 0; }
+.window-resize-w { left: 0; }
+
+.window-resize-ne,
+.window-resize-nw,
+.window-resize-se,
+.window-resize-sw {
+  width: 8px;
+  height: 8px;
+}
+
+.window-resize-ne { top: 0; right: 0; cursor: nesw-resize; }
+.window-resize-nw { top: 0; left: 0; cursor: nwse-resize; }
+.window-resize-se { right: 0; bottom: 0; cursor: nwse-resize; }
+.window-resize-sw { left: 0; bottom: 0; cursor: nesw-resize; }
+
+.sidebar .side-btn,
+.home-page .side-btn,
+.notes-page .side-btn,
+.sidebar.sidebar--index .side-btn {
+  box-sizing: border-box;
+  width: 100%;
+  height: 40px;
+  min-width: 0;
+  min-height: 40px;
+  flex: 0 0 40px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--muted);
+  text-align: start;
+}
+
+.sidebar .side-btn:hover,
+.sidebar .side-btn:focus-visible,
+.sidebar .side-btn.active,
+.home-page .side-btn:hover,
+.home-page .side-btn:focus-visible,
+.home-page .side-btn.active,
+.notes-page .side-btn:hover,
+.notes-page .side-btn:focus-visible,
+.notes-page .side-btn.active,
+.sidebar.sidebar--index .side-btn:hover,
+.sidebar.sidebar--index .side-btn:focus-visible,
+.sidebar.sidebar--index .side-btn.active {
+  color: var(--text);
+  background: var(--surface-hover);
+  box-shadow: none;
+}
+
+.sidebar .side-btn.active,
+.home-page .side-btn.active,
+.notes-page .side-btn.active,
+.notes-page .side-btn.active:hover,
+.sidebar.sidebar--index .side-btn.active {
+  color: #fff;
+  background: var(--surface-active);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.sidebar .side-btn .icon-nav,
+.home-page .side-btn .icon-nav,
+.notes-page .side-btn .icon-nav,
+.sidebar.sidebar--index .side-btn .icon-nav {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  opacity: 0.78;
+}
+
+/* Keep the home feed's legacy icon rules aligned with the shared sidebar. */
+.home-page .side-btn.active .icon-nav,
+.home-page .side-btn:not(.active) .icon-nav {
+  width: 16px;
+  height: 16px;
+  flex-basis: 16px;
+}
+
+.sidebar .side-btn:focus-visible,
+.home-page .side-btn:focus-visible,
+.notes-page .side-btn:focus-visible,
+.sidebar.sidebar--index .side-btn:focus-visible,
+.sidebar .theme-toggle:focus-visible,
+.home-page .theme-toggle:focus-visible,
+.notes-page .theme-toggle:focus-visible,
+.sidebar.sidebar--index .theme-toggle:focus-visible {
+  outline-offset: -2px;
+}
+
+.sidebar .side-label,
+.home-page .side-label,
+.notes-page .side-label,
+.sidebar.sidebar--index .side-label {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar .side-btn.active .icon-nav,
+.home-page .side-btn.active .icon-nav,
+.notes-page .side-btn.active .icon-nav,
+.sidebar.sidebar--index .side-btn.active .icon-nav {
+  filter: brightness(0) invert(1) !important;
+  opacity: 1;
+}
+
+[data-theme="dark"] .sidebar .side-btn:not(.active) .icon-nav,
+[data-theme="dark"] .home-page .side-btn:not(.active) .icon-nav,
+[data-theme="dark"] .notes-page .side-btn:not(.active) .icon-nav,
+[data-theme="dark"] .sidebar.sidebar--index .side-btn:not(.active) .icon-nav {
+  filter: brightness(0) invert(1);
+  opacity: 0.72;
+}
+
+.sidebar-tools,
+.home-page .sidebar-tools,
+.notes-page .sidebar-tools,
+.sidebar.sidebar--index .sidebar-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar .theme-toggle,
+.home-page .theme-toggle,
+.notes-page .theme-toggle,
+.sidebar.sidebar--index .theme-toggle {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  flex: 0 0 40px;
+  padding: 0;
+  border-radius: 10px;
+}
+
+.sidebar .sidebar-tools .side-btn,
+.home-page .sidebar-tools .side-btn,
+.notes-page .sidebar-tools .side-btn,
+.sidebar.sidebar--index .sidebar-tools .side-btn {
+  width: 40px;
+  flex: 0 0 40px;
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar .sidebar-tools .side-btn-profile .profile-avatar,
+.home-page .sidebar-tools .side-btn-profile .profile-avatar,
+.notes-page .sidebar-tools .side-btn-profile .profile-avatar,
+.sidebar.sidebar--index .sidebar-tools .side-btn-profile .profile-avatar {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  filter: none !important;
+}
+
+.sidebar .sidebar-tools .side-btn-profile,
+.home-page .sidebar-tools .side-btn-profile,
+.notes-page .sidebar-tools .side-btn-profile,
+.sidebar.sidebar--index .sidebar-tools .side-btn-profile {
+  width: auto;
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 6px;
+}
+
+.sidebar .sidebar-tools .side-btn-profile .side-username,
+.home-page .sidebar-tools .side-btn-profile .side-username,
+.notes-page .sidebar-tools .side-btn-profile .side-username,
+.sidebar.sidebar--index .sidebar-tools .side-btn-profile .side-username {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+body:not(.profile-sidebar-loaded) .sidebar-tools .side-btn-profile .profile-avatar,
+body:not(.profile-sidebar-loaded) .sidebar-tools .side-btn-profile .side-username {
+  visibility: hidden;
+}
+
+.sidebar .sidebar-tools .side-btn .icon-nav,
+.home-page .sidebar-tools .side-btn .icon-nav,
+.notes-page .sidebar-tools .side-btn .icon-nav,
+.sidebar.sidebar--index .sidebar-tools .side-btn .icon-nav {
+  width: 16px;
+  height: 16px;
+  flex-basis: 16px;
+}
+
+.sidebar .side-spacer,
+.home-page .side-spacer,
+.notes-page .side-spacer,
+.sidebar.sidebar--index .side-spacer {
+  min-height: 16px;
+}
+
+/* Keep the labeled navigation visible while the home feed scrolls. */
+.home-page.page-scrolled .sidebar {
+  transform: none;
+  opacity: 1;
+}
+
+.home-page.page-scrolled .sidebar::before {
+  display: none;
+}
+
+.main,
+.home-page .main,
+.notes-page .main.notes-main,
+.editor-main {
+  padding-left: 284px;
+}
+
+.sticky-header,
+.home-page .sticky-header {
+  margin-left: -284px;
+  padding-left: 284px;
+}
+
+@media (max-width: 900px) {
+  .sidebar,
+  .home-page .sidebar,
+  .notes-page .sidebar,
+  .sidebar.sidebar--index {
+    width: 216px;
+    flex-basis: 216px;
+  }
+
+  .main,
+  .home-page .main,
+  .notes-page .main.notes-main,
+  .editor-main {
+    padding-left: 260px;
+  }
+
+  .sticky-header,
+  .home-page .sticky-header {
+    margin-left: -260px;
+    padding-left: 260px;
+  }
+}
+
+@media (max-width: 640px) {
+  .sidebar,
+  .home-page .sidebar,
+  .notes-page .sidebar,
+  .sidebar.sidebar--index {
+    width: 64px;
+    flex-basis: 64px;
+    padding-inline: 8px;
+  }
+
+  .sidebar .side-btn,
+  .home-page .side-btn,
+  .notes-page .side-btn,
+  .sidebar.sidebar--index .side-btn {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .sidebar .side-label,
+  .home-page .side-label,
+  .notes-page .side-label,
+  .sidebar.sidebar--index .side-label {
+    display: none;
+  }
+
+  .sidebar-titlebar,
+  .home-page .sidebar-titlebar,
+  .notes-page .sidebar-titlebar,
+  .sidebar.sidebar--index .sidebar-titlebar {
+    display: none;
+  }
+
+  .sidebar-tools,
+  .home-page .sidebar-tools,
+  .notes-page .sidebar-tools,
+  .sidebar.sidebar--index .sidebar-tools {
+    flex-direction: column;
+  }
+
+  .main,
+  .home-page .main,
+  .notes-page .main.notes-main,
+  .editor-main {
+    padding-left: 92px;
+  }
+
+  .sticky-header,
+  .home-page .sticky-header {
+    margin-left: -92px;
+    padding-left: 92px;
+  }
+}
+
+/* Notes uses the same surface tokens as the other screens. */
+.notes-page {
+  --notes-bg: var(--bg);
+  --notes-sidebar: var(--surface);
+  background: var(--bg);
+}
+
+.notes-page .layout,
+.notes-page .main.notes-main {
+  background: var(--bg);
+}
+
+.notes-page .sidebar {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+}
+
+/* Keep Notes content surfaces consistent with the Projects cards. */
+html[data-theme="dark"] .notes-page,
+html:not([data-theme="dark"]) .notes-page {
+  --notes-panel: var(--surface-raised);
+  --notes-card: var(--surface-raised);
+  --notes-border: var(--border);
+  --notes-text: var(--text);
+  --notes-muted: var(--muted);
+  --notes-accent: var(--accent);
+}
+
+.notes-page .task-panel,
+.notes-page .memo-card {
+  border-color: var(--border);
+  border-radius: 16px;
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.notes-page .memo-card:hover {
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.notes-page #newNote.fav-only.active {
+  height: 34px;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  border-color: var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.notes-page #newNote.fav-only.active:hover {
+  border-color: var(--accent-soft);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Match Notes status filters to the Projects segmented filter group. */
+.notes-page .status-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+  height: 50px;
+  min-height: 50px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--surface);
+}
+
+.notes-page .status-tabs .cat-btn {
+  height: 40px;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 6px 14px 8px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notes-page .status-tabs .cat-btn:hover,
+.notes-page .status-tabs .cat-btn.active {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--surface-active);
+}
+
+/* Give the settings form enough room for its labels and descriptions. Keep
+   the wider treatment scoped so upload and edit dialogs stay unchanged. */
+#settingsModal .modal-box.wide,
+.settings-page-card {
+  width: min(1120px, calc(100vw - 48px));
+  max-width: calc(100vw - 48px);
+}
+
+#settingsModal .settings-columns {
+  gap: 32px;
+}
+
+@media (max-width: 900px) {
+  #settingsModal .settings-columns,
+  .settings-page .settings-columns {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+/* Settings is a first-class page, while keeping the same surfaces and density
+   as the Projects and Notes screens. */
+.settings-page .settings-main {
+  padding-top: 22px;
+}
+
+.settings-page-header {
+  max-width: 1120px;
+  margin-bottom: 22px;
+}
+
+.settings-page-kicker {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+}
+
+.settings-page-title {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(24px, 2.4vw, 32px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+.settings-page-description {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.settings-page-card {
+  box-sizing: border-box;
+  width: min(760px, 100%);
+  max-width: 760px;
+  min-width: 0;
+  padding: 24px 28px 28px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.settings-page-card .settings-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.settings-page-card .settings-ai-col {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-page-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 900px) {
+  .settings-page-card {
+    width: 100%;
+    max-width: none;
+  }
+
+  .settings-page-card .settings-columns {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+/* Keep the project creation form controls inside the modal surface. */
+#projectModal .modal-box,
+#projectModal .modal-input {
+  box-sizing: border-box;
+}
+
+html[data-theme="dark"] #projectModal #projectModalSave {
+  color: #fff;
+}
+
+/* Reserve the filter row before JavaScript fills it so the task panel does
+   not jump during the first render. */
+.notes-page .topbar {
+  height: 50px;
+  min-height: 50px;
+  box-sizing: border-box;
+  flex: 0 0 50px;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.notes-page .two-col {
+  height: calc(100% - 78px);
+}
+
+/* Keep the first memo frame on the same top edge as the task-list frame. */
+.notes-page .memo-grid {
+  box-sizing: border-box;
+  padding-top: 0;
+}
+
+/* Notes memo hover is intentionally static: no lift, fade, or button scale. */
+.notes-page .memo-card,
+.notes-page .memo-card:hover {
+  transition: none;
+  transform: none;
+}
+
+.notes-page .memo-card .memo-card-actions,
+.notes-page .memo-card .memo-card-actions .act-btn,
+.notes-page .memo-card .memo-card-actions .act-btn:hover,
+.notes-page .memo-card .memo-card-actions .act-btn:focus-visible,
+.notes-page .memo-card .pin-btn {
+  transition: none;
+}
+
+.notes-page .memo-card .memo-card-actions .act-btn:hover,
+.notes-page .memo-card .memo-card-actions .act-btn:focus-visible {
+  transform: none;
+}
+
+/* Projects and Notes share the same top edge for filters and content. */
+.projects-page .main {
+  padding-top: 22px;
+}
+
+/* Notes has a page-specific modal palette; keep the settings dialog identical
+   to the shared settings dialog used on the other screens. */
+.notes-page #settingsModal .modal-box {
+  border-color: var(--border-strong);
+  border-radius: 20px;
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.notes-page #settingsModal .modal-title,
+.notes-page #settingsModal .modal-sub,
+.notes-page #settingsModal .setting-row {
+  color: var(--text);
+}
+
+.notes-page #settingsModal .modal-label,
+.notes-page #settingsModal .file-save-desc,
+.notes-page #settingsModal .ai-export-status {
+  color: var(--muted);
+}
+
+.notes-page #settingsModal .setting-select {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+  color-scheme: dark;
+}
+
+.notes-page #settingsModal .modal-btn {
+  border-radius: 11px;
+}
+
+.notes-page #settingsModal .modal-btn.ghost {
+  border-color: var(--border-strong);
+  color: var(--muted);
+  background: transparent;
+}
+
+/* Range selection on Notes is memo-only, and selected memos need a clear
+   orange outline because the Notes palette otherwise flattens the shared
+   selection style. */
+.notes-page .memo-card.selected {
+  border-color: var(--notes-accent);
+  box-shadow: 0 0 0 2px var(--notes-accent);
+}
+
+/* The card/list pages use drag gestures for range selection. Prevent browser
+   text highlighting there while keeping normal text-box editing/selection. */
+body.home-page,
+body.notes-page,
+body.projects-page {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.home-page input,
+body.home-page textarea,
+body.notes-page input,
+body.notes-page textarea,
+body.projects-page input,
+body.projects-page textarea,
+body.home-page [contenteditable="true"],
+body.notes-page [contenteditable="true"],
+body.projects-page [contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}

@@ -1,0 +1,126 @@
+.extension-guide-document,
+body.extension-guide-page {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  overflow: auto;
+  scrollbar-width: none;
+}
+
+.extension-guide-document::-webkit-scrollbar,
+body.extension-guide-page::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+body.extension-guide-page .extension-guide-window {
+  min-height: 100vh;
+}
+
+.extension-guide-card {
+  width: min(100%, 740px);
+}
+
+.extension-guide-debug-note {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin: -2px 0 10px;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--border));
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.extension-guide-debug-note[hidden] {
+  display: none;
+}
+
+.extension-guide-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.extension-guide-step {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-raised) 76%, transparent);
+}
+
+.extension-guide-step-number {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--border));
+  border-radius: 50%;
+  color: var(--text);
+  background: var(--accent-soft);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.extension-guide-step strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.extension-guide-step p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.extension-guide-step code {
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--surface);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.extension-guide-card .migration-status {
+  margin-top: 16px;
+}
+
+.extension-guide-card .migration-actions {
+  margin-top: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .extension-guide-card,
+  .extension-guide-step {
+    transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .extension-guide-step {
+    grid-template-columns: 26px minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .extension-guide-step-number {
+    width: 26px;
+    height: 26px;
+  }
+}

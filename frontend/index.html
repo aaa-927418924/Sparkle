@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sparkle</title>
+    <link rel="stylesheet" href="style.css?v=home-edit-suggest-20260803-v3" />
+    <link rel="stylesheet" href="home-figma.css?v=home-ui-20260802-controls-drop-overlay-v1" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
+    <script>
+      document.documentElement.setAttribute("data-theme", "dark");
+    </script>
+  </head>
+  <body class="home-page">
+    <a class="skip-link" href="#mainContent">本文へ移動</a>
+    <div class="layout">
+      <nav class="sidebar" aria-label="メインナビゲーション">
+        <div class="sidebar-titlebar">
+          <div class="sidebar-brand">
+            <img class="sidebar-brand-icon" src="/icon.png" alt="" draggable="false" />
+            <strong class="sidebar-title">Sparkle</strong>
+          </div>
+          <div class="window-controls" aria-label="ウィンドウ操作">
+            <button class="window-control" type="button" title="最小化" aria-label="最小化" data-window-action="minimize_window">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
+            </button>
+            <button class="window-control" type="button" title="最大化" aria-label="最大化" data-window-action="toggle_maximize_window">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z" /></svg>
+            </button>
+            <button class="window-control window-control-close" type="button" title="閉じる" aria-label="閉じる" data-window-action="close_window">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+            </button>
+          </div>
+        </div>
+        <a class="side-btn active" title="ホーム" data-nav="home" href="/Home">
+          <img class="icon icon-nav" src="icons/home.svg" alt="" />
+          <span class="side-label">ホーム</span>
+        </a>
+        <a class="side-btn" title="タスク・メモ" data-nav="memo" href="/Notes">
+          <img class="icon icon-nav" src="icons/memo.svg" alt="" />
+          <span class="side-label">タスク・メモ</span>
+        </a>
+        <a class="side-btn" title="プロジェクト" data-nav="projects" href="/Projects">
+          <img class="icon icon-nav" src="icons/project.svg" alt="" />
+          <span class="side-label">プロジェクト</span>
+        </a>
+        <div class="side-spacer"></div>
+        <div class="sidebar-tools" aria-label="サイドバー操作">
+          <a class="side-btn side-btn-profile" title="プロフィール" aria-label="プロフィール" data-nav="profile" href="/Profile"><img class="profile-avatar" id="profileAvatar" src="/icon.png" alt="" /><span class="side-username" id="sidebarUsername"></span></a>
+          <a class="side-btn" title="設定" aria-label="設定" data-nav="settings" href="/Settings">
+            <img class="icon icon-nav" src="icons/settings.svg" alt="" />
+          </a>
+        </div>
+      </nav>
+
+      <main id="mainContent" class="main">
+        <div class="sticky-header" id="stickyHeader">
+          <div class="topbar">
+            <div class="search-wrap" id="searchWrap">
+              <div class="search-liquid">
+                <input id="search" class="search" type="search" placeholder="Search" autocomplete="off" />
+              </div>
+              <div id="searchSuggest" class="search-suggest" hidden></div>
+            </div>
+
+            <button id="favOnly" class="fav-only" title="お気に入りのみ表示">★ お気に入り</button>
+            <button id="addLocalBtn" class="fav-only" title="ファイルをアップロード">＋ ファイル追加</button>
+
+            <div id="sortSelect" class="sort-select" tabindex="0" role="listbox">
+              <div class="sort-trigger">
+                <span class="sort-label">最近追加した順</span>
+                <svg class="sort-arrow" width="10" height="6" viewBox="0 0 10 6" aria-hidden="true">
+                  <path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
+                </svg>
+              </div>
+              <div class="sort-dropdown">
+                <div class="sort-option" data-value="date_desc">最近追加した順</div>
+                <div class="sort-option" data-value="title">アルファベット順（タイトル）</div>
+                <div class="sort-option" data-value="recent_opened">最近開いた順</div>
+                <div class="sort-option" data-value="random">ランダム</div>
+              </div>
+            </div>
+            <script>
+              (() => {
+                const labels = {
+                  date_desc: "最近追加した順",
+                  title: "アルファベット順（タイトル）",
+                  recent_opened: "最近開いた順",
+                  random: "ランダム",
+                };
+                try {
+                  const saved = localStorage.getItem("clipSortMode");
+                  const label = document.querySelector("#sortSelect .sort-label");
+                  if (label && labels[saved]) label.textContent = labels[saved];
+                } catch {}
+              })();
+            </script>
+          </div>
+
+          <div class="heading-row">
+            <div id="activeTag" class="active-tag" hidden>
+              タグ: <span id="activeTagName"></span>
+              <button id="clearTag" class="clear-tag" title="クリア" type="button">×</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="search-overlay" id="searchOverlay"></div>
+        <div id="categories" class="categories"></div>
+        <h2 class="section-heading">Explore Clips</h2>
+
+        <div class="grid-wrap" id="gridWrap">
+          <section id="grid" class="grid"></section>
+        </div>
+
+        <div id="batchBar" class="batch-bar">
+          <span id="batchCount" class="batch-count"></span>
+          <button id="batchTagBtn" class="modal-btn ghost" type="button">タグ付け</button>
+          <button id="batchCatBtn" class="modal-btn ghost" type="button">カテゴリ変更</button>
+          <button id="batchDelBtn" class="modal-btn ghost" type="button" style="color:#db7a5c">削除</button>
+        </div>
+
+        <div id="empty" class="empty" hidden>
+          <div class="empty-ill">⌁</div>
+          <p class="empty-msg">クリップはまだありません</p>
+          <p class="empty-sub">Chrome 拡張機能からクリップを保存してみましょう。</p>
+        </div>
+      </main>
+    </div>
+
+    <div
+      id="pageDropOverlay"
+      class="page-drop-overlay"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      aria-hidden="true"
+    >
+      <div class="page-drop-frame">
+        <span class="page-drop-icon" aria-hidden="true">↓</span>
+        <strong class="page-drop-message">ここにドロップしてアップロード</strong>
+        <span class="page-drop-hint">ファイルを離すとアップロード画面が開きます</span>
+      </div>
+    </div>
+
+    <div id="editModal" class="modal" hidden>
+      <div class="modal-box">
+        <h2 class="modal-title">クリップを編集</h2>
+        <label class="modal-label" for="editTitle">タイトル</label>
+        <input id="editTitle" class="modal-input" autocomplete="off" />
+
+        <label class="modal-label">サムネイル</label>
+        <div class="edit-thumb-row">
+          <img id="editThumbPreview" class="edit-thumb-preview" alt="" hidden />
+<button id="editThumbBtn" type="button" class="modal-btn ghost">サムネイルを変更</button>
+          <input id="editThumbFile" type="file" accept="image/*" hidden />
+        </div>
+
+        <label class="modal-label" for="editComment">コメント</label>
+        <textarea id="editComment" rows="3" class="modal-input" autocomplete="off"></textarea>
+
+        <label class="modal-label" for="editCategory">カテゴリ</label>
+        <div class="edit-cat-row">
+          <div class="edit-suggest-wrap">
+            <input id="editCategory" class="modal-input" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="editCategorySuggest" aria-expanded="false" />
+            <div id="editCategorySuggest" class="edit-suggest" role="listbox" aria-label="登録済みカテゴリ" hidden></div>
+          </div>
+          <button id="editCategoryClear" type="button" class="cat-clear" title="カテゴリをクリア">×</button>
+        </div>
+
+        <label class="modal-label" for="editTagInput">タグ（Enterで追加）</label>
+        <div id="editTagBox" class="tag-box"></div>
+        <div class="edit-suggest-wrap">
+          <input id="editTagInput" class="modal-input" autocomplete="off" placeholder="タグを入力" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="editTagSuggest" aria-expanded="false" />
+          <div id="editTagSuggest" class="edit-suggest" role="listbox" aria-label="登録済みタグ" hidden></div>
+        </div>
+
+        
+
+        <div class="modal-actions">
+          <button id="editCancel" class="modal-btn ghost">キャンセル</button>
+          <button id="editSave" class="modal-btn">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="uploadModal" class="modal" hidden>
+      <div class="modal-box wide upload-modal-box">
+        <h2 class="modal-title">ファイルをアップロード</h2>
+        <div id="uploadDuplicateConfirm" class="upload-duplicate-confirm" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="uploadDuplicateTitle" aria-describedby="uploadDuplicateMessage">
+          <div class="app-confirm-card">
+            <div class="app-confirm-mark" aria-hidden="true">!</div>
+            <div class="app-confirm-copy">
+              <h2 id="uploadDuplicateTitle" class="app-confirm-title">同じファイルが見つかりました</h2>
+              <p id="uploadDuplicateMessage" class="app-confirm-message"></p>
+            </div>
+            <div class="app-confirm-actions">
+              <button id="uploadDuplicateCancel" class="app-confirm-btn app-confirm-cancel" type="button">キャンセル</button>
+              <button id="uploadDuplicateSubmit" class="app-confirm-btn app-confirm-submit" type="button">続行する</button>
+            </div>
+          </div>
+        </div>
+        <div id="uploadDropZone" class="upload-drop-zone">
+          <p>ここにファイルをドロップ、またはクリックして選択</p>
+          <input id="uploadFileInput" type="file" multiple hidden />
+        </div>
+
+        <div id="uploadBulk" class="upload-bulk" hidden>
+          <div class="upload-bulk-row">
+            <label class="modal-label">一括タグ（Enterで追加）</label>
+            <div id="uploadBulkTagBox" class="tag-box"></div>
+            <input id="uploadBulkTagInput" list="uploadBulkTagList" class="modal-input" autocomplete="off" placeholder="タグを入力" />
+            <datalist id="uploadBulkTagList"></datalist>
+          </div>
+          <div class="upload-bulk-row">
+            <label class="modal-label">一括カテゴリ</label>
+            <input id="uploadBulkCategory" list="uploadCategoryList" class="modal-input" autocomplete="off" />
+            <datalist id="uploadCategoryList"></datalist>
+          </div>
+        </div>
+
+        <div id="uploadFileList" class="upload-file-list"></div>
+        <datalist id="uploadTagList"></datalist>
+
+        <div class="modal-actions">
+          <button id="uploadCancel" class="modal-btn ghost">キャンセル</button>
+          <button id="uploadSave" class="modal-btn">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="settingsModal" class="modal" hidden>
+      <div class="modal-box wide">
+        <h2 class="modal-title">設定</h2>
+        <div class="settings-columns">
+          <div class="settings-col">
+            <h3 class="modal-sub">ホームの設定</h3>
+            <label class="setting-row column">
+              <span>ファイル保存方式</span>
+              <select id="fileSaveMethod" class="setting-select">
+                <option value="copy">アプリ内へコピー</option>
+                <option value="reference">元ファイル参照</option>
+              </select>
+              <span id="fileSaveMethodDesc" class="file-save-desc">リンク切れの心配はありませんが、その分データ容量が増えます。</span>
+            </label>
+            <div class="setting-row">
+              <span>検索履歴</span>
+              <button id="clearSearchHistory" class="modal-btn ghost" type="button">すべて削除</button>
+            </div>
+          </div>
+
+          <div class="settings-col">
+            <h3 class="modal-sub">タスクの設定</h3>
+            <label class="setting-row">
+              <span>タスク作成時に同名の空メモを自動作成する</span>
+              <input type="checkbox" id="autoCreateNote" />
+            </label>
+            <label class="setting-row column">
+              <span>完了したタスクを自動削除</span>
+              <select id="taskAutoDelete" class="setting-select">
+                <option value="3d">3日後</option>
+                <option value="1w">1週間後</option>
+                <option value="1m">1か月後</option>
+                <option value="never">自動削除しない</option>
+              </select>
+            </label>
+            <label class="setting-row">
+              <span>プロジェクト作成時に同名の空メモを自動作成する</span>
+              <input type="checkbox" id="autoCreateNoteOnProject" />
+            </label>
+          </div>
+        
+          <div class="settings-col settings-data-col">
+            <h3 class="modal-sub">データ移行</h3>
+            <div class="setting-row column">
+              <span>データベース</span>
+              <div class="settings-data-actions">
+                <button id="dbExportBtn" class="modal-btn ghost" type="button">エクスポート</button>
+                <button id="dbImportBtn" class="modal-btn ghost" type="button">インポート</button>
+                <input id="dbImportFile" type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden />
+              </div>
+              <span class="file-save-desc">clips.db、uploads、設定・プロフィール情報をZIPで移行できます。</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-col settings-ai-col">
+          <h3 class="modal-sub">AI向けエクスポート</h3>
+          <span id="aiExportDesc" class="file-save-desc">保存先のMarkdownをClaudeのFileSystemMCPやOpenCodeなどから読み込めます。</span>
+          <div id="aiExportStatus" class="ai-export-status" role="status" aria-live="polite">状態を確認中…</div>
+          <div class="settings-data-actions">
+            <button id="aiExportOpen" class="modal-btn ghost" type="button">フォルダを開く</button>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button id="settingsReset" class="modal-btn ghost" type="button">設定をすべてデフォルトに戻す</button>
+          <div class="modal-spacer"></div>
+          <button id="settingsClose" class="modal-btn">閉じる</button>
+        </div>
+      </div>
+    </div>
+
+    <svg width="0" height="0" style="position:absolute;" aria-hidden="true">
+      <defs>
+        <filter id="glass-distortion" x="-10%" y="-10%" width="120%" height="120%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.015 0.03" numOctaves="3" seed="92" result="noise" />
+          <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.8 0" in="noise" result="toned" />
+          <feGaussianBlur in="toned" stdDeviation="2.5" result="blurred" />
+          <feDisplacementMap in="SourceGraphic" in2="blurred" scale="180" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </defs>
+    </svg>
+
+    <script src="pins.js?v=pins-ui-20260803-profile-v1"></script>
+    <script src="search-history.js"></script>
+    <script src="app.js?v=home-ui-20260803-edit-suggest-v1"></script>
+    <script src="codex-shell.js?v=codex-shell-20260803-window-profile-v1"></script>
+  </body>
+</html>

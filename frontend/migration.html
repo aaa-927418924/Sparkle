@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja" class="migration-document" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sparkleへ移行</title>
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
+    <link rel="stylesheet" href="migration.css?v=migration-ui-20260802-v2" />
+  </head>
+  <body class="migration-page">
+    <main class="migration-window">
+      <header class="migration-titlebar window-drag-region">
+        <div class="migration-brand">
+          <img src="/icon.png" alt="" aria-hidden="true" />
+          <strong>Sparkle</strong>
+        </div>
+        <div class="window-controls" aria-label="ウィンドウ操作">
+          <button class="window-control" type="button" title="最小化" aria-label="最小化" data-window-action="minimize_window">
+            <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
+          </button>
+          <button class="window-control" type="button" title="最大化" aria-label="最大化" data-window-action="toggle_maximize_window">
+            <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z" /></svg>
+          </button>
+          <button class="window-control window-control-close" type="button" title="閉じる" aria-label="閉じる" data-window-action="close_window">
+            <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="migration-card" role="dialog" aria-modal="true" aria-labelledby="migrationTitle" aria-describedby="migrationDescription">
+        <p class="migration-eyebrow">初回セットアップ</p>
+        <h1 id="migrationTitle">Sparkleへ移行します</h1>
+        <p id="migrationDescription" class="migration-description">
+          以前のアプリのデータとバックアップが見つかりました。ボタンを押すと、保存データ・Markdown・関連ファイルをSparkle用の場所へまとめて移行します。
+        </p>
+
+        <div class="migration-panel">
+          <div class="migration-panel-heading">
+            <span>検出された項目</span>
+            <span id="migrationSummary" class="migration-summary"></span>
+          </div>
+          <ul id="migrationItems" class="migration-items" aria-label="移行対象"></ul>
+        </div>
+
+        <p id="migrationStatus" class="migration-status" role="status" aria-live="polite"></p>
+        <div class="migration-actions">
+          <button id="migrationExit" class="migration-secondary" type="button">終了</button>
+          <button id="migrationRun" class="migration-primary" type="button">Sparkleへ移行する</button>
+        </div>
+      </section>
+    </main>
+    <script src="codex-shell.js?v=codex-shell-20260803-window-profile-v1"></script>
+    <script src="migration.js?v=migration-ui-20260803-post-setup-v1"></script>
+  </body>
+</html>

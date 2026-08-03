@@ -1,0 +1,726 @@
+/* Figma: AIリファレンス保存アプリ / ノート・タスク */
+
+.notes-page {
+  --notes-bg: #f4f3ee;
+  --notes-sidebar: #fff;
+  --notes-panel: #f4f3ee;
+  --notes-card: transparent;
+  --notes-border: #474747;
+  --notes-text: #5b5b5b;
+  --notes-muted: #77736d;
+  --notes-accent: #cc6d48;
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--notes-bg);
+  color: var(--notes-text);
+}
+
+html[data-theme="dark"] .notes-page {
+  --notes-bg: #18181b;
+  --notes-sidebar: #232327;
+  --notes-panel: #f4f3ee;
+  --notes-card: transparent;
+  --notes-border: #ffffff;
+  --notes-text: #ffffff;
+  --notes-muted: #c8c5bd;
+  --notes-accent: #d77a50;
+}
+
+.notes-page .layout {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--notes-bg);
+}
+
+.notes-page .sidebar {
+  width: 56px;
+  flex: 0 0 56px;
+  left: 8px;
+  top: 8px;
+  bottom: 8px;
+  height: calc(100vh - 16px);
+  padding: 10px 0;
+  gap: 6px;
+  border-radius: 14px;
+  background: var(--notes-sidebar);
+  box-shadow: -1px 4px 7.6px rgba(0, 0, 0, 0.25);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.notes-page .sidebar::-webkit-scrollbar,
+.notes-page .notes-main::-webkit-scrollbar,
+.notes-page .task-list::-webkit-scrollbar,
+.notes-page .memo-grid::-webkit-scrollbar,
+.notes-page .modal-box::-webkit-scrollbar,
+.notes-page .clip-pick-list::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.notes-page .side-btn,
+.notes-page .theme-toggle {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 10px;
+}
+
+.notes-page .side-btn.active {
+  background: #ffffff;
+  color: var(--notes-accent);
+  box-shadow: inset -1px 4px 4px rgba(0, 0, 0, 0.16);
+}
+
+.notes-page .side-btn.active .icon-nav {
+  filter: invert(49%) sepia(32%) saturate(1240%) hue-rotate(331deg) brightness(89%) contrast(88%);
+}
+
+.notes-page .side-btn:hover,
+.notes-page .theme-toggle:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.notes-page .side-btn.active:hover {
+  background: #ffffff;
+}
+
+.notes-page .main.notes-main {
+  width: auto;
+  min-width: 0;
+  height: 100vh;
+  min-height: 0;
+  margin-left: 0;
+  padding: 22px 28px 22px 84px;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--notes-bg);
+  color: var(--notes-text);
+}
+
+.notes-page .topbar {
+  min-height: 36px;
+  margin-bottom: 16px;
+  gap: 16px;
+  align-items: center;
+}
+
+.notes-page .heading {
+  color: var(--notes-text);
+  font-size: 20px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.notes-page #newNote.fav-only.active {
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--notes-border);
+  border-radius: 17px;
+  background: transparent;
+  color: var(--notes-text);
+  box-shadow: none;
+  animation: none;
+}
+
+.notes-page #newNote.fav-only.active:hover {
+  border-color: var(--notes-accent);
+  color: var(--notes-accent);
+  background: color-mix(in srgb, var(--notes-accent) 10%, transparent);
+  box-shadow: none;
+}
+
+.notes-page .status-tabs {
+  display: flex;
+  gap: 10px;
+  height: 28px;
+  margin: 0;
+  align-items: flex-start;
+}
+
+.notes-page .status-tabs .cat-btn {
+  padding: 3px 8px 6px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  color: var(--notes-muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.notes-page .status-tabs .cat-btn:hover,
+.notes-page .status-tabs .cat-btn.active {
+  border-bottom-color: var(--notes-accent);
+  color: var(--notes-accent);
+}
+
+.notes-page .two-col {
+  height: calc(100% - 52px);
+  min-height: 0;
+  grid-template-columns: minmax(270px, 340px) minmax(0, 1fr);
+  gap: 34px;
+  align-items: stretch;
+}
+
+.notes-page .task-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  padding: 22px 18px 18px;
+  box-sizing: border-box;
+  border: 1px solid var(--notes-border);
+  border-radius: 19px;
+  background: transparent;
+  color: #5b5b5b;
+  box-shadow: none;
+  position: relative;
+  top: auto;
+  overflow: hidden;
+}
+
+.notes-page .panel-title {
+  flex: 0 0 auto;
+  margin: 0 0 22px;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.notes-page .task-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: none;
+}
+
+.notes-page .task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 0;
+  border: 0;
+  border-radius: 0;
+  color: #5b5b5b;
+}
+
+.notes-page .task-item:hover,
+.notes-page .task-item.top-priority,
+.notes-page .task-item.selected {
+  background: transparent;
+}
+
+.notes-page .task-item.selected .task-title,
+.notes-page .task-item.top-priority .task-title,
+.notes-page .task-item.top-priority .task-priority {
+  color: var(--notes-accent);
+}
+
+.notes-page .task-lead {
+  width: 22px;
+  gap: 2px;
+}
+
+.notes-page .task-check {
+  margin-top: 2px;
+}
+
+.notes-page .task-check input {
+  --app-check-accent: #cc6d48;
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1.5px solid #b8b3ab;
+  border-radius: 5px;
+  background-color: #ffffff;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 11px 9px;
+  box-shadow: inset 0 1px 1px rgba(43, 41, 38, 0.08);
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.notes-page .task-check input:checked {
+  border-color: var(--app-check-accent);
+  background-color: var(--app-check-accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 12'%3E%3Cpath d='M2 6l3 3 7-7' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.notes-page .task-check input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--app-check-accent) 72%, #ffffff);
+  outline-offset: 2px;
+}
+
+html[data-theme="dark"] .notes-page .task-check input {
+  --app-check-accent: #d77a50;
+  border-color: #4a4a50;
+  background-color: #0f0f11;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme="dark"] .notes-page .task-check input:checked {
+  border-color: var(--app-check-accent);
+  background-color: var(--app-check-accent);
+}
+
+.notes-page .task-title {
+  color: #fff;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.notes-page .task-item.done .task-title {
+  color: #92908a;
+}
+
+.notes-page .task-priority {
+  color: var(--notes-accent);
+  font-size: 11px;
+}
+
+.notes-page .task-due,
+.notes-page .task-clip,
+.notes-page .task-note {
+  color: #fff;
+}
+
+.notes-page .task-actions {
+  gap: 2px;
+}
+
+.notes-page .task-link,
+.notes-page .task-edit,
+.notes-page .task-del {
+  color: #77736d;
+  padding: 2px;
+}
+
+.notes-page .task-item:hover .task-link,
+.notes-page .task-item:hover .task-edit,
+.notes-page .task-item:hover .task-del {
+  opacity: 0.78;
+}
+
+.notes-page .task-add {
+  flex: 0 0 auto;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 0;
+}
+
+.notes-page .task-add input {
+  width: 100%;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid #b1ada1;
+  border-radius: 8px;
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+}
+
+.notes-page .task-add input::placeholder {
+  color: #77736d;
+}
+
+.notes-page .task-add input:focus {
+  border-color: var(--notes-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--notes-accent) 16%, transparent);
+}
+
+.notes-page .task-empty {
+  flex: 1 1 auto;
+  color: #77736d;
+  font-size: 13px;
+}
+
+.notes-page .memo-col {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.notes-page .memo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+  align-content: start;
+  gap: 22px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 2px 18px 0;
+  scrollbar-width: none;
+}
+
+.notes-page .memo-card {
+  min-height: 150px;
+  max-height: 180px;
+  box-sizing: border-box;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--notes-border);
+  border-radius: 19px;
+  background: var(--notes-card);
+  color: var(--notes-text);
+  box-shadow: none;
+  overflow: hidden;
+  transition: none;
+}
+
+.notes-page .memo-card:hover {
+  transform: none;
+  background: color-mix(in srgb, var(--notes-text) 5%, transparent);
+  box-shadow: none;
+}
+
+.notes-page .memo-title {
+  margin: 0 0 8px;
+  color: var(--notes-text);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.3;
+  white-space: normal;
+}
+
+.notes-page .memo-preview {
+  color: var(--notes-text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.notes-page .memo-clips {
+  margin-bottom: 8px;
+}
+
+.notes-page .clip-chip {
+  padding: 2px 7px;
+  color: var(--notes-accent);
+  background: color-mix(in srgb, var(--notes-accent) 12%, transparent);
+}
+
+.notes-page .memo-task {
+  color: var(--notes-muted);
+}
+
+.notes-page .memo-card .pin-btn {
+  color: var(--notes-text);
+}
+
+.notes-page .memo-card-actions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.notes-page .memo-card:hover .memo-card-actions,
+.notes-page .memo-card:focus-within .memo-card-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.notes-page .memo-card-actions .act-btn {
+  position: static;
+  width: 34px;
+  height: 34px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  opacity: 1;
+}
+
+.notes-page .memo-card-actions .act-btn:hover,
+.notes-page .memo-card-actions .act-btn:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.notes-page .empty {
+  height: 100%;
+  color: var(--notes-muted);
+}
+
+.notes-page .modal {
+  background: rgba(24, 24, 27, 0.48);
+}
+
+.notes-page .modal-box {
+  border: 1px solid var(--notes-border);
+  border-radius: 19px;
+  background: var(--notes-panel);
+  color: #5b5b5b;
+  box-shadow: 0 22px 60px rgba(24, 24, 27, 0.24);
+}
+
+.notes-page .modal-input,
+.notes-page .setting-select {
+  border-color: #b1ada1;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.28);
+  color: #5b5b5b;
+}
+
+.notes-page .modal-btn {
+  border-radius: 9px;
+  background: var(--notes-accent);
+}
+
+.notes-page .modal-btn.ghost {
+  border-color: #b1ada1;
+  color: #77736d;
+}
+
+@media (max-width: 820px) {
+  .notes-page .main.notes-main {
+    padding-right: 20px;
+  }
+
+  .notes-page .two-col {
+    grid-template-columns: minmax(240px, 42%) minmax(0, 1fr);
+    gap: 20px;
+  }
+
+  .notes-page .memo-grid {
+    grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+    gap: 14px;
+  }
+}
+
+@media (max-width: 560px) {
+  .notes-page .main.notes-main {
+    padding-left: 74px;
+    padding-right: 12px;
+  }
+
+  .notes-page .two-col {
+    grid-template-columns: minmax(208px, 42%) minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .notes-page .task-panel {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+/* Keep the two independent lists usable while hiding native scrollbars. */
+.notes-page .task-list,
+.notes-page .memo-grid {
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+/* Task edit dialog: keep controls inside the surface in both themes. */
+.notes-page #taskEditModal .modal-box {
+  box-sizing: border-box;
+  width: 420px;
+  padding: 22px;
+}
+
+.notes-page #taskEditModal .modal-input,
+.notes-page #taskEditModal .project-select-row .modal-input {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.notes-page #taskEditModal .star-rating {
+  min-height: 34px;
+  box-sizing: border-box;
+  margin: 4px 0 8px;
+  padding: 5px 8px;
+  border: 1px solid #b1ada1;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.notes-page #taskEditModal .star-rating .star {
+  color: var(--notes-accent);
+  text-shadow: 0 0 1px currentColor;
+}
+
+.notes-page #taskEditModal .star-rating .star:not(.on) {
+  color: #9b968c;
+}
+
+.notes-page .task-item.top-priority {
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--notes-accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--notes-accent) 8%, transparent);
+}
+
+html[data-theme="dark"] .notes-page #taskEditModal .modal-box {
+  background: #232327;
+  border-color: #47474f;
+  color: #f4f3ee;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.46);
+}
+
+html[data-theme="dark"] .notes-page #taskEditModal .modal-title,
+html[data-theme="dark"] .notes-page #taskEditModal .modal-label {
+  color: #f4f3ee;
+}
+
+html[data-theme="dark"] .notes-page #taskEditModal .modal-input {
+  border-color: #5c5c64;
+  background: #18181b;
+  color: #f4f3ee;
+  color-scheme: dark;
+}
+
+html[data-theme="dark"] .notes-page #taskEditModal .project-clear {
+  border-color: #5c5c64;
+  background: #18181b;
+  color: #f4f3ee;
+}
+
+html[data-theme="dark"] .notes-page #taskEditModal .star-rating {
+  border-color: #5c5c64;
+  background: #18181b;
+}
+
+html[data-theme="dark"] .notes-page #taskEditModal .star-rating .star {
+  color: #d77a50;
+}
+
+html[data-theme="dark"] .notes-page #taskEditModal .star-rating .star:not(.on) {
+  color: #b1ada1;
+}
+
+html[data-theme="dark"] .notes-page #taskEditModal .star-rating .star-clear {
+  color: #b1ada1;
+}
+
+/* Notes page light-theme text and first-render polish. */
+.notes-page .panel-title,
+.notes-page .task-title,
+.notes-page .task-due,
+.notes-page .task-clip,
+.notes-page .task-note {
+  color: #5b5b5b;
+}
+
+html[data-theme="dark"] .notes-page .panel-title,
+html[data-theme="dark"] .notes-page .task-title,
+html[data-theme="dark"] .notes-page .task-due,
+html[data-theme="dark"] .notes-page .task-clip,
+html[data-theme="dark"] .notes-page .task-note {
+  color: #ffffff;
+}
+
+.notes-page #newNote.fav-only.active {
+  animation: fadeInUp 0.5s ease 0.05s both;
+}
+
+.notes-page .memo-grid {
+  box-sizing: border-box;
+  padding-top: 0;
+}
+
+.notes-page .memo-card:hover {
+  transform: none;
+}
+ 
+/* Link-note dialog: match the task edit dialog surface and spacing. */
+.notes-page #linkModal .modal-box {
+  box-sizing: border-box;
+  width: 420px;
+  padding: 22px;
+}
+
+.notes-page #linkModal .modal-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+html[data-theme="dark"] .notes-page #linkModal .modal-box {
+  background: #232327;
+  border-color: #47474f;
+  color: #f4f3ee;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.46);
+}
+
+html[data-theme="dark"] .notes-page #linkModal .modal-title {
+  color: #f4f3ee;
+}
+
+html[data-theme="dark"] .notes-page #linkModal .modal-input {
+  border-color: #5c5c64;
+  background: #18181b;
+  color: #f4f3ee;
+  color-scheme: dark;
+}
+
+html[data-theme="dark"] .notes-page #linkModal .modal-input::placeholder {
+  color: #b1ada1;
+}
+
+html[data-theme="dark"] .notes-page #linkModal .modal-btn.ghost {
+  border-color: #5c5c64;
+  color: #b1ada1;
+}
+
+/* Keep non-highlighted task content aligned with the highlighted row.
+   The highlighted row has a 1px border, so its 8px inner padding starts
+   9px from the list edge. */
+.notes-page .task-item:not(.top-priority) {
+  padding-left: 9px;
+  padding-right: 9px;
+}
+
+/* Keep task rows at the same vertical rhythm as rows with priority and due date. */
+.notes-page .task-item {
+  box-sizing: border-box;
+  min-height: 68px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.notes-page .task-item.top-priority {
+  min-height: 68px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+/* Long task names stay on one line so row spacing remains stable. */
+.notes-page .task-body {
+  min-width: 0;
+}
+
+.notes-page .task-title {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Match the project sidebar's subtle orange active surface. */
+.notes-page .side-btn.active,
+.notes-page .side-btn.active:hover {
+  background: color-mix(in srgb, var(--notes-sidebar) 82%, var(--notes-accent) 18%);
+  color: var(--notes-accent);
+  box-shadow: inset -1px 4px 4px rgba(0, 0, 0, 0.16);
+}

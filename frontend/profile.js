@@ -1,5 +1,3 @@
-const API_ROOT = window.location.origin;
-
 const $ = (id) => document.getElementById(id);
 
 const els = {

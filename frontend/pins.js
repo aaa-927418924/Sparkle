@@ -601,8 +601,8 @@ function loadSettingsValues() {
   if (fsm && !fsm.dataset.loaded) {
     fsm.dataset.loaded = "1";
     fetch(`${API_ROOT}/settings/file_save_method`)
-      .then((r) => r.ok ? r.json() : { value: "copy" })
-      .then((d) => { fsm.value = d.value || "copy"; updateFileSaveDesc?.(fsm.value); })
+      .then((r) => r.ok ? r.json() : { value: "reference" })
+      .then((d) => { fsm.value = d.value || "reference"; updateFileSaveDesc?.(fsm.value); })
       .catch(() => {});
   }
   loadAIExportSettings();
@@ -875,12 +875,12 @@ function initSettings() {
     }
     const fsm = document.getElementById("fileSaveMethod");
     if (fsm) {
-      fsm.value = "copy";
+      fsm.value = "reference";
       fetch(`${API_ROOT}/settings/file_save_method`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: "copy" }),
+        body: JSON.stringify({ value: "reference" }),
       });
-      if (typeof updateFileSaveDesc === "function") updateFileSaveDesc("copy");
+      if (typeof updateFileSaveDesc === "function") updateFileSaveDesc("reference");
     }
   });
   // ZIP backup export / import

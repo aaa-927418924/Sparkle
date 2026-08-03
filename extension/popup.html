@@ -17,8 +17,10 @@
       </div>
 
       <div class="field suggest-field">
-        <label>タグ</label>
-        <div id="tagBox" class="tag-box"></div>
+        <div class="tag-head-row">
+          <label>タグ</label>
+          <div id="tagBox" class="tag-box"></div>
+        </div>
         <div class="suggest-wrap">
           <input id="tagInput" type="text" placeholder="タグを入力してEnter" autocomplete="off" />
           <div id="tagSuggest" class="suggest-list" hidden></div>
@@ -69,9 +71,10 @@
         <input id="favorite" type="checkbox" /> お気に入りに追加
       </label>
 
-      <button id="save" class="save">保存</button>
-
-      <div id="status" class="status" hidden></div>
+      <div class="save-row">
+        <button id="save" class="save">保存</button>
+        <div id="status" class="status" hidden></div>
+      </div>
     </div>
     <script src="popup.js"></script>
   </body>

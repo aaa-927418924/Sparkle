@@ -373,6 +373,9 @@ function setStatus(msg, kind) {
   els.status.textContent = msg;
   els.status.className = "status " + kind;
   els.status.hidden = false;
+  els.status.style.animation = "none";
+  void els.status.offsetWidth; // アニメーションを毎回再生するための再flow
+  els.status.style.animation = "";
 }
 
 function renderThumbPreview() {

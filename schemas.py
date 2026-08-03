@@ -182,6 +182,10 @@ class ProfileIconUpdate(BaseModel):
     data_url: str
 
 
+class ClipboardImage(BaseModel):
+    data_url: str
+
+
 class ProfilePickAdd(BaseModel):
     clip_id: int
 

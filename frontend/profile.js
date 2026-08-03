@@ -65,6 +65,34 @@ async function loadProfile() {
   renderProfile();
 }
 
+async function refreshProfile() {
+  try {
+    const data = await api("/profile");
+    if (!profile) {
+      profile = data;
+      renderProfile();
+      return;
+    }
+    const prevCount = profile.total_saved;
+    const prevDays = profile.days_since_first;
+    const prevPicks = profile.picks.length;
+    profile = data;
+    if (profile.total_saved !== prevCount || profile.days_since_first !== prevDays) {
+      els.totalSaved.textContent = String(profile.total_saved);
+      els.firstUsed.textContent = profile.first_used_at || "—";
+      els.days.textContent = `${profile.days_since_first}日`;
+    }
+    if (typeof window.initProfileSidebar === "function") window.initProfileSidebar();
+    if (!naming && els.pickModal.hidden && !shareBusy && profile.picks.length !== prevPicks) {
+      renderPicks();
+    }
+  } catch (e) {}
+}
+
+setInterval(() => {
+  if (!document.hidden) refreshProfile();
+}, 5000);
+
 function renderProfile() {
   els.icon.src = profile.icon_url || "/icon.png";
   const name = profile.username || "ユーザー";
@@ -449,6 +477,30 @@ async function buildShareCanvas() {
   return canvas;
 }
 
+async function copyToClipboard(blob) {
+  const dataUrl = await new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(blob);
+  });
+  if (dataUrl) {
+    try {
+      await api("/clipboard/image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data_url: dataUrl }),
+      });
+      return true;
+    } catch (e) {}
+  }
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    return true;
+  } catch (e) {}
+  return false;
+}
+
 els.share.addEventListener("click", async () => {
   if (shareBusy) return;
   shareBusy = true;
@@ -458,10 +510,9 @@ els.share.addEventListener("click", async () => {
     const canvas = await buildShareCanvas();
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
     if (!blob) throw new Error("画像を生成できませんでした");
-    try {
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    if (await copyToClipboard(blob)) {
       setShareStatus("共有画像をクリップボードにコピーしました", "ok");
-    } catch (e) {
+    } else {
       els.sharePreview.src = canvas.toDataURL("image/png");
       els.shareModal.hidden = false;
       setShareStatus("画像を表示しました。右クリックから保存できます。", "ok");

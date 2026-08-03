@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+import ctypes
 import io
 import json
 import os
@@ -41,6 +42,7 @@ from maintenance import (
 from schemas import (
     CategoryCreate,
     CategoryOut,
+    ClipboardImage,
     ClipCreate,
     ClipOut,
     ClipUpdate,
@@ -227,6 +229,57 @@ if ($selected) { [Console]::Write($selected) }
     return paths[0] if paths else None
 
 
+def _set_windows_clipboard_dib(png_bytes: bytes) -> None:
+    """Write PNG data to the Windows clipboard as CF_DIB. Works without window focus."""
+    from ctypes import wintypes
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(png_bytes))
+    bmp_io = io.BytesIO()
+    img.save(bmp_io, "BMP")
+    dib = bmp_io.getvalue()[14:]  # strip the BMP file header; CF_DIB expects a DIB
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+    kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    kernel32.GlobalLock.restype = wintypes.LPVOID
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalFree.restype = wintypes.HGLOBAL
+    kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
+    user32.OpenClipboard.restype = wintypes.BOOL
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.EmptyClipboard.restype = wintypes.BOOL
+    user32.EmptyClipboard.argtypes = []
+    user32.SetClipboardData.restype = wintypes.HANDLE
+    user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+    user32.CloseClipboard.restype = wintypes.BOOL
+    user32.CloseClipboard.argtypes = []
+
+    GMEM_MOVEABLE = 0x0002
+    CF_DIB = 8
+
+    if not user32.OpenClipboard(None):
+        raise RuntimeError("クリップボードが他のアプリに使用されています")
+    try:
+        user32.EmptyClipboard()
+        handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(dib))
+        if not handle:
+            raise RuntimeError("クリップボードのメモリ確保に失敗しました")
+        ptr = kernel32.GlobalLock(handle)
+        try:
+            ctypes.memmove(ptr, dib, len(dib))
+        finally:
+            kernel32.GlobalUnlock(handle)
+        if not user32.SetClipboardData(CF_DIB, handle):
+            kernel32.GlobalFree(handle)
+            raise RuntimeError("クリップボードへの書き込みに失敗しました")
+    finally:
+        user32.CloseClipboard()
+
+
 router = APIRouter()
 
 
@@ -305,6 +358,24 @@ def _resolve_category(conn: Connection, name: Optional[str]) -> Optional[int]:
 
 
 # --- Categories ---------------------------------------------------------
+
+
+@router.post("/clipboard/image", include_in_schema=False)
+def copy_image_to_clipboard(payload: ClipboardImage):
+    raw = payload.data_url
+    if raw.startswith("data:"):
+        raw = raw.split(",", 1)[1]
+    try:
+        png = base64.b64decode(raw)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid base64 image")
+    if len(png) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="image too large")
+    try:
+        _set_windows_clipboard_dib(png)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"ok": True}
 
 
 @router.get("/thumbnail-proxy", include_in_schema=False)

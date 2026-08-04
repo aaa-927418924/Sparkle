@@ -2,6 +2,10 @@
   box-sizing: border-box;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -17,12 +21,12 @@ body {
 
 .title {
   font-size: 15px;
-  margin: 0 0 12px;
+  margin: 0 0 8px;
   color: #f4f3ee;
 }
 
 .field {
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
 .field > label {
@@ -36,7 +40,7 @@ body {
   background: #232327;
   border: 1px solid #3f3f42;
   border-radius: 6px;
-  padding: 8px;
+  padding: 6px 8px;
 }
 
 .page-title {
@@ -80,7 +84,7 @@ input[type="text"]:focus {
 }
 
 textarea {
-  resize: vertical;
+  resize: none;
 }
 
 .tag-head-row {
@@ -100,6 +104,16 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  max-height: 56px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.tag-box::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .tag {
@@ -161,7 +175,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .thumb-preview {
@@ -177,7 +191,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   font-weight: 600;
   color: #f4f3ee;
   cursor: pointer;
@@ -251,7 +265,7 @@ textarea {
 }
 
 .suggest-field {
-  margin-bottom: 20px;
+  margin-bottom: 14px;
 }
 
 .category-suggest-wrap .suggest-list {
@@ -271,8 +285,16 @@ textarea {
   border: 1px solid #3f3f42;
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
   z-index: 20;
+}
+
+.suggest-list::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .suggest-item {

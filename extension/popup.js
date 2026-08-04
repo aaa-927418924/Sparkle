@@ -40,8 +40,11 @@ async function api(path, options = {}) {
 }
 
 async function loadSuggestions() {
+  let categoriesOk = false;
+  let tagsOk = false;
   try {
     const categories = await api("/categories");
+    categoriesOk = true;
     categoryNames = Array.isArray(categories)
       ? categories
           .map((c) => (c && c.name ? String(c.name).trim() : ""))
@@ -52,6 +55,7 @@ async function loadSuggestions() {
   }
   try {
     const data = await api("/tags");
+    tagsOk = true;
     tagNames = Array.isArray(data)
       ? data
           .map((t) => (t && t.name ? String(t.name).trim() : ""))
@@ -72,6 +76,30 @@ async function loadSuggestions() {
     }
   } catch (e) {
     // 履歴の読み込み失敗は保存には影響しないため無視
+  }
+
+  // アプリ側で削除済みのタグ/カテゴリは履歴からも取り除く（サーバー取得成功時のみ）
+  const save = {};
+  if (tagsOk) {
+    const filtered = tagHistory.filter((name) => tagNames.includes(name));
+    if (filtered.length !== tagHistory.length) {
+      tagHistory = filtered;
+      save.tagHistory = tagHistory;
+    }
+  }
+  if (categoriesOk) {
+    const filtered = categoryHistory.filter((name) => categoryNames.includes(name));
+    if (filtered.length !== categoryHistory.length) {
+      categoryHistory = filtered;
+      save.categoryHistory = categoryHistory;
+    }
+  }
+  if (Object.keys(save).length) {
+    try {
+      await chrome.storage.local.set(save);
+    } catch (e) {
+      // ストレージエラーは無視
+    }
   }
 }
 
@@ -138,18 +166,16 @@ function recordCategoryHistory(name) {
 
 function renderTagSuggest(filterText) {
   const q = filterText.trim().toLowerCase();
-  // ポップアップ内の残りスペースに合わせて表示件数を制限（最大7）
+  // ポップアップ内の残りスペースに合わせてリストの高さを制限し、超えた分はスクロールで表示
   const inputBottom = els.tagInput.getBoundingClientRect().bottom;
-  const availHeight = window.innerHeight - inputBottom - 8;
+  const availHeight = Math.max(40, window.innerHeight - inputBottom - 8);
   const itemHeight = 38;
-  const maxCount = Math.max(1, Math.min(7, Math.floor(availHeight / itemHeight)));
 
   const combined = [...tagHistory, ...tagNames];
   const list = combined
     .filter((name, index) => combined.indexOf(name) === index)
     .filter((name) => !tags.includes(name))
-    .filter((name) => !q || name.toLowerCase().includes(q))
-    .slice(0, maxCount);
+    .filter((name) => !q || name.toLowerCase().includes(q));
   if (!list.length) {
     closeTagSuggest();
     return;
@@ -160,8 +186,11 @@ function renderTagSuggest(filterText) {
         `<div class="suggest-item${i === tagSuggestIndex ? " active" : ""}" data-name="${escapeHtml(name)}">${escapeHtml(name)}</div>`
     )
     .join("");
-  els.tagSuggest.style.maxHeight = (list.length * itemHeight + 4) + "px";
+  els.tagSuggest.style.maxHeight = Math.min(list.length * itemHeight + 4, availHeight) + "px";
   els.tagSuggest.hidden = false;
+  if (tagSuggestIndex >= 0 && els.tagSuggest.children[tagSuggestIndex]) {
+    els.tagSuggest.children[tagSuggestIndex].scrollIntoView({ block: "nearest" });
+  }
   els.tagSuggest.querySelectorAll(".suggest-item").forEach((el) => {
     el.addEventListener("mousedown", (e) => {
       if (e.button !== 0) return;
@@ -185,25 +214,29 @@ function closeTagSuggest() {
 }
 
 function getCategorySuggestions() {
+  // 履歴は新しい順で格納されているため反転し、最近使ったカテゴリを一番下に表示
   return [...categoryHistory, ...categoryNames].filter(
     (name, index, list) => list.indexOf(name) === index
-  );
+  ).reverse();
 }
 
 function renderCategorySuggest(filterText) {
   const q = filterText.trim().toLowerCase();
-  // 入力欄の上側に表示するため、上に残っている高さで件数を制限（最大7）
+  // 入力欄の上側に表示するため、上に残っている高さまでリストを広げ、超えた分はスクロール
   const inputTop = els.category.getBoundingClientRect().top;
-  const availHeight = inputTop - 8;
+  const availHeight = Math.max(40, inputTop - 8);
   const itemHeight = 38;
-  const maxCount = Math.max(1, Math.min(7, Math.floor(availHeight / itemHeight)));
 
-  const list = getCategorySuggestions()
-    .filter((name) => !q || name.toLowerCase().includes(q))
-    .slice(0, maxCount);
+  const list = getCategorySuggestions().filter(
+    (name) => !q || name.toLowerCase().includes(q)
+  );
   if (!list.length) {
     closeCategorySuggest();
     return;
+  }
+  // 表示直後は一番下（最近使ったカテゴリ）を表示し、そこから上へ辿る形式にする
+  if (categorySuggestIndex === -1) {
+    categorySuggestIndex = list.length - 1;
   }
   categorySuggestIndex = Math.min(categorySuggestIndex, list.length - 1);
 
@@ -213,11 +246,12 @@ function renderCategorySuggest(filterText) {
         `<div id="categorySuggestOption${i}" class="suggest-item${i === categorySuggestIndex ? " active" : ""}" role="option" aria-selected="${i === categorySuggestIndex}" data-name="${escapeHtml(name)}">${escapeHtml(name)}</div>`
     )
     .join("");
-  els.categorySuggest.style.maxHeight = list.length * itemHeight + 4 + "px";
+  els.categorySuggest.style.maxHeight = Math.min(list.length * itemHeight + 4, availHeight) + "px";
   els.categorySuggest.hidden = false;
   els.category.setAttribute("aria-expanded", "true");
   if (categorySuggestIndex >= 0) {
     els.category.setAttribute("aria-activedescendant", `categorySuggestOption${categorySuggestIndex}`);
+    els.categorySuggest.children[categorySuggestIndex].scrollIntoView({ block: "nearest" });
   } else {
     els.category.removeAttribute("aria-activedescendant");
   }

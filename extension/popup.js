@@ -22,7 +22,8 @@ const els = {
 
 let pageInfo = null;
 let tags = [];
-let tagHistory = []; // 使用済みタグ履歴(新しい順、chrome.storage.localに永続化)
+let tagHistory = []; // 保存成功したタグ履歴(新しい順、chrome.storage.localに永続化)
+let tagNames = []; // APIから取得した既存タグ一覧
 let categoryNames = []; // APIから取得した既存カテゴリ
 let categoryHistory = []; // 保存済みカテゴリ履歴(新しい順、chrome.storage.localに永続化)
 let tagSuggestIndex = -1; // キーボードでハイライト中の候補index
@@ -44,6 +45,16 @@ async function loadSuggestions() {
     categoryNames = Array.isArray(categories)
       ? categories
           .map((c) => (c && c.name ? String(c.name).trim() : ""))
+          .filter(Boolean)
+      : [];
+  } catch (e) {
+    // 候補の取得失敗は保存には影響しないため無視
+  }
+  try {
+    const data = await api("/tags");
+    tagNames = Array.isArray(data)
+      ? data
+          .map((t) => (t && t.name ? String(t.name).trim() : ""))
           .filter(Boolean)
       : [];
   } catch (e) {
@@ -95,7 +106,6 @@ function addTag(value) {
   if (name && !tags.includes(name)) {
     tags.push(name);
     renderTags();
-    recordTagHistory(name);
   }
   els.tagInput.value = "";
   saveDraft();
@@ -134,7 +144,9 @@ function renderTagSuggest(filterText) {
   const itemHeight = 38;
   const maxCount = Math.max(1, Math.min(7, Math.floor(availHeight / itemHeight)));
 
-  const list = tagHistory
+  const combined = [...tagHistory, ...tagNames];
+  const list = combined
+    .filter((name, index) => combined.indexOf(name) === index)
     .filter((name) => !tags.includes(name))
     .filter((name) => !q || name.toLowerCase().includes(q))
     .slice(0, maxCount);
@@ -477,6 +489,8 @@ async function save() {
 
     // カテゴリ履歴は入力中や下書き保存では更新せず、クリップ保存成功時だけ追加する
     recordCategoryHistory(payload.category || "");
+    // タグ履歴も同様に、実際に保存が成功したタグだけ記録する
+    tags.forEach((name) => recordTagHistory(name));
 
     if (els.favorite.checked) {
       await api(`/clips/${created.id}/favorite`, { method: "PATCH" });

@@ -251,6 +251,8 @@ function recordOpened(id) {
   const map = raw ? JSON.parse(raw) : {};
   map[id] = Date.now();
   localStorage.setItem("clipOpenedAt", JSON.stringify(map));
+  // 最近開いた順の場合はその場で並び替えを反映する(リロード不要)
+  if (state.sortMode === "recent_opened") render();
 }
 
 function sortClips(list) {
@@ -1902,6 +1904,9 @@ loadAll()
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     loadAll().catch(() => {});
+    // 最近開いた順では、戻ってきたときにも並びを再評価する
+    // (サーバーデータは変わらないため loadAll がスキップされるため)
+    if (state.sortMode === "recent_opened") render();
   }
 });
 
@@ -1923,6 +1928,8 @@ window.addEventListener("resize", () => {
 // 画面が表示中のときだけ確認し、データが変わった場合だけ再描画する。
 window.addEventListener("focus", () => {
   loadAll().catch(() => {});
+  // 最近開いた順では、戻ってきたときにも並びを再評価する
+  if (state.sortMode === "recent_opened") render();
 });
 window.setInterval(() => {
   if (document.visibilityState === "visible") {

@@ -495,6 +495,17 @@ async function save() {
       return;
     }
   }
+  // 重複URLチェック: 同じURLが既に保存されているか確認
+  try {
+    const duplicates = await api(`/clips?url=${encodeURIComponent(pageInfo.url)}`);
+    if (Array.isArray(duplicates) && duplicates.length > 0) {
+      if (!confirm(`このURLは既に保存されています（${duplicates.length}件）。追加で保存しますか？`)) {
+        return;
+      }
+    }
+  } catch (e) {
+    // 重複チェック失敗は保存をブロックしない
+  }
   els.save.disabled = true;
 
   const payload = {

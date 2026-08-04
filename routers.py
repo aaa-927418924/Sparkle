@@ -723,6 +723,7 @@ def create_clip(payload: ClipCreate, db: Connection = Depends(get_db)):
 def list_clips(
     category: Optional[str] = Query(None),
     tag: Optional[str] = Query(None),
+    url: Optional[str] = Query(None),
     project_id: Optional[int] = Query(None),
     exclude_project: Optional[int] = Query(None),
     db: Connection = Depends(get_db),
@@ -746,6 +747,9 @@ def list_clips(
             "id IN (SELECT clip_id FROM project_clips WHERE project_id = ?)"
         )
         params.append(project_id)
+    if url is not None:
+        conditions.append("url = ?")
+        params.append(url)
     if exclude_project is not None:
         conditions.append(
             "id NOT IN (SELECT clip_id FROM project_clips WHERE project_id = ?)"

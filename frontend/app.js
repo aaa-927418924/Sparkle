@@ -269,13 +269,34 @@ function sortClips(list) {
   return arr;
 }
 
+function gridColCount() {
+  const w = document.documentElement.clientWidth;
+  if (w <= 380) return 1;
+  if (w <= 560) return 2;
+  if (w <= 820) return 3;
+  if (w <= 1180) return 4;
+  return 5;
+}
+
 function render() {
   const list = sortClips(state.clips.filter(matches));
   const animateInitial = !clipGridHasRendered;
-  els.grid.innerHTML = list.map((clip, index) => cardHtml(clip, {
-    animate: animateInitial,
-    index,
-  })).join("");
+  // マルチカラム(縦方向に埋める)の見た目は維持しつつ、
+  // 表示順は左上→右上(行優先)になるようカラムへ交互に配分する
+  const colCount = gridColCount();
+  const cols = [];
+  for (let c = 0; c < colCount; c++) {
+    const col = document.createElement("div");
+    col.className = "grid-col";
+    cols.push(col);
+  }
+  list.forEach((clip, index) => {
+    cols[index % colCount].insertAdjacentHTML(
+      "beforeend",
+      cardHtml(clip, { animate: animateInitial, index })
+    );
+  });
+  els.grid.replaceChildren(...cols);
   if (animateInitial) {
     bindPageEntryAnimation(els.grid);
     clipGridHasRendered = true;
@@ -1882,6 +1903,20 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     loadAll().catch(() => {});
   }
+});
+
+// カラム数のブレークポイントをまたいだときだけ再レイアウトする
+let lastColCount = gridColCount();
+let colResizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(colResizeTimer);
+  colResizeTimer = setTimeout(() => {
+    const count = gridColCount();
+    if (count !== lastColCount) {
+      lastColCount = count;
+      render();
+    }
+  }, 150);
 });
 
 // Chrome拡張機能の保存後も、ホーム画面を手動更新せず一覧へ反映する。

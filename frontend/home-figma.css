@@ -233,8 +233,16 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
 }
 
 .home-page .grid {
-  column-count: 5;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   column-gap: 72px;
+  align-items: start;
+}
+
+.home-page .grid-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .home-page .card {
@@ -370,7 +378,7 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
   }
 
   .home-page .grid {
-    column-count: 4;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
@@ -409,14 +417,14 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
   }
 
   .home-page .grid {
-    column-count: 3;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     column-gap: 24px;
   }
 }
 
 @media (max-width: 560px) {
   .home-page .grid {
-    column-count: 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .home-page .search-liquid .search {
@@ -426,7 +434,7 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
 
 @media (max-width: 380px) {
   .home-page .grid {
-    column-count: 1;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
   }
 }
  

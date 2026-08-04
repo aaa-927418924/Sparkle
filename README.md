@@ -6,6 +6,8 @@ Save interesting web pages through the Chrome extension and organize them with c
 
 > [!NOTE]
 > Sparkle is currently under development. You may encounter bugs, and features or data formats may change in future versions.
+> 
+> **Currently, Sparkle is available in Japanese only.**
 
 <!-- Remove the comment markers after adding a screenshot. -->
 

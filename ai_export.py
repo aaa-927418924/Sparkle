@@ -63,6 +63,29 @@ def _ai_export_enabled() -> bool:
     return str(row["value"] or "").strip().lower() not in {"false", "0", "off", "disabled", "no"}
 
 
+def _ai_edit_enabled() -> bool:
+    """Edits are only allowed while the read-only export is turned on.
+
+    Turning off ``ai_export_enabled`` also forces this value off, so the
+    effective gate is ``ai_export_enabled AND ai_edit_enabled``.
+    """
+    try:
+        from db import get_connection
+
+        with get_connection() as connection:
+            row = connection.execute(
+                "SELECT value FROM settings WHERE key = ?", ("ai_edit_enabled",)
+            ).fetchone()
+    except (OSError, sqlite3.Error):
+        return False
+    if not row:
+        return False
+    return (
+        _ai_export_enabled()
+        and str(row["value"] or "").strip().lower() not in {"false", "0", "off", "disabled", "no"}
+    )
+
+
 def _cancel_scheduled_export() -> None:
     global _pending, _timer
     with _timer_lock:
@@ -325,12 +348,41 @@ def _build_snapshot(connection: sqlite3.Connection, snapshot_id: str, generated_
         header
         + "# Sparkle データインデックス\n\n"
         + f"生成日時: {generated_at}\n\n"
-        + "このフォルダはSparkleの読み取り用Markdownスナップショットです。"
-        "まずこのファイルを読み、必要に応じて個別ファイルを参照してください。\n\n"
+        + "このフォルダはSparkleが自動生成する読み取り用のMarkdownスナップショットです。"
+        "データベース(DB)の内容を反映して毎回上書きされるため、手動での編集は基本的に不要です。"
+        "編集する場合は、下記のルールを厳守してください。\n\n"
+        + "## 編集ルール（重要）\n\n"
+        + "### 読み取り専用のファイル（編集してもDBに反映されません）\n"
+        + "- `all.md`: 全データを1つにまとめたファイルです。**読み取り専用のため編集はできません。**\n"
+        + "- `index.md`: この案内ファイルです。編集できません。\n"
+        + "- `README.md`: 案内ファイルです。編集できません。\n"
+        + "- `notes.md`: ノートの参照専用ファイルです。編集できません。\n"
+        + "- `tasks.md`: タスクの参照専用ファイルです。編集できません。\n"
+        + "- `projects.md`: プロジェクトの参照専用ファイルです。編集できません。\n"
+        + "- `taxonomy.md`: カテゴリとタグの参照専用ファイルです。編集できません。\n\n"
+        + "### 編集できるのは `clips.md` のみ\n"
+        + "`clips.md`のうち、次の項目だけがDBに反映されます。\n"
+        + "- 見出しのタイトル\n"
+        + "- `URL`（ただしローカルファイルのクリップのURLは変更不可）\n"
+        + "- `コメント`\n"
+        + "- `カテゴリ`\n"
+        + "- `タグ`\n"
+        + "- `お気に入り`\n\n"
+        + "### `clips.md`で変更できない項目（変更しても無視され、元の値に戻されます）\n"
+        + "- 見出しのID番号（`## [ID]`）: **IDは変更できません。** 変更・追加・削除はすべて無視されます。\n"
+        + "- `作成日時`: **日付は変更できません。**\n"
+        + "- `種類`（URL / ローカルファイル）: 変更できません。\n"
+        + "- `プロジェクトID`: 変更できません。\n"
+        + "- ローカルファイルの`URL`: 変更できません。\n\n"
+        + "### 削除・追加は反映されません\n"
+        + "- セクション（`## [ID]`のまとまり）を削除しても、そのクリップはDBから削除されません。"
+        "ファイルは次の再生成で元どおり復元されます。\n"
+        + "- 存在しないIDのセクションを追加しても、DBには追加されません。"
+        "ファイルは次の再生成で除去されます。\n\n"
         + "## 件数\n"
         + count_lines
         + "\n\n## ファイル\n"
-        + "- `clips.md`: 保存したクリップ、URL、コメント、タグ\n"
+        + "- `clips.md`: 保存したクリップ、URL、コメント、タグ（唯一編集可能）\n"
         + "- `notes.md`: ノート本文と関連情報\n"
         + "- `tasks.md`: タスクの状態、期限、優先度\n"
         + "- `projects.md`: プロジェクトと関連項目\n"
@@ -339,11 +391,32 @@ def _build_snapshot(connection: sqlite3.Connection, snapshot_id: str, generated_
     readme_md = (
         header
         + "# Sparkle AIエクスポート\n\n"
-        + "このフォルダには、AIが読み取るためのMarkdown形式のデータが保存されています。\n\n"
+        + "このフォルダには、AIが読み取るためのMarkdown形式のスナップショットが自動生成されます。\n\n"
         + "- SQLiteデータベース本体は含まれていません。\n"
         + "- ローカルファイルの絶対パスなど、アプリ内部の技術情報は含まれていません。\n"
         + "- `index.md`を入口にして、必要なファイルだけを読み取ってください。\n"
-        + "- 通常のClaude、ChatGPT、Geminiでは`all.md`をアップロードできます。\n"
+        + "- 通常のClaude、ChatGPT、Geminiでは`all.md`をアップロードできます。\n\n"
+        + "## 読み取り専用のファイル（編集はDBに反映されません）\n\n"
+        + "- `all.md`は**読み取り専用です。編集はできません。** `all.md`を編集してもDBには一切反映されません。"
+        "編集が必要な場合は必ず`clips.md`を編集してください。\n"
+        + "- `index.md`、`README.md`、`notes.md`、`tasks.md`、`projects.md`、`taxonomy.md`も読み取り専用です。"
+        "編集してもDBには反映されません。\n\n"
+        + "## 変更できない項目（変更しても無視され、元の値に戻されます）\n\n"
+        + "- 日付: `作成日時`は変更できません。\n"
+        + "- ID: 見出しの`## [ID]`は変更できません。IDの変更・追加・削除はすべて無視されます。\n"
+        + "- `種類`（URL / ローカルファイル）: 変更できません。\n"
+        + "- `プロジェクトID`: 変更できません。\n"
+        + "- ローカルファイルの`URL`: 変更できません。\n\n"
+        + "## 編集できる内容\n\n"
+        + "編集がDBに反映されるのは`clips.md`のみです。反映される項目は次のとおりです。\n"
+        + "- タイトル（見出し）\n"
+        + "- `URL`（ローカルファイルのクリップ以外）\n"
+        + "- `コメント`\n"
+        + "- `カテゴリ`\n"
+        + "- `タグ`\n"
+        + "- `お気に入り`\n\n"
+        + "セクションの削除や新規追加はDBに反映されません。"
+        "編集内容はアプリが検出し、DBへの反映後にファイルはDBの内容で再生成されます。\n"
     )
     all_md = (
         header

@@ -606,6 +606,7 @@ function loadSettingsValues() {
       .catch(() => {});
   }
   loadAIExportSettings();
+  loadAIEditSettings();
 }
 
 function updateFileSaveDesc(v) {
@@ -631,6 +632,54 @@ function updateAIExportStatus(data) {
   else if (data?.last_error) statusEl.textContent = "更新に失敗しました。次回保存時に再試行します。";
   else if (data?.last_exported_at) statusEl.textContent = `最終更新: ${data.last_exported_at}`;
   else statusEl.textContent = "まだ生成されていません。";
+  syncAIEditControls();
+}
+
+function updateAIEditStatus(data) {
+  const statusEl = document.getElementById("aiEditStatus");
+  if (!statusEl) return;
+  if (data?.enabled === false) {
+    statusEl.textContent = "エクスポートが無効のため、編集オフです。";
+    return;
+  }
+  if (data?.last_error) statusEl.textContent = `反映に失敗しました: ${data.last_error}`;
+  else if (data?.last_apply_at) statusEl.textContent = `最終反映: ${data.last_apply_at}（反映 ${data.applied} 件 / 削除ブロック ${data.skipped_deletes} / 新規ブロック ${data.skipped_new} / 保護フィールド ${data.skipped_protected}）`;
+  else statusEl.textContent = "clips.md の変更を監視しています。";
+}
+
+// Editing requires the export to be enabled; otherwise it is forced off.
+function syncAIEditControls() {
+  const exportEl = document.getElementById("aiExportEnabled");
+  const editEl = document.getElementById("aiEditEnabled");
+  if (!editEl) return;
+  const exportOn = exportEl && exportEl.checked;
+  editEl.disabled = !exportOn;
+  if (!exportOn) {
+    editEl.checked = false;
+    const statusEl = document.getElementById("aiEditStatus");
+    if (statusEl) statusEl.textContent = "エクスポートを有効にすると編集を許可できます。";
+  }
+}
+
+async function loadAIEditSettings() {
+  const editEl = document.getElementById("aiEditEnabled");
+  if (editEl) editEl.disabled = true;
+  try {
+    const [settingRes, statusRes] = await Promise.all([
+      fetch(`${API_ROOT}/settings/ai_edit_enabled`),
+      fetch(`${API_ROOT}/data/ai-edit/status`),
+    ]);
+    if (!settingRes.ok || !statusRes.ok) throw new Error(`HTTP ${settingRes.status}`);
+    const setting = await settingRes.json();
+    const status = await statusRes.json();
+    if (editEl) editEl.checked = setting.value === "true";
+    updateAIEditStatus(status);
+  } catch {
+    const statusEl = document.getElementById("aiEditStatus");
+    if (statusEl) statusEl.textContent = "状態を確認できません。";
+  } finally {
+    syncAIEditControls();
+  }
 }
 
 async function loadAIExportSettings() {
@@ -795,12 +844,37 @@ function initSettings() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
       await loadAIExportSettings();
+      await loadAIEditSettings();
     } catch {
       aiEnabled.checked = !nextValue;
       const statusEl = document.getElementById("aiExportStatus");
       if (statusEl) statusEl.textContent = "設定を保存できませんでした。";
     } finally {
       aiEnabled.disabled = false;
+      syncAIEditControls();
+    }
+  });
+  // AI editing permission (requires the export toggle to be on)
+  const aiEditEnabled = document.getElementById("aiEditEnabled");
+  if (aiEditEnabled) aiEditEnabled.addEventListener("change", async () => {
+    if (aiEditEnabled.disabled) return;
+    const nextValue = aiEditEnabled.checked;
+    aiEditEnabled.disabled = true;
+    try {
+      const res = await fetch(`${API_ROOT}/settings/ai_edit_enabled`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ value: nextValue ? "true" : "false" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      await loadAIEditSettings();
+    } catch {
+      aiEditEnabled.checked = !nextValue;
+      const statusEl = document.getElementById("aiEditStatus");
+      if (statusEl) statusEl.textContent = "設定を保存できませんでした。";
+    } finally {
+      syncAIEditControls();
     }
   });
   const aiOpen = document.getElementById("aiExportOpen");
@@ -858,11 +932,20 @@ function initSettings() {
         method: "PUT",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ value: "true" }),
-      }).then((r) => {
+      }).then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return loadAIExportSettings();
+        // Editing permission resets to its default (off).
+        const editRes = await fetch(`${API_ROOT}/settings/ai_edit_enabled`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ value: "false" }),
+        });
+        if (!editRes.ok) throw new Error(`HTTP ${editRes.status}`);
+        await loadAIExportSettings();
+        await loadAIEditSettings();
       }).catch(() => {
         aiEnabled.disabled = false;
+        syncAIEditControls();
       });
     }
     // backend settings

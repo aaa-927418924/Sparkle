@@ -51,6 +51,9 @@ def _initialize_application_data() -> None:
     run_maintenance()
     request_export(0.1)
     ensure_ffmpeg_async()
+    from ai_import import start_watcher
+
+    start_watcher()
     app.state.data_initialized = True
 
 

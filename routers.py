@@ -1274,6 +1274,22 @@ def put_setting(key: str, payload: SettingValue, db: Connection = Depends(get_db
     db.commit()
     if key == "ai_export_enabled" and value == "false":
         clear_exported_files()
+        # Editing depends on the export toggle, so turning the export off also
+        # forces the edit setting off.
+        db.execute(
+            "INSERT INTO settings(key, value) VALUES(?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            ("ai_edit_enabled", "false"),
+        )
+        db.commit()
+    elif key == "ai_export_enabled" and value == "true":
+        # Turning the export on also enables editing automatically.
+        db.execute(
+            "INSERT INTO settings(key, value) VALUES(?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            ("ai_edit_enabled", "true"),
+        )
+        db.commit()
     return SettingValue(value=value)
 
 
@@ -1506,6 +1522,13 @@ def reset_profile_stats(request: Request, db: Connection = Depends(get_db)):
 @router.get("/data/ai-export/status")
 def ai_export_status():
     return get_ai_export_status()
+
+
+@router.get("/data/ai-edit/status", include_in_schema=False)
+def ai_edit_status():
+    from ai_import import get_edit_status
+
+    return get_edit_status()
 
 
 @router.post("/data/ai-export")

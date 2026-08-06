@@ -117,6 +117,12 @@
             <div class="settings-data-actions">
               <button id="aiExportOpen" class="modal-btn ghost" type="button">フォルダを開く</button>
             </div>
+            <label class="setting-row">
+              <span>AIによる編集を許可する</span>
+              <input id="aiEditEnabled" type="checkbox" disabled />
+            </label>
+            <span class="file-save-desc">clips.md を編集すると自動でデータベースに反映します（削除・ID変更・新規作成は無効）。エクスポートを有効にすると自動でオン、無効にすると自動でオフになります。</span>
+            <div id="aiEditStatus" class="ai-export-status" role="status" aria-live="polite">状態を確認中…</div>
           </div>
 
           <div class="settings-page-actions">

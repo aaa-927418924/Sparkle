@@ -98,11 +98,13 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 
 CREATE TABLE IF NOT EXISTS notes (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    title       TEXT NOT NULL,
-    body        TEXT,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    title        TEXT NOT NULL,
+    body         TEXT,
+    is_done      INTEGER NOT NULL DEFAULT 0,
+    completed_at TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS note_clips (
@@ -127,6 +129,7 @@ CREATE TABLE IF NOT EXISTS projects (
     description TEXT,
     is_done     INTEGER NOT NULL DEFAULT 0,
     done_snapshot TEXT,
+    notes_done_snapshot TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -204,12 +207,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
     note_cols = {r["name"] for r in conn.execute("PRAGMA table_info(notes)").fetchall()}
     if "project_id" not in note_cols:
         conn.execute("ALTER TABLE notes ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL")
+    if "is_done" not in note_cols:
+        conn.execute("ALTER TABLE notes ADD COLUMN is_done INTEGER NOT NULL DEFAULT 0")
+    if "completed_at" not in note_cols:
+        conn.execute("ALTER TABLE notes ADD COLUMN completed_at TEXT")
 
     proj_cols = {r["name"] for r in conn.execute("PRAGMA table_info(projects)").fetchall()}
     if "is_done" not in proj_cols:
         conn.execute("ALTER TABLE projects ADD COLUMN is_done INTEGER NOT NULL DEFAULT 0")
     if "done_snapshot" not in proj_cols:
         conn.execute("ALTER TABLE projects ADD COLUMN done_snapshot TEXT")
+    if "notes_done_snapshot" not in proj_cols:
+        conn.execute("ALTER TABLE projects ADD COLUMN notes_done_snapshot TEXT")
 
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS project_clips (

@@ -392,6 +392,19 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
   white-space: normal;
 }
 
+.notes-page .memo-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--notes-border);
+  border-radius: 999px;
+  color: #92908a;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .notes-page .memo-preview {
   color: var(--notes-text);
   font-size: 12px;

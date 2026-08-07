@@ -163,8 +163,9 @@ function taskMatchesStatus(t) {
 function noteMatchesStatus(n) {
   if (state.status === "all") return true;
   const task = noteTask(n);
-  if (state.status === "active") return !task || !task.is_done;
-  return !!(task && task.is_done); // done
+  const done = (n.is_done === true) || (!!(task && task.is_done));
+  if (state.status === "active") return !done;
+  return done; // done
 }
 
 // --- 繝・・繧ｿ隱ｭ縺ｿ霎ｼ縺ｿ ---
@@ -532,11 +533,15 @@ function renderNotes() {
         ? `<div class="memo-clips"><span class="clip-chip" data-url="${escapeAttr(first.url)}"><img class="icon icon-inline" src="icons/clip.svg" alt="" /> ${escapeHtml(truncate(first.title || first.url || "", 32))}</span>${extra > 0 ? `<span class="clip-more">+${extra}</span>` : ""}</div>`
         : "";
       const task = noteTask(n);
+      const done = n.is_done === true || !!(task && task.is_done);
       const taskBadge = task
-        ? `<div class="memo-task ${task.is_done ? "done" : ""}" data-task="${task.id}"><img class="icon icon-inline" src="icons/${task.is_done ? "checkbox" : "box"}.svg" alt="" /> ${escapeHtml(task.title)}</div>`
+        ? `<div class="memo-task${task.is_done ? " done" : ""}" data-task="${task.id}"><img class="icon icon-inline" src="icons/${task.is_done ? "checkbox" : "box"}.svg" alt="" /> ${escapeHtml(task.title)}</div>`
         : "";
       const pinned = typeof isPinned === "function" && isPinned(n.id, "note");
       const selected = state.selected.get(n.id) === "note" ? " selected" : "";
+      const doneBadge = done
+        ? `<div class="memo-done" title="完了済み"><img class="icon icon-inline" src="icons/checkbox.svg" alt="" /><span>完了</span></div>`
+        : "";
       const entryClass = animateInitial ? " page-enter-card" : "";
       const entryStyle = animateInitial ? ` style="--page-enter-index:${index}"` : "";
       return `
@@ -547,6 +552,7 @@ function renderNotes() {
           </div>
           ${clips ? `<div class="memo-clips">${clips}</div>` : ""}
           <h3 class="memo-title">${escapeHtml(n.title)}</h3>
+          ${doneBadge}
           ${taskBadge}
           <div class="memo-preview">${escapeHtml(n.body || "")}</div>
         </article>`;

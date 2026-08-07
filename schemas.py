@@ -164,6 +164,8 @@ class NoteOut(BaseModel):
     id: int
     title: str
     body: Optional[str] = None
+    is_done: bool = False
+    completed_at: Optional[str] = None
     created_at: str
     updated_at: str
     clips: List[LightClipOut] = []

@@ -511,9 +511,68 @@ def get_project(project_id: int, db: Connection = Depends(get_db)):
     return ProjectOut(id=row["id"], name=row["name"], description=row["description"], is_done=bool(row["is_done"]), created_at=row["created_at"])
 
 
+def _cascade_project_done(db: Connection, project_id: int, row) -> None:
+    """Mark the project done and cascade completion to its undone tasks and notes."""
+    undone_tasks = db.execute(
+        "SELECT id FROM tasks WHERE project_id = ? AND is_done = 0", (project_id,)
+    ).fetchall()
+    task_snapshot = [t["id"] for t in undone_tasks]
+    undone_notes = db.execute(
+        "SELECT note_id FROM project_notes WHERE project_id = ? "
+        "AND note_id IN (SELECT id FROM notes WHERE is_done = 0)",
+        (project_id,),
+    ).fetchall()
+    note_snapshot = [n["note_id"] for n in undone_notes]
+    db.execute(
+        "UPDATE projects SET is_done = 1, done_snapshot = ?, notes_done_snapshot = ? WHERE id = ?",
+        (json.dumps(task_snapshot) if task_snapshot else "[]",
+         json.dumps(note_snapshot) if note_snapshot else "[]",
+         project_id),
+    )
+    if task_snapshot:
+        db.execute(
+            "UPDATE tasks SET is_done = 1, completed_at = datetime('now') WHERE id IN ({})".format(
+                ",".join("?" for _ in task_snapshot)
+            ),
+            task_snapshot,
+        )
+    if note_snapshot:
+        db.execute(
+            "UPDATE notes SET is_done = 1, completed_at = datetime('now') WHERE id IN ({})".format(
+                ",".join("?" for _ in note_snapshot)
+            ),
+            note_snapshot,
+        )
+
+
+def _restore_project_done(db: Connection, project_id: int, row) -> None:
+    """Revert project done state, restoring only the tasks and notes it cascaded."""
+    current_snapshot = row["done_snapshot"]
+    if current_snapshot:
+        task_ids = json.loads(current_snapshot)
+        if task_ids:
+            db.execute(
+                "UPDATE tasks SET is_done = 0, completed_at = NULL WHERE id IN ({}) AND is_done = 1".format(
+                    ",".join("?" for _ in task_ids)
+                ),
+                task_ids,
+            )
+    notes_snapshot = row["notes_done_snapshot"]
+    if notes_snapshot:
+        note_ids = json.loads(notes_snapshot)
+        if note_ids:
+            db.execute(
+                "UPDATE notes SET is_done = 0, completed_at = NULL WHERE id IN ({}) AND is_done = 1".format(
+                    ",".join("?" for _ in note_ids)
+                ),
+                note_ids,
+            )
+    db.execute("UPDATE projects SET is_done = 0, done_snapshot = NULL, notes_done_snapshot = NULL WHERE id = ?", (project_id,))
+
+
 @router.put("/projects/{project_id}", response_model=ProjectOut)
 def update_project(project_id: int, payload: ProjectUpdate, db: Connection = Depends(get_db)):
-    row = db.execute("SELECT id, is_done, done_snapshot FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = db.execute("SELECT id, is_done, done_snapshot, notes_done_snapshot FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Project not found")
     if payload.name is not None:
@@ -522,33 +581,9 @@ def update_project(project_id: int, payload: ProjectUpdate, db: Connection = Dep
         db.execute("UPDATE projects SET description = ? WHERE id = ?", (payload.description, project_id))
     if payload.is_done is not None and payload.is_done != bool(row["is_done"]):
         if payload.is_done:
-            # Going done → save snapshot of currently undone tasks
-            undone = db.execute(
-                "SELECT id FROM tasks WHERE project_id = ? AND is_done = 0", (project_id,)
-            ).fetchall()
-            snapshot = [t["id"] for t in undone]
-            db.execute("UPDATE projects SET is_done = 1, done_snapshot = ? WHERE id = ?",
-                       (json.dumps(snapshot) if snapshot else "[]", project_id))
-            if snapshot:
-                db.execute(
-                    "UPDATE tasks SET is_done = 1, completed_at = datetime('now') WHERE id IN ({})".format(
-                        ",".join("?" for _ in snapshot)
-                    ),
-                    snapshot,
-                )
+            _cascade_project_done(db, project_id, row)
         else:
-            # Going undone → restore only the tasks that were cascaded
-            current_snapshot = row["done_snapshot"]
-            if current_snapshot:
-                task_ids = json.loads(current_snapshot)
-                if task_ids:
-                    db.execute(
-                        "UPDATE tasks SET is_done = 0, completed_at = NULL WHERE id IN ({}) AND is_done = 1".format(
-                            ",".join("?" for _ in task_ids)
-                        ),
-                        task_ids,
-                    )
-            db.execute("UPDATE projects SET is_done = 0, done_snapshot = NULL WHERE id = ?", (project_id,))
+            _restore_project_done(db, project_id, row)
     elif payload.is_done is not None:
         # Same state — no-op, but update snapshot if explicitly passed
         pass
@@ -563,33 +598,9 @@ def toggle_project(project_id: int, db: Connection = Depends(get_db)):
     if not row:
         raise HTTPException(status_code=404, detail="Project not found")
     if row["is_done"]:
-        # Going undone → restore only the tasks that were cascaded
-        current_snapshot = row["done_snapshot"]
-        if current_snapshot:
-            task_ids = json.loads(current_snapshot)
-            if task_ids:
-                db.execute(
-                    "UPDATE tasks SET is_done = 0, completed_at = NULL WHERE id IN ({}) AND is_done = 1".format(
-                        ",".join("?" for _ in task_ids)
-                    ),
-                    task_ids,
-                )
-        db.execute("UPDATE projects SET is_done = 0, done_snapshot = NULL WHERE id = ?", (project_id,))
+        _restore_project_done(db, project_id, row)
     else:
-        # Going done → save snapshot of currently undone tasks
-        undone = db.execute(
-            "SELECT id FROM tasks WHERE project_id = ? AND is_done = 0", (project_id,)
-        ).fetchall()
-        snapshot = [t["id"] for t in undone]
-        db.execute("UPDATE projects SET is_done = 1, done_snapshot = ? WHERE id = ?",
-                   (json.dumps(snapshot) if snapshot else "[]", project_id))
-        if snapshot:
-            db.execute(
-                "UPDATE tasks SET is_done = 1, completed_at = datetime('now') WHERE id IN ({})".format(
-                    ",".join("?" for _ in snapshot)
-                ),
-                snapshot,
-            )
+        _cascade_project_done(db, project_id, row)
     db.commit()
     row = db.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     return ProjectOut(id=row["id"], name=row["name"], description=row["description"], is_done=bool(row["is_done"]), created_at=row["created_at"])
@@ -1072,6 +1083,8 @@ def _row_to_note(db: Connection, row) -> NoteOut:
         id=row["id"],
         title=row["title"],
         body=row["body"],
+        is_done=bool(row["is_done"]) if "is_done" in row.keys() else False,
+        completed_at=row["completed_at"] if "completed_at" in row.keys() else None,
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         clips=_fetch_note_clips(db, row["id"]),
@@ -1628,14 +1641,16 @@ def _merge_database(source: sqlite3.Connection, dest: Connection) -> dict:
 
     project_map = {}
     for row in _source_rows(source, "projects"):
+        proj_columns = _source_columns(source, "projects")
         cur = dest.execute(
-            "INSERT INTO projects(name, description, is_done, done_snapshot, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO projects(name, description, is_done, done_snapshot, notes_done_snapshot, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 row["name"],
                 row["description"],
                 row["is_done"] or 0,
                 row["done_snapshot"] if "done_snapshot" in row.keys() else None,
+                _source_value(row, proj_columns, "notes_done_snapshot"),
                 _migration_timestamp(row["created_at"]),
             ),
         )
@@ -1713,11 +1728,13 @@ def _merge_database(source: sqlite3.Connection, dest: Connection) -> dict:
             _source_id(_source_value(row, note_columns, "project_id"))
         )
         cur = dest.execute(
-            "INSERT INTO notes(title, body, created_at, updated_at, task_id, project_id) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO notes(title, body, is_done, completed_at, created_at, updated_at, task_id, project_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 row["title"],
                 row["body"],
+                _source_value(row, note_columns, "is_done") or 0,
+                _source_value(row, note_columns, "completed_at"),
                 _migration_timestamp(row["created_at"]),
                 _migration_timestamp(row["updated_at"]),
                 task_id,

@@ -2646,3 +2646,46 @@ def get_text_preview(clip_id: int, db: Connection = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Cannot read file: {e}")
 
     return TextPreviewOut(preview=text)
+
+
+# --- App update -----------------------------------------------------------
+
+@router.get("/update/status", include_in_schema=False)
+def update_status(request: Request):
+    """Return the cached auto-update state (stage, versions, progress)."""
+    from updater import get_update_state
+
+    return get_update_state()
+
+
+@router.post("/update/check", include_in_schema=False)
+def update_check():
+    """Force a re-check against the release endpoint."""
+    from updater import check_for_update
+
+    check_for_update()
+    return {"ok": True}
+
+
+@router.post("/update/download", include_in_schema=False)
+def update_download():
+    """Start downloading and verifying the pending release (async)."""
+    from updater import start_download
+
+    ok = start_download()
+    return {"ok": ok}
+
+
+@router.post("/update/apply", include_in_schema=False)
+def update_apply(request: Request):
+    """Install the staged update and restart the app."""
+    callback = getattr(request.app.state, "update_apply", None)
+    if not callable(callback):
+        raise HTTPException(status_code=400, detail="更新機能は現在利用できません。")
+    result = callback()
+    if not result:
+        from updater import get_update_state
+
+        state = get_update_state()
+        raise HTTPException(status_code=500, detail=state.get("error") or "更新に失敗しました。")
+    return {"ok": True, "restarting": True}

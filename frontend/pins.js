@@ -609,6 +609,109 @@ function loadSettingsValues() {
   if (ntb && !ntb.dataset.loaded) loadTitlebarMode();
   loadAIExportSettings();
   loadAIEditSettings();
+  loadUpdateStatus();
+}
+
+// ---- App update ---------------------------------------------------------
+
+function updateStatusEl() {
+  return document.getElementById("updateStatus");
+}
+
+function setUpdateStatus(message, showApply = false, error = null) {
+  const el = updateStatusEl();
+  const errEl = document.getElementById("updateError");
+  const applyBtn = document.getElementById("updateApplyBtn");
+  if (el) el.textContent = message;
+  if (errEl) {
+    errEl.textContent = error || "";
+    errEl.hidden = !error;
+  }
+  if (applyBtn) applyBtn.hidden = !showApply;
+}
+
+async function loadUpdateStatus() {
+  const el = updateStatusEl();
+  if (!el) return;
+  try {
+    const res = await fetch(`${API_ROOT}/update/status`);
+    const state = await res.json();
+    renderUpdateState(state);
+  } catch (err) {
+    setUpdateStatus("更新を確認できませんでした。");
+  }
+}
+
+function renderUpdateState(state) {
+  const current = document.getElementById("updateCurrentVersion");
+  if (current) current.textContent = state.current || "…";
+  const stage = state.stage || "idle";
+  const applyBtn = document.getElementById("updateApplyBtn");
+  if (applyBtn) applyBtn.disabled = false;
+
+  if (!state.enabled) {
+    setUpdateStatus("ソース版では自動更新は利用できません。");
+    return;
+  }
+  if (stage === "available") {
+    setUpdateStatus(`v${state.latest || "?"} が利用できます。`, true);
+    return;
+  }
+  if (stage === "latest") {
+    setUpdateStatus("最新版です。");
+    return;
+  }
+  if (stage === "error") {
+    setUpdateStatus("エラー", false, state.error || "更新を確認できませんでした。");
+    return;
+  }
+  if (stage === "checking") {
+    setUpdateStatus("更新を確認しています…");
+    return;
+  }
+  if (stage === "downloading") {
+    const pct = state.progress != null && state.progress > 0
+      ? Math.round(state.progress * 100)
+      : 0;
+    setUpdateStatus(`ダウンロード中… ${pct}%`);
+    return;
+  }
+  if (stage === "verifying") {
+    setUpdateStatus("SHA-256 を検証しています…");
+    return;
+  }
+  if (stage === "ready") {
+    setUpdateStatus("ダウンロード完了。更新して再起動できます。", true);
+    return;
+  }
+  if (stage === "installing") {
+    setUpdateStatus("更新を適用しています…（アプリは自動的に再起動します）");
+    if (applyBtn) applyBtn.disabled = true;
+    return;
+  }
+  setUpdateStatus("最新版です。");
+}
+
+async function fetchUpdateState() {
+  try {
+    const res = await fetch(`${API_ROOT}/update/status`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
+}
+
+async function waitForDownloadReady(timeoutMs = 180000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const state = await fetchUpdateState();
+    if (!state) return;
+    const stage = state.stage || "idle";
+    if (stage === "ready" || stage === "error" || stage === "installing") return;
+    renderUpdateState(state);
+    await new Promise((resolve) => setTimeout(resolve, 800));
+  }
 }
 
 function applyTitlebarMode(mode) {
@@ -860,6 +963,56 @@ function initSettings() {
     }).catch(() => {});
     applyTitlebarMode(mode);
     syncNativeTitlebar(mode);
+  });
+  // app update
+  const updateCheckBtn = document.getElementById("updateCheckBtn");
+  const updateApplyBtn = document.getElementById("updateApplyBtn");
+  if (updateCheckBtn) updateCheckBtn.addEventListener("click", async () => {
+    setUpdateStatus("更新を確認しています…");
+    try {
+      await fetch(`${API_ROOT}/update/check`, { method: "POST" });
+    } catch (err) {
+      setUpdateStatus("更新を確認できませんでした。", false, "ネットワークに接続してください。");
+      return;
+    }
+    loadUpdateStatus();
+  });
+  if (updateApplyBtn) updateApplyBtn.addEventListener("click", async () => {
+    const message = "最新版に更新して再起動します。よろしいですか？";
+    const confirmed = typeof window.confirmDeletion === "function"
+      ? await window.confirmDeletion(message, {
+        anchor: updateApplyBtn,
+        title: "更新を適用しますか？",
+        confirmLabel: "更新して再起動",
+      })
+      : window.confirm(message);
+    if (!confirmed) return;
+    updateApplyBtn.disabled = true;
+    try {
+      await fetch(`${API_ROOT}/update/download`, { method: "POST" });
+    } catch (err) {
+      setUpdateStatus("ダウンロードを開始できませんでした。", false, "あらためて更新を確認してください。");
+      updateApplyBtn.disabled = false;
+      return;
+    }
+    await waitForDownloadReady();
+    const state = await fetchUpdateState();
+    if (!state || state.stage !== "ready") {
+      const error = state?.error || "ダウンロードまたは検証に失敗しました。";
+      setUpdateStatus("エラー", false, error);
+      updateApplyBtn.disabled = false;
+      return;
+    }
+    updateApplyBtn.disabled = true;
+    setUpdateStatus("更新を適用しています…（アプリは自動的に再起動します）");
+    try {
+      await fetch(`${API_ROOT}/update/apply`, { method: "POST" });
+    } catch (err) {
+      setUpdateStatus("更新の適用に失敗しました。", false,
+        "ログを確認するか、あらためて更新を確認してください。");
+      updateApplyBtn.disabled = false;
+      loadUpdateStatus();
+    }
   });
   // AI-friendly Markdown export
   const aiEnabled = document.getElementById("aiExportEnabled");

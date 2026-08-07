@@ -140,6 +140,19 @@
             <div id="aiEditStatus" class="ai-export-status" role="status" aria-live="polite">状態を確認中…</div>
           </div>
 
+          <div class="settings-col">
+            <h3 class="modal-sub">アプリの更新</h3>
+            <p class="file-save-desc">
+              現在のバージョン: <strong id="updateCurrentVersion">…</strong>
+            </p>
+            <div id="updateStatus" class="ai-export-status" role="status" aria-live="polite">更新を確認しています…</div>
+            <p id="updateError" class="file-save-desc" hidden></p>
+            <div class="settings-data-actions">
+              <button id="updateCheckBtn" class="modal-btn ghost" type="button">更新を確認</button>
+              <button id="updateApplyBtn" class="modal-btn" type="button" hidden>更新して再起動</button>
+            </div>
+          </div>
+
           <div class="settings-page-actions">
             <button id="settingsReset" class="modal-btn ghost" type="button">設定をすべてデフォルトに戻す</button>
           </div>

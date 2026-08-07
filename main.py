@@ -13,6 +13,7 @@ from ai_export import clear_exported_files, request_export
 from routers import router
 from maintenance import SETTING_DEFAULTS, run_maintenance
 from paths import get_uploads_dir, get_thumbnails_dir, get_local_files_dir, get_resource_dir
+from version import APP_VERSION
 from ffmpeg_bootstrap import ensure_ffmpeg_async
 from migration import get_migration_status, run_migration
 from setup import (
@@ -31,7 +32,7 @@ get_local_files_dir()
 FRONTEND_DIR = get_resource_dir() / "frontend"
 BRAND_ICON_PATH = get_resource_dir() / "Icon.png"
 
-app = FastAPI(title="Sparkle API", version="0.1.0")
+app = FastAPI(title="Sparkle API", version=APP_VERSION)
 
 app.add_middleware(
     CORSMiddleware,

@@ -59,6 +59,7 @@ from setup import (
     get_post_migration_onboarding_status,
     get_setup_status,
 )
+from updater import apply_update, check_for_update, get_update_state
 
 HOST = "127.0.0.1"
 DEBUG_SETUP_FLAG = "--debug-setup"
@@ -277,6 +278,8 @@ def _run_server() -> None:
         from main import app  # FastAPI アプリ本体
 
         app.state.desktop_activate = _activate_window
+        app.state.update_status = get_update_state
+        app.state.update_apply = _apply_pending_update
 
         # noconsoleビルドでは標準入出力がNoneになり得るため、
         # Uvicornの既定ログ設定を使わず、アプリ側のファイルログだけを使う。
@@ -616,6 +619,24 @@ def _stop_server() -> None:
     server = server_ref.get("server")
     if server is not None:
         server.should_exit = True
+
+
+def _apply_pending_update() -> bool:
+    """Spawn the staged installer, then tear down the running app so the new
+    exe can replace the locked file and relaunch."""
+    def _quit_after_update() -> None:
+        exit_requested.set()
+        _stop_server()
+        window = window_ref.get("window")
+        if window is not None:
+            try:
+                window.destroy()
+            except Exception:
+                pass
+
+    from updater import apply_update
+
+    return apply_update(on_quit=_quit_after_update)
 
 
 def _capture_native_drop(event) -> None:
@@ -965,6 +986,25 @@ def _build_tray_icon():
     return pystray.Icon("Sparkle", _build_tray_image(), "Sparkle", menu)
 
 
+def _cleanup_old_exe_backup() -> None:
+    """Remove the previous exe left behind by an installer run (.old)."""
+    if not is_frozen():
+        return
+    try:
+        backup = Path(sys.executable).resolve().with_suffix(".old")
+        if backup.is_file():
+            backup.unlink()
+    except OSError:
+        pass
+
+
+def _check_update_in_background() -> None:
+    try:
+        check_for_update()
+    except Exception:
+        pass
+
+
 def _is_app_server_running() -> bool:
     """Return True only when the configured port is serving this application."""
     try:
@@ -992,6 +1032,18 @@ def _is_port_in_use() -> bool:
         probe.close()
 
 def main() -> None:
+    if "--sparkle-install" in sys.argv[1:]:
+        # 新exeがインストーラとして起動された場合。旧プロセスの終了を待って
+        # 自分を置き換え、通常起動し直す。サーバー/ウィンドウは立ち上げない。
+        try:
+            from updater import run_installer
+
+            run_installer()
+        finally:
+            sys.exit(0)
+
+    _cleanup_old_exe_backup()
+
     try:
         migration_required = bool(get_migration_status().get("required"))
         if not migration_required:
@@ -1031,6 +1083,9 @@ def main() -> None:
         if not _wait_for_server():
             _show_error(f"サーバーが起動しませんでした。\n詳細: {LOG_PATH}")
             return
+
+        # 起動時に更新をバックグラウンドで確認する。ネットワーク/表示を待たない。
+        threading.Thread(target=_check_update_in_background, daemon=True).start()
 
         try:
             import webview

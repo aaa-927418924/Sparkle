@@ -399,10 +399,17 @@
 
   function startWindowDrag(event) {
     const api = window.pywebview?.api;
-    if (!api || typeof api.begin_window_drag !== "function" || typeof api.move_window !== "function") return;
+    if (!api) return;
+
+    // With the native Windows caption enabled, the OS title bar owns window
+    // moving. Dragging in-app regions would fight the caption drag, so the
+    // sidebar/header drag handlers are disabled in that mode.
+    if (document.documentElement.classList.contains("native-titlebar")) return;
 
     event.preventDefault();
     event.stopImmediatePropagation();
+
+    if (typeof api.begin_window_drag !== "function" || typeof api.move_window !== "function") return;
 
     const startScreenX = event.screenX;
     const startScreenY = event.screenY;
@@ -451,9 +458,12 @@
         startWindowDrag(event);
       }, { capture: true });
     });
-    document.querySelectorAll(".window-drag-region").forEach((region) => {
+    const dragRegionSelector = `.window-drag-region, #stickyHeader`;
+    const dragRegionExclude = "button, a, input, select, textarea, [role=listbox], .sort-select, .fav-only, .search-wrap";
+
+    document.querySelectorAll(dragRegionSelector).forEach((region) => {
       region.addEventListener("mousedown", (event) => {
-        if (event.button !== 0 || event.target?.closest?.("button, a, input, select, textarea")) return;
+        if (event.button !== 0 || event.target?.closest?.(dragRegionExclude)) return;
         startWindowDrag(event);
       }, { capture: true });
     });

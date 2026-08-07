@@ -206,7 +206,9 @@ function cardHtml(clip, { animate = false, index = 0 } = {}) {
   const ext = local ? localFileExt(clip) : "";
 
   let imgHtml;
-  if (clip.thumbnail_url) {
+  if (clip.is_folder) {
+    imgHtml = `<div class="card-ph card-ph-folder" aria-hidden="true"><img class="icon icon-card" src="icons/folder.svg" alt="" /></div>`;
+  } else if (clip.thumbnail_url) {
     imgHtml = `<img class="card-img" src="${escapeAttr(cardThumbnailSrc(clip))}" alt="" loading="lazy" draggable="false"
          onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'card-ph',textContent:'🖼'}))" />`;
   } else if (local && isTextExt(ext)) {
@@ -1306,6 +1308,8 @@ const uploadEls = {
   modal: $("uploadModal"),
   dropZone: $("uploadDropZone"),
   fileInput: $("uploadFileInput"),
+  fileButton: $("uploadFileButton"),
+  folderButton: $("uploadFolderButton"),
   fileList: $("uploadFileList"),
   bulkWrap: $("uploadBulk"),
   bulkTagBox: $("uploadBulkTagBox"),
@@ -1318,6 +1322,12 @@ const uploadEls = {
   duplicateMessage: $("uploadDuplicateMessage"),
   duplicateCancel: $("uploadDuplicateCancel"),
   duplicateSubmit: $("uploadDuplicateSubmit"),
+  commentButton: $("uploadCommentButton"),
+  commentButtonLabel: $("uploadCommentButtonLabel"),
+  commentPopup: $("uploadCommentPopup"),
+  commentInput: $("uploadCommentInput"),
+  commentCancel: $("uploadCommentCancel"),
+  commentSubmit: $("uploadCommentSubmit"),
 };
 const pageDropOverlay = $("pageDropOverlay");
 let pageDragDepth = 0;
@@ -1354,10 +1364,91 @@ if (uploadModalTitleEl) {
 let uploadFiles = [];
 let uploadBulkTags = [];
 let uploadBulkCategory = "";
+let uploadBulkComment = "";
 let uploadCloseTimer = null;
 let uploadReturnFocus = null;
 let duplicateConfirmRequest = null;
 let duplicateConfirmHideTimer = null;
+let commentPopupRequest = null;
+let commentPopupHideTimer = null;
+
+function updateUploadCommentButton() {
+  if (!uploadEls.commentButton || !uploadEls.commentButtonLabel) return;
+  uploadEls.commentButtonLabel.textContent = uploadBulkComment.trim()
+    ? "コメントを編集"
+    : "コメントを追加";
+  uploadEls.commentButton.setAttribute("aria-expanded", "false");
+}
+
+function finishCommentPopup(result) {
+  const request = commentPopupRequest;
+  if (!request) return;
+  commentPopupRequest = null;
+  clearTimeout(commentPopupHideTimer);
+  commentPopupHideTimer = null;
+
+  if (result) {
+    const value = uploadEls.commentInput.value.trim();
+    if (request.index == null) {
+      uploadBulkComment = value;
+      updateUploadCommentButton();
+    } else if (uploadFiles[request.index]) {
+      uploadFiles[request.index].comment = value;
+      renderUploadList();
+    }
+  }
+
+  const dialog = uploadEls.commentPopup;
+  if (dialog) {
+    dialog.classList.remove("is-open");
+    dialog.setAttribute("aria-hidden", "true");
+    commentPopupHideTimer = window.setTimeout(() => {
+      if (!commentPopupRequest) dialog.hidden = true;
+      commentPopupHideTimer = null;
+    }, 160);
+  }
+  if (!result && request.returnFocus?.isConnected) {
+    request.returnFocus.focus({ preventScroll: true });
+  }
+}
+
+function openCommentPopup(index = null) {
+  const dialog = uploadEls.commentPopup;
+  if (!dialog) return;
+  if (commentPopupRequest) finishCommentPopup(false);
+  clearTimeout(commentPopupHideTimer);
+  commentPopupHideTimer = null;
+  const current = index == null
+    ? uploadBulkComment
+    : (uploadFiles[index]?.comment || "");
+  uploadEls.commentInput.value = current;
+  dialog.hidden = false;
+  dialog.setAttribute("aria-hidden", "false");
+  uploadEls.commentButton?.setAttribute("aria-expanded", "true");
+  const request = { returnFocus: document.activeElement, index };
+  commentPopupRequest = request;
+  requestAnimationFrame(() => {
+    if (commentPopupRequest !== request) return;
+    dialog.classList.add("is-open");
+    uploadEls.commentInput?.focus();
+  });
+}
+
+uploadEls.commentButton?.addEventListener("click", () => {
+  if (commentPopupRequest) finishCommentPopup(false);
+  else openCommentPopup(null);
+});
+uploadEls.commentPopup?.addEventListener("click", (event) => {
+  if (event.target === uploadEls.commentPopup) finishCommentPopup(false);
+});
+uploadEls.commentCancel?.addEventListener("click", () => finishCommentPopup(false));
+uploadEls.commentSubmit?.addEventListener("click", () => finishCommentPopup(true));
+uploadEls.commentPopup?.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  event.stopPropagation();
+  finishCommentPopup(false);
+});
 
 function finishDuplicateConfirm(result) {
   const request = duplicateConfirmRequest;
@@ -1447,6 +1538,8 @@ function openUploadModal() {
   uploadFiles = [];
   uploadBulkTags = [];
   uploadBulkCategory = "";
+  uploadBulkComment = "";
+  updateUploadCommentButton();
   uploadEls.fileList.innerHTML = "";
   uploadEls.bulkTagBox.innerHTML = "";
   uploadEls.bulkTagInput.value = "";
@@ -1464,6 +1557,7 @@ function openUploadModal() {
 function closeUploadModal() {
   resetPageDragState();
   finishDuplicateConfirm(false);
+  finishCommentPopup(false);
   uploadEls.modal.classList.remove("is-open");
   uploadEls.modal.classList.remove("has-upload-files");
   uploadEls.modal.setAttribute("aria-hidden", "true");
@@ -1537,6 +1631,93 @@ async function appendReferenceFilesFromDialog() {
   }
 }
 
+// 1 GiB = 1,073,741,824 B。コピーモードでこれを超えるフォルダは確認を挟む。
+const FOLDER_COPY_WARN_BYTES = 1024 * 1024 * 1024;
+
+async function confirmLargeFolderCopy(name, size) {
+  if (els.fileSaveMethod.value !== "copy") return true;
+  if (!Number.isFinite(Number(size)) || Number(size) <= FOLDER_COPY_WARN_BYTES) return true;
+  if (typeof window.appConfirm === "function") {
+    return window.appConfirm(
+      `本当にコピーモードのまま続行しますか？フォルダ「${name}」が1GBを超えています。`,
+      {
+        title: "フォルダが1GBを超えています",
+        cancelLabel: "キャンセル",
+        confirmLabel: "続行する",
+      }
+    );
+  }
+  return window.confirm("本当にコピーモードのまま続行しますか？フォルダが1GBを超えています");
+}
+
+async function addFolderEntry(folder) {
+  if (!folder?.path) return false;
+  const fallbackName = folder.name || folder.path.split(/[\\/]/).pop();
+  const size = Number.isFinite(Number(folder.size)) ? Number(folder.size) : null;
+  if (uploadFiles.some((u) => u.folderPath === folder.path)) return false;
+  if (!(await confirmIfDuplicate(fallbackName, size))) return false;
+  if (!(await confirmLargeFolderCopy(fallbackName, size))) return false;
+
+  uploadFiles.push({
+    file: null,
+    folderPath: folder.path,
+    name: fallbackName,
+    size,
+    tags: [],
+    category: "",
+    handle: null,
+    isFolder: true,
+    comment: "",
+  });
+  renderUploadList();
+  return true;
+}
+
+async function addFolderFromDialog() {
+  try {
+    const res = await fetch(`${API}/dialog/open-folder`, { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.path) return 0;
+    return addFolderEntry(data) ? 1 : 0;
+  } catch (e) {
+    alert("フォルダー選択ダイアログを開けませんでした。サーバーが起動しているか確認してください。");
+    return 0;
+  }
+}
+
+// ドロップされたパス群をサーバーで分類する。フォルダは小さい/大きいにかかわらず
+// 分類だけ行い、呼び出し元がファイルフローとの分岐に使う。
+async function classifyDroppedPaths(entries) {
+  const paths = (entries || [])
+    .map((entry) => (typeof entry === "string" ? entry : entry?.path))
+    .filter(Boolean);
+  if (!paths.length) return [];
+  try {
+    const res = await fetch(`${API}/dialog/inspect-paths`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paths }),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.entries || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// 分類結果のフォルダエントリだけを upload 一覧へ追加する。
+async function addClassifiedFolders(inspected) {
+  let added = 0;
+  for (const entry of inspected || []) {
+    if (!entry.is_dir) continue;
+    const name = entry.name || entry.path.split(/[\\/]/).pop();
+    if (await addFolderEntry({ path: entry.path, name, size: entry.size })) added += 1;
+  }
+  return added;
+}
+
 function getDirectReferenceDropFiles(dataTransfer) {
   return [...(dataTransfer?.files || [])]
     .map((file) => {
@@ -1591,7 +1772,8 @@ function clearNativeDroppedFiles() {
 }
 
 // ドロップゾーン → 参照モードはネイティブ選択、コピー モードは通常のFile選択
-uploadEls.dropZone.addEventListener("click", async () => {
+uploadEls.fileButton.addEventListener("click", async (e) => {
+  e.stopPropagation();
   const isReference = els.fileSaveMethod.value === "reference";
 
   if (isReference) {
@@ -1600,6 +1782,14 @@ uploadEls.dropZone.addEventListener("click", async () => {
   }
 
   uploadEls.fileInput.click();
+});
+uploadEls.dropZone.addEventListener("click", async (e) => {
+  if (e.target.closest("button")) return;
+  uploadEls.fileButton.click();
+});
+uploadEls.folderButton.addEventListener("click", async (e) => {
+  e.stopPropagation();
+  await addFolderFromDialog();
 });
 uploadEls.fileInput.addEventListener("change", async () => {
   await addUploadFiles([...uploadEls.fileInput.files]);
@@ -1629,26 +1819,46 @@ document.addEventListener("dragleave", (e) => {
   pageDragDepth = Math.max(0, pageDragDepth - 1);
   if (pageDragDepth === 0) setPageDropVisible(false);
 });
+
+// ドロップイベントを両モードで処理する共通ヘルパー。
+// 参照モード: パスをそのまま参照クリップ化。コピーモード: フォルダはサーバー経由で
+// コピー、ファイルはFile内容をアップロードする。
+async function handleFileDrop(e, openModal) {
+  const files = [...(e.dataTransfer?.files || [])];
+  if (!files.length) return;
+
+  const isReference = els.fileSaveMethod.value === "reference";
+  const entries = await getReferenceDropFiles(e);
+
+  if (isReference) {
+    if (openModal) openUploadModal();
+    if (entries.length) await addReferenceFiles(entries);
+    else await appendReferenceFilesFromDialog();
+    return;
+  }
+
+  // コピーモード: ドロップされたパスのうちフォルダは別途サーバーコピーする。
+  const inspected = await classifyDroppedPaths(entries);
+  const folderPaths = new Set(
+    inspected.filter((entry) => entry.is_dir).map((entry) => entry.path)
+  );
+  if (openModal) openUploadModal();
+  if (inspected.length) await addClassifiedFolders(inspected);
+
+  // フォルダ実体は File として上がらないように除去してから通常アップロードする。
+  const plainFiles = files.filter((f) => {
+    const p = typeof f.path === "string" ? f.path : "";
+    return !p || !folderPaths.has(p);
+  });
+  if (plainFiles.length) await addUploadFiles(plainFiles);
+}
+
 document.addEventListener("drop", async (e) => {
   if (dragModalActive) return;
   e.preventDefault();
   const hasFiles = Boolean(e.dataTransfer?.files?.length);
   resetPageDragState();
-  if (!hasFiles) return;
-  if (e.dataTransfer?.files?.length) {
-    if (els.fileSaveMethod.value === "reference") {
-      const entriesPromise = getReferenceDropFiles(e);
-      openUploadModal();
-      const entries = await entriesPromise;
-      if (entries.length) await addReferenceFiles(entries);
-      else await appendReferenceFilesFromDialog();
-      return;
-    }
-    // ドラッグ経由(コピー保存モード): Fileの内容をそのままアップロードする。
-    const dropped = [...e.dataTransfer.files];
-    openUploadModal();
-    await addUploadFiles(dropped);
-  }
+  if (hasFiles) await handleFileDrop(e, true);
 });
 document.addEventListener("dragend", resetPageDragState);
 window.addEventListener("blur", resetPageDragState);
@@ -1671,13 +1881,7 @@ uploadEls.modal.addEventListener("drop", async (e) => {
   e.stopPropagation();
   dragModalActive = false;
   if (e.dataTransfer?.files?.length) {
-    if (els.fileSaveMethod.value === "reference") {
-      const entries = await getReferenceDropFiles(e);
-      if (entries.length) await addReferenceFiles(entries);
-      else await appendReferenceFilesFromDialog();
-      return;
-    }
-    await addUploadFiles([...e.dataTransfer.files]);
+    await handleFileDrop(e, false);
   }
 });
 uploadEls.modal.addEventListener("dragleave", (e) => {
@@ -1705,7 +1909,7 @@ async function addUploadFiles(fileList) {
   for (const f of fileList) {
     if (uploadFiles.some((u) => u.file && u.file.name === f.name && u.file.size === f.size)) continue;
     if (!(await confirmIfDuplicate(f.name, f.size))) continue;
-    uploadFiles.push({ file: f, tags: [], category: "", handle: null });
+    uploadFiles.push({ file: f, tags: [], category: "", handle: null, comment: "" });
   }
   renderUploadList();
 }
@@ -1764,12 +1968,16 @@ function renderUploadList() {
     .map(
       (u, i) =>
         `<div class="upload-row">
-          <span class="upload-name">${escapeHtml(u.file ? u.file.name : u.name)}</span>
+          <span class="upload-name">${u.isFolder ? "<span class=\"upload-folder-icon\">📁</span> " : ""}${escapeHtml(u.file ? u.file.name : u.name)}</span>
           <div class="upload-row-tags-wrap">
             <div class="upload-row-tagbox" data-i="${i}">${u.tags.map((t) => `<span class="tag">${escapeHtml(t)}<button data-fi="${i}" data-ti="${t}" title="削除">×</button></span>`).join("")}</div>
             <input class="upload-row-taginput" data-i="${i}" list="uploadTagList" placeholder="タグを追加" />
           </div>
           <input class="upload-row-cat" data-i="${i}" list="uploadCategoryList" placeholder="カテゴリ" value="${escapeAttr(u.category)}" />
+          <button class="upload-row-comment ${u.comment && u.comment.trim() ? "has-comment" : ""}" data-i="${i}" data-comment="${escapeAttr(u.comment || "")}" title="クリップにコメントを追加">
+            <img class="icon icon-btn" src="icons/comment.svg" alt="" />
+            <span>${u.comment && u.comment.trim() ? "編集" : "追加"}</span>
+          </button>
           <button class="upload-remove" data-i="${i}" title="削除">×</button>
         </div>`
     )
@@ -1806,6 +2014,13 @@ function renderUploadList() {
     inp.addEventListener("input", () => { uploadFiles[Number(inp.dataset.i)].category = inp.value; });
   });
 
+  // 個別コメント
+  uploadEls.fileList.querySelectorAll(".upload-row-comment").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      openCommentPopup(Number(btn.dataset.i));
+    });
+  });
+
   // 削除ボタン
   uploadEls.fileList.querySelectorAll(".upload-remove").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1822,19 +2037,58 @@ uploadEls.save.addEventListener("click", async () => {
   uploadEls.save.textContent = "保存中…";
   uploadEls.save.setAttribute("aria-busy", "true");
   let ok = 0, fail = 0;
+  const failDetails = [];
 
   try {
     for (const u of uploadFiles) {
       const mergedTags = [...new Set([...uploadBulkTags, ...u.tags])];
       const cat = u.category || uploadBulkCategory;
+      const comment = (u.comment && u.comment.trim()) || uploadBulkComment;
+
+      const parseErrorDetail = async (res) => {
+        try {
+          const body = await res.json();
+          return body?.detail || "";
+        } catch {
+          return "";
+        }
+      };
 
       try {
-        if (u.refPath) {
+        if (u.isFolder) {
+          // フォルダはコピー/参照どちらもサーバーが絶対パスを直接扱う
+          const endpoint =
+            els.fileSaveMethod.value === "copy"
+              ? `${API}/clips/local/copy-path`
+              : `${API}/clips/local/reference`;
+          const payload =
+            els.fileSaveMethod.value === "copy"
+              ? {
+                  path: u.folderPath,
+                  title: u.name,
+                  comment: comment || null,
+                  category: cat || null,
+                  tags: mergedTags.join(","),
+                }
+              : {
+                  file_path: u.folderPath,
+                  title: u.name,
+                  comment: comment || null,
+                  category: cat || null,
+                  tags: mergedTags.join(","),
+                };
+          const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error((await parseErrorDetail(res)) || `HTTP ${res.status}`);
+        } else if (u.refPath) {
           // 元ファイル参照モード: サーバーで取得した本物の絶対パスを送る
           const payload = {
             file_path: u.refPath,
             title: u.name,
-            comment: null,
+            comment: comment || null,
             category: cat || null,
             tags: mergedTags.join(","),
           };
@@ -1843,20 +2097,21 @@ uploadEls.save.addEventListener("click", async () => {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
           });
-          if (!res.ok) throw new Error();
+          if (!res.ok) throw new Error((await parseErrorDetail(res)) || `HTTP ${res.status}`);
         } else {
           // コピー保存モード: ファイル内容をアップロード
           const fd = new FormData();
           fd.append("file", u.file);
-          fd.append("comment", "");
+          fd.append("comment", comment);
           if (mergedTags.length) fd.append("tags", mergedTags.join(","));
           if (cat) fd.append("category", cat);
           const res = await fetch(`${API}/clips/local`, { method: "POST", body: fd });
-          if (!res.ok) throw new Error();
+          if (!res.ok) throw new Error((await parseErrorDetail(res)) || `HTTP ${res.status}`);
         }
         ok++;
-      } catch {
+      } catch (e) {
         fail++;
+        failDetails.push(`${u.name}: ${e?.message || e || "不明なエラー"}`);
       }
     }
   } finally {
@@ -1867,7 +2122,7 @@ uploadEls.save.addEventListener("click", async () => {
 
   closeUploadModal();
   await loadAll();
-  if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
+  if (fail) alert(`${ok}件成功、${fail}件失敗しました。\n${failDetails.join("\n")}`);
 });
 
 // --- 設定: ファイル保存方法 ---

@@ -10,6 +10,14 @@
     <script>
       document.documentElement.setAttribute("data-theme", "dark");
     </script>
+    <script>
+      try {
+        document.documentElement.classList.toggle(
+          "native-titlebar",
+          localStorage.getItem("sparkle.titlebarMode") === "native",
+        );
+      } catch (e) {}
+    </script>
   </head>
   <body class="home-page">
     <div class="layout">
@@ -200,7 +208,11 @@
           </div>
         </div>
         <div id="uploadDropZone" class="upload-drop-zone">
-          <p>ここにファイルをドロップ、またはクリックして選択</p>
+          <p id="uploadDropZoneText">ここにファイルをドロップ、またはクリックして選択</p>
+          <div class="upload-drop-zone-actions">
+            <button id="uploadFileButton" class="modal-btn ghost" type="button">ファイルを選択</button>
+            <button id="uploadFolderButton" class="modal-btn ghost" type="button">フォルダーを選択</button>
+          </div>
           <input id="uploadFileInput" type="file" multiple hidden />
         </div>
 
@@ -215,6 +227,27 @@
             <label class="modal-label">一括カテゴリ</label>
             <input id="uploadBulkCategory" list="uploadCategoryList" class="modal-input" autocomplete="off" />
             <datalist id="uploadCategoryList"></datalist>
+          </div>
+          <div class="upload-bulk-row">
+            <label class="modal-label">一括コメント</label>
+            <button id="uploadCommentButton" class="app-confirm-btn upload-comment-toggle" type="button" aria-expanded="false" aria-controls="uploadCommentPopup">
+              <img class="icon icon-btn" src="icons/comment.svg" alt="" />
+              <span id="uploadCommentButtonLabel">コメントを追加</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="uploadCommentPopup" class="upload-comment-confirm" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="uploadCommentTitle">
+          <div class="app-confirm-card">
+            <div class="app-confirm-copy">
+              <h2 id="uploadCommentTitle" class="app-confirm-title">コメントを追加</h2>
+              <p class="app-confirm-message">保存するすべてのクリップにコメントを付けられます。</p>
+              <textarea id="uploadCommentInput" class="app-confirm-textarea" rows="4" placeholder="コメントを入力…"></textarea>
+            </div>
+            <div class="app-confirm-actions">
+              <button id="uploadCommentCancel" class="app-confirm-btn app-confirm-cancel" type="button">キャンセル</button>
+              <button id="uploadCommentSubmit" class="app-confirm-btn app-confirm-submit" type="button">保存する</button>
+            </div>
           </div>
         </div>
 
@@ -246,6 +279,15 @@
               <span>検索履歴</span>
               <button id="clearSearchHistory" class="modal-btn ghost" type="button">すべて削除</button>
             </div>
+          </div>
+
+          <div class="settings-col">
+            <h3 class="modal-sub">ウィンドウの設定</h3>
+            <label class="setting-row">
+              <span>Windows標準のタイトルバーを使う</span>
+              <input type="checkbox" id="nativeTitlebar" />
+            </label>
+            <span class="file-save-desc">オフ: アプリ独自のタイトルバー（最小化・最大化・閉じる）を使います。</span>
           </div>
 
           <div class="settings-col">

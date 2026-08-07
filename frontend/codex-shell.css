@@ -527,6 +527,82 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   width: min(390px, 100%);
 }
 
+.upload-comment-confirm {
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  border-radius: inherit;
+  background: rgba(12, 12, 14, 0.76);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px) scale(0.98);
+  transition-property: opacity, transform;
+  transition-duration: 160ms;
+  transition-timing-function: ease-out;
+}
+
+.upload-comment-confirm[hidden] {
+  display: none;
+}
+
+.upload-comment-confirm.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.upload-comment-confirm .app-confirm-card {
+  width: min(420px, 100%);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.upload-comment-confirm .app-confirm-copy,
+.upload-comment-confirm .app-confirm-actions {
+  grid-column: 1;
+}
+
+.upload-comment-confirm .app-confirm-actions {
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.app-confirm-textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 13px;
+  line-height: 1.5;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.app-confirm-textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.upload-comment-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+}
+
+.upload-comment-toggle .icon {
+  width: 14px;
+  height: 14px;
+}
+
 .modal-box,
 .modal-box.wide {
   border: 1px solid var(--border-strong);
@@ -935,6 +1011,11 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   align-items: center;
   flex: 0 0 auto;
   gap: 1px;
+}
+
+html.native-titlebar .window-controls,
+body.native-titlebar .window-controls {
+  display: none;
 }
 
 .window-control {

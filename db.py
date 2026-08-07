@@ -200,6 +200,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE clips ADD COLUMN file_size INTEGER")
     if "project_id" not in clip_cols:
         conn.execute("ALTER TABLE clips ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL")
+    if "is_folder" not in clip_cols:
+        conn.execute("ALTER TABLE clips ADD COLUMN is_folder INTEGER NOT NULL DEFAULT 0")
 
     if "project_id" not in task_cols:
         conn.execute("ALTER TABLE tasks ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL")

@@ -125,9 +125,11 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     )
 
 
-def _choose_directory_with_windows_dialog() -> Optional[str]:
-    paths = _run_windows_forms_dialog(
-        r"""
+def _choose_directory_with_windows_dialog(
+    title: str = "バックアップの保存先を選択",
+    ok_label: str = "このフォルダーを選択",
+) -> Optional[str]:
+    base_script = r"""
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;
@@ -194,7 +196,7 @@ public interface SparkleIShellItem
 
 public static class SparkleFolderPicker
 {
-    public static string Pick()
+    public static string Pick(string title, string okLabel)
     {
         var dialogType = Type.GetTypeFromCLSID(new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7"));
         var dialog = (SparkleIFileDialog)Activator.CreateInstance(dialogType);
@@ -206,8 +208,8 @@ public static class SparkleFolderPicker
                 | SparkleFileOpenOptions.FOS_FORCEFILESYSTEM
                 | SparkleFileOpenOptions.FOS_PATHMUSTEXIST;
             dialog.SetOptions(options);
-            dialog.SetTitle("バックアップの保存先を選択");
-            dialog.SetOkButtonLabel("このフォルダーを選択");
+            dialog.SetTitle(title);
+            dialog.SetOkButtonLabel(okLabel);
             if (dialog.Show(IntPtr.Zero) != 0) return string.Empty;
 
             SparkleIShellItem item;
@@ -225,10 +227,12 @@ public static class SparkleFolderPicker
 }
 '@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$selected = [SparkleFolderPicker]::Pick()
+$selected = [SparkleFolderPicker]::Pick("__TITLE__", "__OK_LABEL__")
 if ($selected) { [Console]::Write($selected) }
 """
-    )
+    script = base_script.replace("__TITLE__", title.replace("\\", "\\\\").replace('"', '\\"'))
+    script = script.replace("__OK_LABEL__", ok_label.replace("\\", "\\\\").replace('"', '\\"'))
+    paths = _run_windows_forms_dialog(script)
     return paths[0] if paths else None
 
 
@@ -333,6 +337,7 @@ def _row_to_clip(conn: Connection, row) -> ClipOut:
         clip_type=row["clip_type"] or "url",
         file_ref=row["file_ref"],
         file_size=row["file_size"],
+        is_folder=bool(row["is_folder"]) if "is_folder" in row.keys() else False,
         project_id=row["project_id"],
         project_ids=_fetch_project_ids(conn, "project_clips", "clip_id", row["id"]) or (
             [row["project_id"]] if row["project_id"] is not None else []
@@ -853,7 +858,9 @@ def delete_clip(clip_id: int, db: Connection = Depends(get_db)):
     # Reference mode stores the original path — never delete that.
     if file_ref == "copy" and clip_url and clip_url.startswith("local://"):
         local_file = LOCAL_DIR / clip_url.split("/")[-1]
-        if local_file.is_file():
+        if local_file.is_dir():
+            shutil.rmtree(local_file, ignore_errors=True)
+        elif local_file.is_file():
             local_file.unlink(missing_ok=True)
 
 
@@ -1667,8 +1674,8 @@ def _merge_database(source: sqlite3.Connection, dest: Connection) -> dict:
         )
         cur = dest.execute(
             "INSERT INTO clips(url, title, thumbnail_url, comment, category_id, "
-            "is_favorite, embedding, created_at, clip_type, file_ref, file_size, project_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "is_favorite, embedding, created_at, clip_type, file_ref, file_size, is_folder, project_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 row["url"],
                 row["title"],
@@ -1681,6 +1688,7 @@ def _merge_database(source: sqlite3.Connection, dest: Connection) -> dict:
                 _source_value(row, clip_columns, "clip_type", "url") or "url",
                 _source_value(row, clip_columns, "file_ref"),
                 _source_value(row, clip_columns, "file_size"),
+                _source_value(row, clip_columns, "is_folder", 0) or 0,
                 project_id,
             ),
         )
@@ -2186,6 +2194,153 @@ def _generate_video_thumbnail(file_path: Path) -> Optional[str]:
 LOCAL_DIR = get_local_files_dir()
 
 
+def _folder_total_size(path: Path) -> int:
+    """Return the total size in bytes of every file under ``path``."""
+    total = 0
+    for root, dirs, files in os.walk(path):
+        for name in files:
+            try:
+                total += (Path(root) / name).stat().st_size
+            except OSError:
+                continue
+    return total
+
+
+class OpenFolderOut(BaseModel):
+    path: Optional[str] = None
+    name: Optional[str] = None
+    size: int = 0
+
+
+class InspectPathsIn(BaseModel):
+    paths: List[str] = []
+
+
+class InspectedPathOut(BaseModel):
+    path: str
+    name: str
+    is_dir: bool
+    size: int
+
+
+class InspectPathsOut(BaseModel):
+    entries: List[InspectedPathOut] = []
+
+
+class CopyPathClipIn(BaseModel):
+    path: str
+    title: Optional[str] = None
+    comment: Optional[str] = None
+    category: Optional[str] = None
+    tags: Optional[str] = ""
+
+
+@router.post("/dialog/open-folder", response_model=OpenFolderOut)
+def open_folder_dialog():
+    """Open the native Windows folder picker and return the folder's path,
+    name and total size (used to warn before a large copy-mode upload)."""
+    try:
+        selected = _choose_directory_with_windows_dialog(
+            title="アップロードするフォルダーを選択",
+            ok_label="このフォルダーを選択",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"フォルダ選択ダイアログを開けませんでした: {exc}") from exc
+    if not selected:
+        return OpenFolderOut()
+    path = Path(selected)
+    return OpenFolderOut(path=str(path), name=path.name, size=_folder_total_size(path))
+
+
+@router.post("/dialog/inspect-paths", response_model=InspectPathsOut)
+def inspect_paths(payload: InspectPathsIn):
+    """Classify a list of dropped paths (file or directory) with their sizes."""
+    entries = []
+    for raw in payload.paths:
+        path = Path(raw)
+        name = path.name or raw
+        if path.is_dir():
+            entries.append(
+                InspectedPathOut(path=raw, name=name, is_dir=True, size=_folder_total_size(path))
+            )
+        else:
+            try:
+                size = path.stat().st_size
+            except OSError:
+                size = 0
+            entries.append(InspectedPathOut(path=raw, name=name, is_dir=False, size=size))
+    return InspectPathsOut(entries=entries)
+
+
+def _resolve_clip_metadata(
+    db: Connection,
+    title: Optional[str],
+    comment: Optional[str],
+    category: Optional[str],
+    tags: Optional[str],
+):
+    tag_list = [t.strip() for t in (tags or "").split(",") if t.strip()]
+    category_id = _resolve_category(db, category)
+    tag_ids = _resolve_tags(db, tag_list)
+    return tag_ids, category_id
+
+
+@router.post("/clips/local/copy-path", response_model=ClipOut, status_code=201)
+def create_copy_path_clip(payload: CopyPathClipIn, db: Connection = Depends(get_db)):
+    """Copy a file or a folder from the filesystem into the app folder and create
+    one clip for it (copy mode). Folders are copied recursively as a single clip."""
+    source = Path(payload.path)
+    if not source.exists():
+        raise HTTPException(status_code=400, detail="指定されたパスが見つかりません")
+
+    tag_ids, category_id = _resolve_clip_metadata(
+        db, payload.title, payload.comment, payload.category, payload.tags
+    )
+
+    LOCAL_DIR.mkdir(parents=True, exist_ok=True)
+    stored_name = uuid.uuid4().hex
+    try:
+        if source.is_dir():
+            dest = LOCAL_DIR / stored_name
+            shutil.copytree(source, dest)
+            url = f"local://copy/{stored_name}"
+            is_folder = 1
+            file_size = _folder_total_size(dest)
+            original_name = source.name
+        else:
+            dest = LOCAL_DIR / f"{stored_name}{source.suffix}"
+            shutil.copyfile(source, dest)
+            url = f"local://copy/{stored_name}{source.suffix}"
+            is_folder = 0
+            try:
+                file_size = source.stat().st_size
+            except OSError:
+                file_size = None
+            original_name = source.name
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"ファイル/フォルダをコピーできませんでした（{type(exc).__name__}: {exc}）。"
+            "読み取り権限、OneDrive などクラウド同期中のファイル、ロック中のファイルが"
+            "原因の可能性があります。",
+        ) from exc
+
+    clip_title = payload.title or original_name
+    cur = db.execute(
+        "INSERT INTO clips(url, title, thumbnail_url, comment, category_id, clip_type, file_ref, file_size, is_folder) "
+        "VALUES (?, ?, ?, ?, ?, 'local', 'copy', ?, ?)",
+        (url, clip_title, None, payload.comment, category_id, file_size, is_folder),
+    )
+    clip_id = cur.lastrowid
+    _set_tags(db, clip_id, tag_ids)
+    _increment_total_saved(db)
+    db.commit()
+    row = db.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
+    return _row_to_clip(db, row)
+
+
 @router.post("/clips/local", response_model=ClipOut, status_code=201)
 async def upload_local_clip(
     file: UploadFile = File(...),
@@ -2244,15 +2399,16 @@ def create_reference_clip(
     payload: ReferenceClipIn,
     db: Connection = Depends(get_db),
 ):
-    """Create a clip that references the original file path without copying."""
+    """Create a clip that references the original file or folder without copying."""
     tag_list = [t.strip() for t in (payload.tags or "").split(",") if t.strip()]
     category_id = _resolve_category(db, payload.category)
     tag_ids = _resolve_tags(db, tag_list)
 
     file_path = Path(payload.file_path)
-    if not file_path.is_file():
+    if not file_path.exists():
         raise HTTPException(status_code=400, detail="File not found at the specified path")
 
+    is_folder = file_path.is_dir()
     original_name = file_path.name
     clip_title = payload.title or original_name
     ext_lower = file_path.suffix.lower()
@@ -2260,24 +2416,24 @@ def create_reference_clip(
     url = f"local://reference/{file_path}"
 
     thumbnail_url = None
-    if ext_lower in IMAGE_EXTS:
+    if not is_folder and ext_lower in IMAGE_EXTS:
         try:
             content = file_path.read_bytes()
             thumbnail_url = _generate_image_thumbnail(content, ext_lower)
         except Exception:
             pass
-    elif ext_lower in VIDEO_EXTS:
+    elif not is_folder and ext_lower in VIDEO_EXTS:
         thumbnail_url = _generate_video_thumbnail(file_path)
 
     try:
-        file_size = file_path.stat().st_size
+        file_size = _folder_total_size(file_path) if is_folder else file_path.stat().st_size
     except OSError:
         file_size = None
 
     cur = db.execute(
-        "INSERT INTO clips(url, title, thumbnail_url, comment, category_id, clip_type, file_ref, file_size) "
-        "VALUES (?, ?, ?, ?, ?, 'local', 'reference', ?)",
-        (url, clip_title, thumbnail_url, payload.comment, category_id, file_size),
+        "INSERT INTO clips(url, title, thumbnail_url, comment, category_id, clip_type, file_ref, file_size, is_folder) "
+        "VALUES (?, ?, ?, ?, ?, 'local', 'reference', ?, ?)",
+        (url, clip_title, thumbnail_url, payload.comment, category_id, file_size, 1 if is_folder else 0),
     )
     clip_id = cur.lastrowid
     _set_tags(db, clip_id, tag_ids)
@@ -2345,7 +2501,7 @@ def get_local_file_path(clip_id: int, db: Connection = Depends(get_db)):
         if not name:
             raise HTTPException(status_code=400, detail="Invalid file path")
         file_path = LOCAL_DIR / name
-    if not file_path.is_file():
+    if not (file_path.is_file() or file_path.is_dir()):
         raise HTTPException(status_code=404, detail="File not found on disk")
 
     return LocalFilePathOut(path=str(file_path))
@@ -2366,7 +2522,6 @@ def get_local_file(clip_id: int, db: Connection = Depends(get_db)):
     if not url.startswith("local://"):
         raise HTTPException(status_code=400, detail="Invalid local URL")
 
-    # Extract file path based on mode
     if "/reference/" in url:
         file_path = Path(url.split("/reference/", 1)[1])
     else:
@@ -2374,6 +2529,8 @@ def get_local_file(clip_id: int, db: Connection = Depends(get_db)):
         if not name:
             raise HTTPException(status_code=400, detail="Invalid file path")
         file_path = LOCAL_DIR / name
+    if file_path.is_dir():
+        raise HTTPException(status_code=400, detail="フォルダはプレビューできません")
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
@@ -2403,7 +2560,7 @@ def open_local_file(clip_id: int, db: Connection = Depends(get_db)):
         # Copy mode: local://copy/{stored_name}
         name = url.rsplit("/", 1)[-1]
         file_path = LOCAL_DIR / name
-    if not file_path.is_file():
+    if not (file_path.is_file() or file_path.is_dir()):
         raise HTTPException(status_code=404, detail="File not found on disk")
 
     try:
@@ -2436,7 +2593,7 @@ def reveal_in_explorer(clip_id: int, db: Connection = Depends(get_db)):
     else:
         name = url.rsplit("/", 1)[-1]
         file_path = LOCAL_DIR / name
-    if not file_path.is_file():
+    if not (file_path.is_file() or file_path.is_dir()):
         raise HTTPException(status_code=404, detail="File not found on disk")
 
     try:
@@ -2474,6 +2631,8 @@ def get_text_preview(clip_id: int, db: Connection = Depends(get_db)):
     else:
         name = url.rsplit("/", 1)[-1]
         file_path = LOCAL_DIR / name
+    if file_path.is_dir():
+        raise HTTPException(status_code=400, detail="Not a previewable folder")
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found on disk")
 

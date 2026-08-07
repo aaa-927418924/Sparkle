@@ -81,6 +81,7 @@ class ClipOut(BaseModel):
     clip_type: Optional[str] = "url"
     file_ref: Optional[str] = None
     file_size: Optional[int] = None
+    is_folder: bool = False
     project_id: Optional[int] = None
     project_ids: List[int] = []
     tags: List[TagOut] = []
@@ -94,6 +95,7 @@ class LightClipOut(BaseModel):
     comment: Optional[str] = None
     clip_type: Optional[str] = "url"
     file_ref: Optional[str] = None
+    is_folder: bool = False
     project_id: Optional[int] = None
     project_ids: List[int] = []
     tags: List[TagOut] = []

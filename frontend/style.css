@@ -747,6 +747,13 @@ select {
   font-size: 28px;
 }
 
+.card-ph-folder .icon-card {
+  width: 44px;
+  height: 44px;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
 .card-caption {
   padding: 10px 10px 2px;
   position: relative;
@@ -2179,6 +2186,52 @@ body.note-editor-page .main.editor-main {
   border-radius: 6px;
   font: inherit;
   font-size: 12px;
+}
+
+.upload-row-comment {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition-property: color, border-color, background-color;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+.upload-row-comment .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.upload-row-comment:hover,
+.upload-row-comment:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.upload-row-comment:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.upload-row-comment.has-comment {
+  color: #1b1715;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.upload-row-comment.has-comment:hover,
+.upload-row-comment.has-comment:focus-visible {
+  background: color-mix(in srgb, var(--accent) 86%, white);
 }
 
 .upload-remove {

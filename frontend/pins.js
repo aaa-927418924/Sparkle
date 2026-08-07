@@ -605,8 +605,44 @@ function loadSettingsValues() {
       .then((d) => { fsm.value = d.value || "reference"; updateFileSaveDesc?.(fsm.value); })
       .catch(() => {});
   }
+  const ntb = document.getElementById("nativeTitlebar");
+  if (ntb && !ntb.dataset.loaded) loadTitlebarMode();
   loadAIExportSettings();
   loadAIEditSettings();
+}
+
+function applyTitlebarMode(mode) {
+  const native = mode === "native";
+  document.documentElement.classList.toggle("native-titlebar", native);
+  document.body.classList.toggle("native-titlebar", native);
+  const ntb = document.getElementById("nativeTitlebar");
+  if (ntb) ntb.checked = native;
+  try {
+    localStorage.setItem("sparkle.titlebarMode", mode);
+  } catch (err) {
+    /* storage unavailable; ignore */
+  }
+}
+
+function syncNativeTitlebar(mode) {
+  const api = window.pywebview?.api?.set_titlebar_mode;
+  if (typeof api === "function") {
+    try {
+      api(mode).catch(() => {});
+    } catch (err) {
+      /* bridge not ready; window state is corrected on next toggle */
+    }
+  }
+}
+
+function loadTitlebarMode() {
+  const ntb = document.getElementById("nativeTitlebar");
+  if (ntb && ntb.dataset.loaded) return;
+  if (ntb) ntb.dataset.loaded = "1";
+  fetch(`${API_ROOT}/settings/titlebar_mode`)
+    .then((r) => r.ok ? r.json() : { value: "custom" })
+    .then((d) => applyTitlebarMode(d.value || "custom"))
+    .catch(() => applyTitlebarMode("custom"));
 }
 
 function updateFileSaveDesc(v) {
@@ -812,6 +848,18 @@ function initSettings() {
       body: JSON.stringify({ value: fsm.value }),
     });
     if (typeof updateFileSaveDesc === "function") updateFileSaveDesc(fsm.value);
+  });
+  // nativeTitlebar
+  const ntb = document.getElementById("nativeTitlebar");
+  if (ntb) ntb.addEventListener("change", () => {
+    const mode = ntb.checked ? "native" : "custom";
+    fetch(`${API_ROOT}/settings/titlebar_mode`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: mode }),
+    }).catch(() => {});
+    applyTitlebarMode(mode);
+    syncNativeTitlebar(mode);
   });
   // AI-friendly Markdown export
   const aiEnabled = document.getElementById("aiExportEnabled");
@@ -1124,6 +1172,7 @@ async function initPinSettings() {
   renderSidebarPins();
   initSettings();
   initProfileSidebar();
+  loadTitlebarMode();
   if (document.body?.classList.contains("settings-page")) loadSettingsValues();
 }
 

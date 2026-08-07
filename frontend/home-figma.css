@@ -670,6 +670,17 @@ body.home-page .search-suggest::-webkit-scrollbar {
   letter-spacing: 0.01em;
 }
 
+.home-page #uploadModal .upload-drop-zone-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.home-page #uploadModal .upload-drop-zone-actions .modal-btn {
+  min-width: 132px;
+}
+
 .home-page #uploadModal .upload-file-list {
   max-height: min(300px, 38vh);
   padding: 4px 0;
@@ -679,9 +690,9 @@ body.home-page .search-suggest::-webkit-scrollbar {
 
 .home-page #uploadModal .upload-row {
   display: grid;
-  grid-template-columns: minmax(130px, 1.2fr) minmax(160px, 2fr) minmax(90px, 0.8fr) 28px;
+  grid-template-columns: minmax(130px, 1.2fr) minmax(155px, 2fr) minmax(80px, 0.7fr) auto 28px;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
   padding: 10px 0;
   border-bottom-color: rgba(177, 173, 161, 0.55);
 }
@@ -691,8 +702,21 @@ body.home-page .search-suggest::-webkit-scrollbar {
 }
 
 .home-page #uploadModal .upload-name {
+  grid-column: 1;
+  min-width: 0;
   padding-top: 0;
   color: #3f3f3f;
+}
+
+.home-page #uploadModal .upload-row-tags-wrap {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.home-page #uploadModal .upload-row-cat {
+  grid-column: 3;
+  width: auto;
+  min-width: 0;
 }
 
 .home-page #uploadModal .upload-row-taginput,
@@ -714,7 +738,15 @@ body.home-page .search-suggest::-webkit-scrollbar {
   box-shadow: 0 0 0 3px rgba(204, 109, 72, 0.14);
 }
 
+.home-page #uploadModal .upload-row-comment {
+  grid-column: 4;
+  min-width: 0;
+  white-space: nowrap;
+  align-self: center;
+}
+
 .home-page #uploadModal .upload-remove {
+  grid-column: 5;
   width: 28px;
   height: 28px;
   border-radius: 8px;

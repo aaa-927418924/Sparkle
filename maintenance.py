@@ -18,6 +18,7 @@ SETTING_DEFAULTS = {
     "file_save_method": "reference",  # "copy" or "reference"
     "ai_export_enabled": "true",
     "ai_edit_enabled": "false",
+    "titlebar_mode": "custom",  # "custom" or "native"
 }
 
 # Maps a setting value to the SQLite date modifier used to compute the

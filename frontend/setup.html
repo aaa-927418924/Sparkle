@@ -7,6 +7,14 @@
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
     <link rel="stylesheet" href="migration.css?v=migration-ui-20260802-v2" />
     <link rel="stylesheet" href="setup.css?v=setup-ui-20260803-debug-note-v1" />
+    <script>
+      try {
+        document.documentElement.classList.toggle(
+          "native-titlebar",
+          localStorage.getItem("sparkle.titlebarMode") === "native",
+        );
+      } catch (e) {}
+    </script>
   </head>
   <body class="migration-page setup-page">
     <main class="migration-window">

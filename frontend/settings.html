@@ -6,7 +6,14 @@
     <title>Sparkle — 設定</title>
     <link rel="stylesheet" href="style.css?v=settings-operation-lock-20260803-v1" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
-    <script>document.documentElement.setAttribute("data-theme", "dark");</script>
+    <script>document.documentElement.setAttribute("data-theme", "dark");
+      try {
+        document.documentElement.classList.toggle(
+          "native-titlebar",
+          localStorage.getItem("sparkle.titlebarMode") === "native",
+        );
+      } catch (e) {}
+    </script>
   </head>
   <body class="settings-page">
     <div class="layout">
@@ -64,6 +71,15 @@
               <span>検索履歴</span>
               <button id="clearSearchHistory" class="modal-btn ghost" type="button">すべて削除</button>
             </div>
+            </div>
+
+            <div class="settings-col">
+              <h3 class="modal-sub">ウィンドウの設定</h3>
+              <label class="setting-row">
+                <span>Windows標準のタイトルバーを使う</span>
+                <input type="checkbox" id="nativeTitlebar" />
+              </label>
+              <span class="file-save-desc">オフ: アプリ独自のタイトルバー（最小化・最大化・閉じる）を使います。</span>
             </div>
 
             <div class="settings-col">

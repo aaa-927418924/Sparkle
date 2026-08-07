@@ -7,7 +7,14 @@
     <link rel="stylesheet" href="style.css?v=profile-20260803-v1" />
     <link rel="stylesheet" href="profile-figma.css?v=profile-ui-20260803-v1" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
-    <script>document.documentElement.setAttribute("data-theme", "dark");</script>
+    <script>document.documentElement.setAttribute("data-theme", "dark");
+      try {
+        document.documentElement.classList.toggle(
+          "native-titlebar",
+          localStorage.getItem("sparkle.titlebarMode") === "native",
+        );
+      } catch (e) {}
+    </script>
   </head>
   <body class="profile-page profile-loading">
     <div class="layout">

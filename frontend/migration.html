@@ -6,6 +6,14 @@
     <title>Sparkleへ移行</title>
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
     <link rel="stylesheet" href="migration.css?v=migration-ui-20260802-v2" />
+    <script>
+      try {
+        document.documentElement.classList.toggle(
+          "native-titlebar",
+          localStorage.getItem("sparkle.titlebarMode") === "native",
+        );
+      } catch (e) {}
+    </script>
   </head>
   <body class="migration-page">
     <main class="migration-window">

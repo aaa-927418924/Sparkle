@@ -6,7 +6,14 @@
     <title>メモを編集 — Sparkle</title>
     <link rel="stylesheet" href="style.css?v=editor-tall-20260803-v1" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
-    <script>document.documentElement.setAttribute("data-theme", "dark");</script>
+    <script>document.documentElement.setAttribute("data-theme", "dark");
+      try {
+        document.documentElement.classList.toggle(
+          "native-titlebar",
+          localStorage.getItem("sparkle.titlebarMode") === "native",
+        );
+      } catch (e) {}
+    </script>
   </head>
   <body class="note-editor-page">
     <div class="layout">

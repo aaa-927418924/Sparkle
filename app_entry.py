@@ -371,8 +371,8 @@ def _place_restored_window_at_cursor(window, maximized_geometry, restored_geomet
         return restored_geometry
 
 
-def _enable_native_resize(window) -> None:
-    """Restore the Windows sizing frame that frameless pywebview removes."""
+def _apply_window_caption(window, native_titlebar: bool) -> None:
+    """Show or hide the Windows caption bar on a frameless window."""
     if os.name != "nt":
         return
 
@@ -380,26 +380,59 @@ def _enable_native_resize(window) -> None:
     if handle is None:
         return
 
+    # A real caption needs more than WS_CAPTION: without SYSMENU, MIN/MAXBOX
+    # and THICKFRAME, the native bar renders empty (no minimize/maximize/close
+    # buttons). Custom mode drops the caption AND the sizing frame; keeping
+    # WS_THICKFRAME would make DWM paint a thin leftover frame edge along the
+    # top of the window. Resizing still works through the app's own JS resize
+    # handles.
+    _apply_window_style(
+        handle,
+        (
+            lambda style: (style | 0x00C00000 | 0x00080000 | 0x00020000 | 0x00010000 | 0x00040000)
+            if native_titlebar
+            else (style & ~(0x00C00000 | 0x00040000))
+        ),
+    )
+    _apply_dwm_frame_margin(handle, native_titlebar)
+    _apply_corner_preference(handle, native_titlebar)
+
+
+def _apply_window_style(handle, mutate_style) -> None:
+    """Toggle Win32 window styles without touching pywebview's shared ctypes.
+
+    The global ``ctypes.windll.user32`` namespace is owned by pywebview; changing
+    ``argtypes``/``restype`` on it breaks pywebview's own ``SetWindowPos`` calls
+    that pass ``None`` for the size arguments.  Use isolated WINFUNCTYPE
+    prototypes so only this app's Win32 calls are configured.
+    """
+    if handle is None or os.name != "nt":
+        return
+
     try:
         import ctypes
 
-        user32 = ctypes.windll.user32
+        user32 = ctypes.WinDLL("user32")
         pointer_size = ctypes.sizeof(ctypes.c_void_p)
         long_type = ctypes.c_longlong if pointer_size == 8 else ctypes.c_long
-        get_window_long = user32.GetWindowLongPtrW if pointer_size == 8 else user32.GetWindowLongW
-        set_window_long = user32.SetWindowLongPtrW if pointer_size == 8 else user32.SetWindowLongW
-        get_window_long.argtypes = [ctypes.c_void_p, ctypes.c_int]
-        get_window_long.restype = long_type
-        set_window_long.argtypes = [ctypes.c_void_p, ctypes.c_int, long_type]
-        set_window_long.restype = long_type
+
+        get_window_long_name = "GetWindowLongPtrW" if pointer_size == 8 else "GetWindowLongW"
+        set_window_long_name = "SetWindowLongPtrW" if pointer_size == 8 else "SetWindowLongW"
+
+        get_window_long = ctypes.WINFUNCTYPE(
+            long_type, ctypes.c_void_p, ctypes.c_int
+        )((get_window_long_name, user32))
+        set_window_long = ctypes.WINFUNCTYPE(
+            long_type, ctypes.c_void_p, ctypes.c_int, long_type
+        )((set_window_long_name, user32))
 
         hwnd = ctypes.c_void_p(handle)
         style = int(get_window_long(hwnd, -16))
-        style &= ~0x00C00000  # WS_CAPTION
-        style |= 0x00040000 | 0x00020000 | 0x00010000 | 0x00080000  # THICKFRAME | MIN/MAXBOX | SYSMENU
+        style = mutate_style(style)
         set_window_long(hwnd, -16, style)
 
-        user32.SetWindowPos.argtypes = [
+        set_window_pos = ctypes.WINFUNCTYPE(
+            ctypes.c_int,
             ctypes.c_void_p,
             ctypes.c_void_p,
             ctypes.c_int,
@@ -407,9 +440,8 @@ def _enable_native_resize(window) -> None:
             ctypes.c_int,
             ctypes.c_int,
             ctypes.c_uint,
-        ]
-        user32.SetWindowPos.restype = ctypes.c_int
-        user32.SetWindowPos(
+        )(("SetWindowPos", user32))
+        set_window_pos(
             hwnd,
             None,
             0,
@@ -420,6 +452,88 @@ def _enable_native_resize(window) -> None:
         )
     except Exception:
         pass
+
+
+def _apply_dwm_frame_margin(handle, native_titlebar: bool) -> None:
+    """Zero/recover the DWM glass frame margin on a frameless window.
+
+    pywebview extends the DWM glass frame 1px into the client area when the
+    window has a shadow, which renders as a thin bar along the top edge of a
+    frameless window.  Custom mode zeroes the margin; native mode restores the
+    1px margin so the caption area renders normally.
+    """
+    if handle is None or os.name != "nt":
+        return
+
+    try:
+        import ctypes
+
+        dwmapi = ctypes.WinDLL("dwmapi")
+        margin_value = 1 if native_titlebar else 0
+
+        extend_frame = ctypes.WINFUNCTYPE(
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_long),
+        )(("DwmExtendFrameIntoClientArea", dwmapi))
+        margins = (ctypes.c_long * 4)(margin_value, margin_value, margin_value, margin_value)
+        extend_frame(ctypes.c_void_p(handle), margins)
+    except Exception:
+        pass
+
+
+def _apply_corner_preference(handle, native_titlebar: bool) -> None:
+    """Round the corners of a frameless window (Windows 11+).
+
+    Frameless windows lose the rounded corners that pywebview's 1px DWM glass
+    frame used to provide, so request DWM to round them explicitly.  Native
+    caption mode leaves the preference to the system default.
+    """
+    if handle is None or os.name != "nt":
+        return
+
+    try:
+        import ctypes
+        import sys
+
+        # DWMWA_WINDOW_CORNER_PREFERENCE only exists on Windows 11 (build 22000+)
+        if sys.getwindowsversion().build < 22000:
+            return
+
+        dwmapi = ctypes.WinDLL("dwmapi")
+        # DWMWCP_DEFAULT=0, DWMWCP_DONOTROUND=1, DWMWCP_ROUND=2
+        preference = 0 if native_titlebar else 2
+
+        set_window_attr = ctypes.WINFUNCTYPE(
+            ctypes.c_long,
+            ctypes.c_void_p,
+            ctypes.c_uint,
+            ctypes.c_void_p,
+            ctypes.c_uint,
+        )(("DwmSetWindowAttribute", dwmapi))
+        value = ctypes.c_int(preference)
+        set_window_attr(ctypes.c_void_p(handle), 33, ctypes.byref(value), 4)
+    except Exception:
+        pass
+
+
+def _enable_native_resize(window) -> None:
+    """Restore the Windows sizing frame that frameless pywebview removes."""
+    if os.name != "nt":
+        return
+
+    handle = _get_native_window_handle(window)
+    if handle is None:
+        return
+
+    _apply_window_style(
+        handle,
+        lambda style: (style & ~0x00C00000)  # WS_CAPTION
+        | 0x00040000
+        | 0x00020000
+        | 0x00010000
+        | 0x00080000,  # THICKFRAME | MIN/MAXBOX | SYSMENU
+    )
 
 
 def _resize_window_for_profile(profile: str):
@@ -659,6 +773,38 @@ class NativeWindowApi:
         return geometry
 
     @staticmethod
+    def begin_native_drag(screen_x=None, screen_y=None) -> bool:
+        """Start an OS-driven window move via the non-client hit test.
+
+        Works in both the frameless (custom title bar) and caption (native
+        title bar) modes, and gives edge snapping / maximize restore for free.
+        """
+        window = window_ref.get("window")
+        if window is None:
+            return False
+        handle = _get_native_window_handle(window)
+        if handle is None:
+            return False
+        try:
+            import ctypes
+
+            class POINT(ctypes.Structure):
+                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+            user32 = ctypes.windll.user32
+            cursor = POINT()
+            ok = user32.GetCursorPos(ctypes.byref(cursor))
+            lparam = ((int(cursor.y) & 0xFFFF) << 16) | (int(cursor.x) & 0xFFFF)
+            hwnd = ctypes.c_void_p(handle)
+            user32.ReleaseCapture()
+            res = user32.SendMessageW(hwnd, 0x00A1, 2, lparam)  # WM_NCLBUTTONDOWN, HTCAPTION
+            print(f"[drag] begin_native_drag ok={ok} pos=({cursor.x},{cursor.y}) hwnd={int(handle)} res={res}", file=sys.stderr)
+            return True
+        except Exception as exc:
+            print(f"[drag] begin_native_drag error={exc!r}", file=sys.stderr)
+            return False
+
+    @staticmethod
     def move_window(x: int, y: int) -> None:
         window = window_ref.get("window")
         if window is not None:
@@ -684,6 +830,18 @@ class NativeWindowApi:
     def set_window_profile(profile: str):
         """Switch between the editable onboarding and default window profiles."""
         return _resize_window_for_profile(str(profile or ""))
+
+    @staticmethod
+    def set_titlebar_mode(mode: str) -> bool:
+        """Switch between the custom in-app title bar and the native caption bar.
+
+        Returns True when the native Windows titlebar is now active.
+        """
+        native = str(mode).strip().lower() == "native"
+        window = window_ref.get("window")
+        if window is not None:
+            _apply_window_caption(window, native)
+        return native
 
     @staticmethod
     def close_window() -> None:
@@ -716,9 +874,44 @@ def _on_window_closing(window) -> bool:
     return False
 
 
+def _get_window_titlebar_setting() -> bool:
+    """Return True when the saved titlebar_mode is 'native'."""
+    try:
+        data_dir = Path(os.environ.get("APPDATA", "")) / "Sparkle"
+        db_path = data_dir / "clips.db"
+        if not db_path.exists():
+            return False
+        import sqlite3
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            row = conn.execute("SELECT value FROM settings WHERE key = 'titlebar_mode'").fetchone()
+        finally:
+            conn.close()
+        return bool(row and row[0] == "native")
+    except Exception:
+        return False
+
+
 def _configure_native_window() -> None:
-    _enable_native_resize(window_ref.get("window"))
+    _apply_native_chrome()
     _attach_native_drop_listener()
+
+
+def _apply_native_chrome() -> None:
+    """Apply the caption/resize frame once the native handle exists.
+
+    ``webview.start(func)`` runs ``func`` on a background thread before the
+    WinForms window is created, so the native handle is still missing there.
+    The same call is therefore repeated from the ``loaded`` event, by which
+    point the handle is available. Applying the saved titlebar mode twice is
+    idempotent (same target style), so this is safe on every page load.
+    """
+    window = window_ref.get("window")
+    if window is None:
+        return
+    _enable_native_resize(window)
+    _apply_window_caption(window, _get_window_titlebar_setting())
 
 
 def _build_tray_image():
@@ -897,6 +1090,7 @@ def main() -> None:
         )
         window_ref["window"] = window
         window.events.loaded += _attach_native_drop_listener
+        window.events.loaded += _apply_native_chrome
         window.events.closing += _on_window_closing
 
         icon = _build_tray_icon()

@@ -1282,14 +1282,6 @@ def put_setting(key: str, payload: SettingValue, db: Connection = Depends(get_db
             ("ai_edit_enabled", "false"),
         )
         db.commit()
-    elif key == "ai_export_enabled" and value == "true":
-        # Turning the export on also enables editing automatically.
-        db.execute(
-            "INSERT INTO settings(key, value) VALUES(?, ?) "
-            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            ("ai_edit_enabled", "true"),
-        )
-        db.commit()
     return SettingValue(value=value)
 
 

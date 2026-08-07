@@ -80,25 +80,6 @@ a {
   border: 0;
 }
 
-.skip-link {
-  position: fixed;
-  inset-inline-start: 16px;
-  top: 10px;
-  z-index: 300;
-  padding: 10px 14px;
-  border-radius: 10px;
-  color: #fff;
-  background: #111;
-  transform: translateY(-160%);
-  transition: transform 150ms ease-out;
-}
-
-.skip-link:focus-visible {
-  transform: translateY(0);
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-
 .layout {
   min-height: 100vh;
 }

@@ -59,6 +59,11 @@ class ClipCreate(BaseModel):
     project_id: Optional[int] = None
 
 
+class UrlMetadataOut(BaseModel):
+    url: str
+    title: Optional[str] = None
+
+
 class ClipUpdate(BaseModel):
     title: Optional[str] = None
     comment: Optional[str] = None

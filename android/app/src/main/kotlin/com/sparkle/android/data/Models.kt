@@ -109,6 +109,18 @@ data class ClipCreationSource(
     val upload: UploadSelection? = null,
 )
 
+data class UrlMetadata(
+    val url: String,
+    val title: String?,
+)
+
+sealed interface SharedTitleResolution {
+    data object Idle : SharedTitleResolution
+    data class Loading(val url: String) : SharedTitleResolution
+    data class Resolved(val url: String, val title: String) : SharedTitleResolution
+    data class Unavailable(val url: String) : SharedTitleResolution
+}
+
 data class RemoteSnapshot(
     val clips: List<Clip>,
     val categories: List<Category>,

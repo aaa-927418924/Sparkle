@@ -26,6 +26,7 @@ import com.sparkle.android.data.RemoteSnapshot
 import com.sparkle.android.data.Screen
 import com.sparkle.android.data.SparkleApi
 import com.sparkle.android.data.SparklePreferences
+import com.sparkle.android.data.SharedTitleResolution
 import com.sparkle.android.data.StatusFilter
 import com.sparkle.android.data.Tag
 import com.sparkle.android.data.Task
@@ -80,6 +81,8 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         private set
     var editorSource by mutableStateOf<ClipCreationSource?>(null)
         private set
+    var sharedTitleResolution by mutableStateOf<SharedTitleResolution>(SharedTitleResolution.Idle)
+        private set
     var connectionState by mutableStateOf(initialConnectionState())
         private set
     var isBusy by mutableStateOf(false)
@@ -93,6 +96,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
 
     private var api: SparkleApi? = SparkleApi.fromBaseUrl(baseUrl)
     private var returnHomeAfterConnection = false
+    private var sharedTitleRequestId = 0
     private val clipOpenedAt = mutableMapOf<Int, Long>()
     private val randomClipOrder = mutableMapOf<Int, Double>()
 
@@ -197,6 +201,8 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         preferences.saveBaseUrl(normalized)
         baseUrl = normalized
         api = SparkleApi.fromBaseUrl(normalized)
+        sharedTitleRequestId += 1
+        sharedTitleResolution = SharedTitleResolution.Idle
         returnHomeAfterConnection = true
         refresh()
     }
@@ -213,6 +219,8 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         projects = emptyList()
         query = ""
         clearFilters()
+        sharedTitleRequestId += 1
+        sharedTitleResolution = SharedTitleResolution.Idle
         returnHomeAfterConnection = false
         errorMessage = null
         connectionState = ConnectionState.Unconfigured
@@ -545,14 +553,54 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
 
     fun beginCreate(source: ClipCreationSource = ClipCreationSource()) {
         errorMessage = null
+        sharedTitleRequestId += 1
+        sharedTitleResolution = SharedTitleResolution.Idle
         editorSource = source
         screen = Screen.Editor(null)
     }
 
     fun beginEdit(clipId: Int) {
         errorMessage = null
+        sharedTitleRequestId += 1
+        sharedTitleResolution = SharedTitleResolution.Idle
         editorSource = null
         screen = Screen.Editor(clipId)
+    }
+
+    fun resolveSharedTitle(rawUrl: String) {
+        val url = rawUrl.trim()
+        if (url.isBlank()) return
+        val currentResolution = sharedTitleResolution
+        if (currentResolution is SharedTitleResolution.Loading && currentResolution.url == url) return
+        if (currentResolution is SharedTitleResolution.Resolved && currentResolution.url == url) return
+        val currentApi = api
+        if (currentApi == null) {
+            sharedTitleResolution = SharedTitleResolution.Unavailable(url)
+            return
+        }
+        val requestId = ++sharedTitleRequestId
+        sharedTitleResolution = SharedTitleResolution.Loading(url)
+        executor.execute {
+            try {
+                val title = currentApi.loadUrlMetadata(url).title
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                mainHandler.post {
+                    if (requestId != sharedTitleRequestId) return@post
+                    sharedTitleResolution = if (title != null) {
+                        SharedTitleResolution.Resolved(url, title)
+                    } else {
+                        SharedTitleResolution.Unavailable(url)
+                    }
+                }
+            } catch (_: Throwable) {
+                mainHandler.post {
+                    if (requestId == sharedTitleRequestId) {
+                        sharedTitleResolution = SharedTitleResolution.Unavailable(url)
+                    }
+                }
+            }
+        }
     }
 
     fun openSettings() {
@@ -568,6 +616,8 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
 
     fun goToHome() {
         errorMessage = null
+        sharedTitleRequestId += 1
+        sharedTitleResolution = SharedTitleResolution.Idle
         editorSource = null
         screen = Screen.Home
         refresh()

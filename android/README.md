@@ -36,6 +36,11 @@ selection and Android Sharesheet files use the existing multipart
 - The attach button selects a phone file. The Android Sharesheet can send a URL
   or file to Sparkle; the app opens the save form so comments and tags can be
   added before saving through the PC API.
+- For shared URLs, Android first uses `EXTRA_TITLE`/`EXTRA_SUBJECT` when the
+  sharing app provides them. If the title is missing, the editor requests the
+  read-only `/url-metadata` endpoint from the PC and fills the title after the
+  page metadata is resolved. A loading/failure message is shown, manual title
+  edits are never overwritten, and the PC does not persist this lookup.
 - Tasks and notes are loaded from the PC. Each tab has All/In-progress/
   Completed filters; the add button opens a PC-backed form, tapping edits an
   item, long-pressing deletes it, and task/note forms can manage their links.

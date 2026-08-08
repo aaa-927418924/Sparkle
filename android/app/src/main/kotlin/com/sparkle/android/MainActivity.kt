@@ -146,6 +146,7 @@ import com.sparkle.android.data.Note
 import com.sparkle.android.data.Project
 import com.sparkle.android.data.Screen
 import com.sparkle.android.data.StatusFilter
+import com.sparkle.android.data.SharedTitleResolution
 import com.sparkle.android.data.Task
 import com.sparkle.android.data.TaskAutoDeleteOption
 import com.sparkle.android.data.UploadSelection
@@ -1837,6 +1838,51 @@ private fun EditorScreen(
     var tags by remember(clipId, source) { mutableStateOf(existingClip?.tags?.joinToString(", ") { it.name }.orEmpty()) }
     var validationError by remember(clipId, source) { mutableStateOf<String?>(null) }
     val upload = source?.upload
+    var titleEdited by remember(clipId, source) { mutableStateOf(false) }
+    val sharedTitleUrl = source?.url
+        ?.trim()
+        ?.takeIf {
+            clipId == null &&
+                source.upload == null &&
+                source.title.isNullOrBlank() &&
+                it.isNotBlank()
+        }
+    val sharedTitleResolution = viewModel.sharedTitleResolution
+
+    LaunchedEffect(sharedTitleUrl, viewModel.baseUrl) {
+        sharedTitleUrl?.let(viewModel::resolveSharedTitle)
+    }
+    LaunchedEffect(sharedTitleResolution, sharedTitleUrl) {
+        val resolved = sharedTitleResolution as? SharedTitleResolution.Resolved ?: return@LaunchedEffect
+        if (
+            resolved.url == sharedTitleUrl &&
+            source.url.trim() == resolved.url &&
+            url == resolved.url &&
+            title.isBlank() &&
+            !titleEdited
+        ) {
+            title = resolved.title
+        }
+    }
+    val titleSupportingText: (@Composable () -> Unit)? = when (val resolution = sharedTitleResolution) {
+        is SharedTitleResolution.Loading -> if (resolution.url == sharedTitleUrl) {
+            {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .semantics { contentDescription = "タイトルを取得中" },
+                        strokeWidth = 2.dp,
+                    )
+                    Text("ページタイトルを取得中…")
+                }
+            }
+        } else null
+        is SharedTitleResolution.Unavailable -> if (resolution.url == sharedTitleUrl) {
+            { Text("ページタイトルを自動取得できませんでした。必要なら入力してください。") }
+        } else null
+        else -> null
+    }
 
     Scaffold(
         topBar = {
@@ -1889,7 +1935,17 @@ private fun EditorScreen(
                     singleLine = true,
                 )
             }
-            OutlinedTextField(value = title, onValueChange = { title = it }, modifier = Modifier.fillMaxWidth(), label = { Text("タイトル") }, maxLines = 3)
+            OutlinedTextField(
+                value = title,
+                onValueChange = {
+                    title = it
+                    titleEdited = true
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("タイトル") },
+                supportingText = titleSupportingText,
+                maxLines = 3,
+            )
             OutlinedTextField(value = comment, onValueChange = { comment = it }, modifier = Modifier.fillMaxWidth(), label = { Text("コメント") }, minLines = 4)
             OutlinedTextField(value = category, onValueChange = { category = it }, modifier = Modifier.fillMaxWidth(), label = { Text("カテゴリ") }, supportingText = { Text("新しい名前を入力するとPC側で作成されます。") }, singleLine = true)
             OutlinedTextField(value = tags, onValueChange = { tags = it }, modifier = Modifier.fillMaxWidth(), label = { Text("タグ") }, supportingText = { Text("カンマ区切りで入力") }, maxLines = 3)
@@ -2239,6 +2295,7 @@ private fun selectionForUri(context: Context, uri: Uri): UploadSelection {
 
 private fun parseShareIntent(context: Context, intent: Intent?): ClipCreationSource? {
     if (intent == null || intent.action !in setOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) return null
+    val sharedTitle = intent.shareTitle()
     val sharedUri = if (Build.VERSION.SDK_INT >= 33) {
         intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
             ?: intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)?.firstOrNull()
@@ -2247,7 +2304,7 @@ private fun parseShareIntent(context: Context, intent: Intent?): ClipCreationSou
         intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
     }
     if (sharedUri != null) {
-        return ClipCreationSource(title = intent.getStringExtra(Intent.EXTRA_SUBJECT), upload = selectionForUri(context, sharedUri))
+        return ClipCreationSource(title = sharedTitle, upload = selectionForUri(context, sharedUri))
     }
     val sharedText = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.trim().orEmpty()
     if (sharedText.isBlank()) return null
@@ -2256,5 +2313,9 @@ private fun parseShareIntent(context: Context, intent: Intent?): ClipCreationSou
         ?.value
         ?.trimEnd('.', ',', ')', ']', '}', '>')
         ?: sharedText
-    return ClipCreationSource(url = sharedUrl, title = intent.getStringExtra(Intent.EXTRA_SUBJECT))
+    return ClipCreationSource(url = sharedUrl, title = sharedTitle)
 }
+
+private fun Intent.shareTitle(): String? = sequenceOf(Intent.EXTRA_TITLE, Intent.EXTRA_SUBJECT)
+    .mapNotNull { key -> getCharSequenceExtra(key)?.toString()?.trim()?.takeIf { it.isNotEmpty() } }
+    .firstOrNull()

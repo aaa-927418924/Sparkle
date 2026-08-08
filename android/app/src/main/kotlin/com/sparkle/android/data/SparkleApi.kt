@@ -40,6 +40,16 @@ class SparkleApi private constructor(
         return response.optString("status") == "ok" && response.optString("app") == "Sparkle"
     }
 
+    fun loadUrlMetadata(rawUrl: String): UrlMetadata {
+        val normalizedUrl = rawUrl.trim()
+        val encodedUrl = URLEncoder.encode(normalizedUrl, Charsets.UTF_8.name())
+        val response = request("GET", "/url-metadata?url=$encodedUrl")
+        return UrlMetadata(
+            url = response.optString("url", normalizedUrl),
+            title = nullableString(response, "title"),
+        )
+    }
+
     fun loadAppSettings(): AppSettings = AppSettings(
         autoCreateNoteOnTask = getSetting("auto_create_note_on_task")?.toBooleanStrictOrNull() ?: false,
         taskAutoDelete = TaskAutoDeleteOption.fromValue(getSetting("task_auto_delete")).value,

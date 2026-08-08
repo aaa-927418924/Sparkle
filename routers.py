@@ -3,7 +3,9 @@
 import base64
 import binascii
 import ctypes
+import html
 import hashlib
+import ipaddress
 import io
 import json
 import mimetypes
@@ -11,12 +13,16 @@ import os
 import re
 import shutil
 import sqlite3
+import socket
 import subprocess
 import tempfile
+import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 import zipfile
 from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from typing import List, Optional
 
@@ -68,6 +74,7 @@ from schemas import (
     TaskCreate,
     TaskOut,
     TaskUpdate,
+    UrlMetadataOut,
 )
 
 
@@ -425,6 +432,158 @@ def thumbnail_proxy(url: str = Query(...)):
         media_type=content_type,
         headers={"Cache-Control": "public, max-age=604800"},
     )
+
+
+METADATA_MAX_BYTES = 512 * 1024
+METADATA_TIMEOUT_SECONDS = 8
+METADATA_MAX_REDIRECTS = 3
+METADATA_USER_AGENT = "Mozilla/5.0 Sparkle/metadata"
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+METADATA_OPENER = urllib.request.build_opener(_NoRedirectHandler())
+
+
+class _PageMetadataParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.document_title_parts: List[str] = []
+        self.meta_titles: dict[str, str] = {}
+        self._title_depth = 0
+
+    def handle_starttag(self, tag: str, attrs):
+        normalized_tag = tag.lower()
+        if normalized_tag == "title":
+            self._title_depth += 1
+            return
+        if normalized_tag != "meta":
+            return
+        values = {
+            key.lower(): html.unescape(value or "")
+            for key, value in attrs
+            if key
+        }
+        key = (values.get("property") or values.get("name") or values.get("itemprop") or "").lower()
+        if key in {"og:title", "twitter:title", "title"} and values.get("content"):
+            self.meta_titles.setdefault(key, values["content"])
+
+    def handle_endtag(self, tag: str):
+        if tag.lower() == "title" and self._title_depth > 0:
+            self._title_depth -= 1
+
+    def handle_data(self, data: str):
+        if self._title_depth > 0:
+            self.document_title_parts.append(data)
+
+
+def _clean_metadata_title(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    cleaned = re.sub(r"\s+", " ", html.unescape(value)).strip()
+    return cleaned[:500] or None
+
+
+def _validate_metadata_url(raw_url: str) -> str:
+    parsed = urllib.parse.urlparse(raw_url.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("unsupported url scheme")
+    if parsed.username or parsed.password:
+        raise ValueError("userinfo is not allowed")
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError as error:
+        raise ValueError("invalid port") from error
+
+    host = parsed.hostname
+    try:
+        addresses = {str(ipaddress.ip_address(host))}
+    except ValueError:
+        try:
+            addresses = {
+                str(ipaddress.ip_address(info[4][0].split("%", 1)[0]))
+                for info in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+            }
+        except (OSError, ValueError) as error:
+            raise ValueError("host could not be resolved") from error
+    if not addresses or any(not ipaddress.ip_address(address).is_global for address in addresses):
+        raise ValueError("private or non-global host is not allowed")
+    return parsed._replace(fragment="").geturl()
+
+
+def _fetch_metadata_page(url: str) -> Optional[tuple[str, str]]:
+    current_url = url
+    for _ in range(METADATA_MAX_REDIRECTS + 1):
+        current_url = _validate_metadata_url(current_url)
+        request = urllib.request.Request(
+            current_url,
+            headers={
+                "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
+                "Accept-Encoding": "identity",
+                "User-Agent": METADATA_USER_AGENT,
+            },
+        )
+        try:
+            with METADATA_OPENER.open(request, timeout=METADATA_TIMEOUT_SECONDS) as response:
+                status = response.getcode()
+                if 300 <= status < 400:
+                    location = response.headers.get("Location")
+                    if not location:
+                        return None
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    continue
+                if status < 200 or status >= 300:
+                    return None
+                raw = response.read(METADATA_MAX_BYTES + 1)
+                if len(raw) > METADATA_MAX_BYTES:
+                    raw = raw[:METADATA_MAX_BYTES]
+                charset = response.headers.get_content_charset() or "utf-8"
+                try:
+                    page = raw.decode(charset, errors="replace")
+                except LookupError:
+                    page = raw.decode("utf-8", errors="replace")
+                return page, response.geturl() or current_url
+        except urllib.error.HTTPError as error:
+            if 300 <= error.code < 400:
+                location = error.headers.get("Location")
+                if not location:
+                    return None
+                current_url = urllib.parse.urljoin(current_url, location)
+                continue
+            return None
+        except (OSError, ValueError):
+            return None
+    return None
+
+
+def _extract_page_title(page: str) -> Optional[str]:
+    parser = _PageMetadataParser()
+    try:
+        parser.feed(page)
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+    for key in ("og:title", "twitter:title", "title"):
+        title = _clean_metadata_title(parser.meta_titles.get(key))
+        if title:
+            return title
+    return _clean_metadata_title("".join(parser.document_title_parts))
+
+
+@router.get("/url-metadata", response_model=UrlMetadataOut)
+def get_url_metadata(url: str = Query(..., min_length=1, max_length=4096)):
+    try:
+        validated_url = _validate_metadata_url(url)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    page = _fetch_metadata_page(validated_url)
+    if page is None:
+        raise HTTPException(status_code=502, detail="failed to fetch page metadata")
+    page_html, final_url = page
+    return UrlMetadataOut(url=final_url, title=_extract_page_title(page_html))
 
 
 @router.get("/categories", response_model=List[CategoryOut])

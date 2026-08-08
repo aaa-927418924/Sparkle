@@ -77,6 +77,7 @@ data class Note(
     val updatedAt: String,
     val clips: List<ClipSummary>,
     val task: TaskSummary?,
+    val taskIds: List<Int>,
     val projectIds: List<Int>,
 )
 
@@ -117,6 +118,19 @@ data class RemoteSnapshot(
     val projects: List<Project>,
 )
 
+enum class ClipSortMode(val label: String) {
+    DateDesc("最近追加した順"),
+    Title("アルファベット順（タイトル）"),
+    RecentOpened("最近開いた順"),
+    Random("ランダム"),
+}
+
+enum class StatusFilter(val label: String) {
+    All("すべて"),
+    InProgress("進行中"),
+    Completed("完了済み"),
+}
+
 sealed interface ConnectionState {
     data object Unconfigured : ConnectionState
     data object Checking : ConnectionState
@@ -129,8 +143,9 @@ sealed interface Screen {
     data object TasksNotes : Screen
     data object Projects : Screen
     data class ProjectDetail(val projectId: Int) : Screen
-    data class ProjectEditor(val projectId: Int) : Screen
-    data class NoteEditor(val noteId: Int) : Screen
+    data class ProjectEditor(val projectId: Int?) : Screen
+    data class TaskEditor(val taskId: Int?) : Screen
+    data class NoteEditor(val noteId: Int?) : Screen
     data class Detail(val clipId: Int) : Screen
     data class Editor(val clipId: Int?) : Screen
     data object Settings : Screen

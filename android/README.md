@@ -28,11 +28,18 @@ selection and Android Sharesheet files use the existing multipart
   Masonry grid that packs cards by their measured height.
   Long-pressing a category opens a confirmation dialog for deleting that
   category through the PC API.
+- Home can filter to favorites and sort clips by newest, title, recently
+  opened, or a stable random order. Long-pressing a clip offers favorite and
+  delete actions; both operations are sent to the PC API.
 - The attach button selects a phone file. The Android Sharesheet can send a URL
   or file to Sparkle; the app opens the save form so comments and tags can be
   added before saving through the PC API.
-- Tasks and notes are loaded from the PC; tapping a note opens its edit form.
-  Project details include a PC-backed edit form.
+- Tasks and notes are loaded from the PC. Each tab has All/In-progress/
+  Completed filters; the add button opens a PC-backed form, tapping edits an
+  item, long-pressing deletes it, and task/note forms can manage their links.
+  Projects have the same status filters, a new/edit form, and a link dialog
+  for clips, tasks, and notes. Long-pressing a project opens its delete
+  confirmation.
 - The app refreshes when it returns to the foreground and polls the PC every
   two seconds while active. These background refreshes are silent, so PC-side
   edits appear without pressing the refresh button or interrupting an editor.

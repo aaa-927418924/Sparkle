@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Folder
@@ -67,6 +68,7 @@ import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
@@ -76,6 +78,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -122,10 +126,12 @@ import com.sparkle.android.data.Category
 import com.sparkle.android.data.Clip
 import com.sparkle.android.data.ClipCreationSource
 import com.sparkle.android.data.ClipDraft
+import com.sparkle.android.data.ClipSortMode
 import com.sparkle.android.data.ConnectionState
 import com.sparkle.android.data.Note
 import com.sparkle.android.data.Project
 import com.sparkle.android.data.Screen
+import com.sparkle.android.data.StatusFilter
 import com.sparkle.android.data.Task
 import com.sparkle.android.data.UploadSelection
 import com.sparkle.android.ui.SparkleTheme
@@ -239,6 +245,7 @@ private fun SparkleRoot(
             )
             is Screen.ProjectDetail -> ProjectDetailScreen(viewModel, currentScreen.projectId)
             is Screen.ProjectEditor -> ProjectEditorScreen(viewModel, currentScreen.projectId)
+            is Screen.TaskEditor -> TaskEditorScreen(viewModel, currentScreen.taskId)
             is Screen.NoteEditor -> NoteEditorScreen(viewModel, currentScreen.noteId)
             is Screen.Detail -> DetailScreen(viewModel, currentScreen.clipId)
             is Screen.Editor -> EditorScreen(
@@ -329,6 +336,8 @@ private fun HomeScreen(
     onPickFile: () -> Unit,
 ) {
     val visibleClips = viewModel.visibleClips()
+    var clipActionTarget by remember { mutableStateOf<Clip?>(null) }
+    var clipDeleteTarget by remember { mutableStateOf<Clip?>(null) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -366,6 +375,7 @@ private fun HomeScreen(
                 shape = RoundedCornerShape(28.dp),
                 singleLine = true,
             )
+            HomeClipControls(viewModel)
             ActiveTagFilters(viewModel)
             when {
                 viewModel.isBusy && viewModel.clips.isEmpty() -> LoadingState()
@@ -394,9 +404,72 @@ private fun HomeScreen(
                                 selectedTags = viewModel.selectedTags,
                                 onToggleTag = viewModel::toggleTag,
                                 onClick = { viewModel.openDetail(clip.id) },
+                                onLongClick = { clipActionTarget = clip },
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+    clipActionTarget?.let { clip ->
+        ClipActionDialog(
+            clip = clip,
+            onDismiss = { clipActionTarget = null },
+            onToggleFavorite = {
+                clipActionTarget = null
+                viewModel.toggleFavorite(clip.id)
+            },
+            onDelete = {
+                clipActionTarget = null
+                clipDeleteTarget = clip
+            },
+        )
+    }
+    clipDeleteTarget?.let { clip ->
+        DeleteConfirmationDialog(
+            title = "クリップを削除",
+            message = "「${clip.displayTitle}」を削除します。",
+            confirmLabel = "クリップを削除",
+            enabled = !viewModel.isBusy,
+            onDismiss = { clipDeleteTarget = null },
+            onConfirm = {
+                clipDeleteTarget = null
+                viewModel.deleteClip(clip.id)
+            },
+        )
+    }
+}
+
+@Composable
+private fun HomeClipControls(viewModel: SparkleViewModel) {
+    var sortExpanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FilterChip(
+            selected = viewModel.favoritesOnly,
+            onClick = viewModel::toggleFavoritesOnly,
+            leadingIcon = { Icon(Icons.Default.Star, contentDescription = null) },
+            label = { Text("お気に入りのみ") },
+        )
+        Box {
+            OutlinedButton(onClick = { sortExpanded = true }) {
+                Icon(Icons.Default.Sort, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text(viewModel.clipSortMode.label)
+            }
+            DropdownMenu(expanded = sortExpanded, onDismissRequest = { sortExpanded = false }) {
+                ClipSortMode.values().forEach { mode ->
+                    DropdownMenuItem(
+                        text = { Text(mode.label) },
+                        onClick = {
+                            sortExpanded = false
+                            viewModel.selectClipSortMode(mode)
+                        },
+                    )
                 }
             }
         }
@@ -509,6 +582,7 @@ private fun ActiveTagFilters(viewModel: SparkleViewModel) {
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun ClipCard(
     clip: Clip,
     categoryName: String?,
@@ -516,10 +590,19 @@ private fun ClipCard(
     selectedTags: Set<String>,
     onToggleTag: (String) -> Unit,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "クリップ ${clip.displayTitle}" },
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                role = Role.Button,
+                onClickLabel = "クリップを開く",
+                onLongClickLabel = "クリップの操作",
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
+            .semantics { contentDescription = "クリップ ${clip.displayTitle}" },
         shape = MaterialTheme.shapes.large,
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
@@ -560,10 +643,65 @@ private fun ClipCard(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClipActionDialog(
+    clip: Clip,
+    onDismiss: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("クリップの操作") },
+        text = {
+            Text(clip.displayTitle, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(onClick = onToggleFavorite) {
+                    Icon(Icons.Default.Star, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (clip.isFavorite) "お気に入りから外す" else "お気に入りに追加")
+                }
+                TextButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("クリップを削除")
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+    )
+}
+
+@Composable
+private fun DeleteConfirmationDialog(
+    title: String,
+    message: String,
+    confirmLabel: String,
+    enabled: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = enabled) { Text(confirmLabel) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun TasksNotesScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) {
     var selectedTab by remember { mutableStateOf(viewModel.tasksNotesTab) }
+    var taskDeleteTarget by remember { mutableStateOf<Task?>(null) }
+    var noteDeleteTarget by remember { mutableStateOf<Note?>(null) }
+    val visibleTasks = viewModel.visibleTasks()
+    val visibleNotes = viewModel.visibleNotes()
     Scaffold(
         topBar = {
             TopAppBar(
@@ -573,7 +711,15 @@ private fun TasksNotesScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit
                         Icon(Icons.Default.Menu, contentDescription = null)
                     }
                 },
-                actions = { ConnectionStatusIcon(viewModel.connectionState) },
+                actions = {
+                    ConnectionStatusIcon(viewModel.connectionState)
+                    IconButton(
+                        onClick = { if (selectedTab == 0) viewModel.openTaskEditor(null) else viewModel.openNoteEditor(null) },
+                        modifier = Modifier.semantics { contentDescription = if (selectedTab == 0) "タスクを追加" else "メモを追加" },
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             )
         },
@@ -584,30 +730,96 @@ private fun TasksNotesScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit
                 Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("タスク") }, icon = { Icon(Icons.Default.CheckCircle, contentDescription = null) })
                 Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("メモ") }, icon = { Icon(Icons.Default.Description, contentDescription = null) })
             }
+            StatusFilterRow(
+                selected = if (selectedTab == 0) viewModel.taskFilter else viewModel.noteFilter,
+                onSelect = { if (selectedTab == 0) viewModel.selectTaskFilter(it) else viewModel.selectNoteFilter(it) },
+            )
             if (viewModel.isBusy && viewModel.tasks.isEmpty() && viewModel.notes.isEmpty()) {
                 LoadingState()
             } else if (selectedTab == 0) {
-                if (viewModel.tasks.isEmpty()) {
+                if (visibleTasks.isEmpty()) {
                     EmptyState(Icons.Default.CheckCircle, "タスクはありません", "PC側で作成したタスクがここに表示されます。")
                 } else {
                     LazyColumn(contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(viewModel.tasks, key = { it.id }) { task -> TaskCard(task, onToggle = { viewModel.toggleTask(task.id) }) }
+                        items(visibleTasks, key = { it.id }) { task ->
+                            TaskCard(
+                                task = task,
+                                onToggle = { viewModel.toggleTask(task.id) },
+                                onClick = { viewModel.openTaskEditor(task.id) },
+                                onLongClick = { taskDeleteTarget = task },
+                            )
+                        }
                     }
                 }
-            } else if (viewModel.notes.isEmpty()) {
+            } else if (visibleNotes.isEmpty()) {
                 EmptyState(Icons.Default.Description, "メモはありません", "PC側で作成したメモがここに表示されます。")
             } else {
                 LazyColumn(contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(viewModel.notes, key = { it.id }) { note -> NoteCard(note, onClick = { viewModel.openNoteEditor(note.id) }) }
+                    items(visibleNotes, key = { it.id }) { note ->
+                        NoteCard(
+                            note = note,
+                            onClick = { viewModel.openNoteEditor(note.id) },
+                            onLongClick = { noteDeleteTarget = note },
+                        )
+                    }
                 }
             }
         }
     }
+    taskDeleteTarget?.let { task ->
+        DeleteConfirmationDialog(
+            title = "タスクを削除",
+            message = "「${task.title}」を削除します。",
+            confirmLabel = "タスクを削除",
+            enabled = !viewModel.isBusy,
+            onDismiss = { taskDeleteTarget = null },
+            onConfirm = {
+                taskDeleteTarget = null
+                viewModel.deleteTask(task.id)
+            },
+        )
+    }
+    noteDeleteTarget?.let { note ->
+        DeleteConfirmationDialog(
+            title = "メモを削除",
+            message = "「${note.title}」を削除します。",
+            confirmLabel = "メモを削除",
+            enabled = !viewModel.isBusy,
+            onDismiss = { noteDeleteTarget = null },
+            onConfirm = {
+                noteDeleteTarget = null
+                viewModel.deleteNote(note.id)
+            },
+        )
+    }
 }
 
 @Composable
-private fun TaskCard(task: Task, onToggle: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+private fun StatusFilterRow(selected: StatusFilter, onSelect: (StatusFilter) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        StatusFilter.values().forEach { filter ->
+            FilterChip(selected = selected == filter, onClick = { onSelect(filter) }, label = { Text(filter.label) })
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TaskCard(task: Task, onToggle: () -> Unit, onClick: () -> Unit = {}, onLongClick: () -> Unit = {}) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                role = Role.Button,
+                onClickLabel = "タスクを編集",
+                onLongClickLabel = "タスクを削除",
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
+    ) {
         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Checkbox(checked = task.isDone, onCheckedChange = { onToggle() })
             Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.weight(1f)) {
@@ -617,14 +829,27 @@ private fun TaskCard(task: Task, onToggle: () -> Unit) {
                     task.dueDate?.takeIf { it.isNotBlank() }?.let { Text("期限 ${it.take(10)}", style = MaterialTheme.typography.labelMedium) }
                     task.priority?.let { Text("優先度 $it", style = MaterialTheme.typography.labelMedium) }
                 }
+                if (task.notes.isNotEmpty()) {
+                    Text("関連メモ ${task.notes.size}件", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun NoteCard(note: Note, onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+private fun NoteCard(note: Note, onClick: () -> Unit, onLongClick: () -> Unit = {}) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                role = Role.Button,
+                onClickLabel = "メモを編集",
+                onLongClickLabel = "メモを削除",
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
+    ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(note.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textDecoration = if (note.isDone) TextDecoration.LineThrough else TextDecoration.None)
             note.body?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 5, overflow = TextOverflow.Ellipsis) }
@@ -637,9 +862,11 @@ private fun NoteCard(note: Note, onClick: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ProjectsScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) {
+    var deleteTarget by remember { mutableStateOf<Project?>(null) }
+    val visibleProjects = viewModel.visibleProjects()
     Scaffold(
         topBar = {
             TopAppBar(
@@ -649,35 +876,70 @@ private fun ProjectsScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) 
                         Icon(Icons.Default.Menu, contentDescription = null)
                     }
                 },
-                actions = { ConnectionStatusIcon(viewModel.connectionState) },
+                actions = {
+                    ConnectionStatusIcon(viewModel.connectionState)
+                    IconButton(onClick = { viewModel.openProjectEditor(null) }, modifier = Modifier.semantics { contentDescription = "新規プロジェクト" }) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             )
         },
     ) { padding ->
-        if (viewModel.projects.isEmpty()) {
-            EmptyState(Icons.Default.Folder, "プロジェクトはありません", "PC側で作成したプロジェクトがここに表示されます。", Modifier.padding(padding))
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(viewModel.projects, key = { it.id }) { project ->
-                    ProjectCard(
-                        project = project,
-                        clipCount = viewModel.projectClips(project.id).size,
-                        taskCount = viewModel.projectTasks(project.id).size,
-                        noteCount = viewModel.projectNotes(project.id).size,
-                        onClick = { viewModel.openProject(project.id) },
-                        onEdit = { viewModel.openProjectEditor(project.id) },
-                    )
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            StatusFilterRow(selected = viewModel.projectFilter, onSelect = viewModel::selectProjectFilter)
+            if (visibleProjects.isEmpty()) {
+                EmptyState(Icons.Default.Folder, "プロジェクトはありません", "PC側で作成したプロジェクトがここに表示されます。", Modifier.weight(1f))
+            } else {
+                LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(visibleProjects, key = { it.id }) { project ->
+                        ProjectCard(
+                            project = project,
+                            clipCount = viewModel.projectClips(project.id).size,
+                            taskCount = viewModel.projectTasks(project.id).size,
+                            noteCount = viewModel.projectNotes(project.id).size,
+                            onClick = { viewModel.openProject(project.id) },
+                            onEdit = { viewModel.openProjectEditor(project.id) },
+                            onToggle = { viewModel.toggleProject(project.id) },
+                            onLongClick = { deleteTarget = project },
+                        )
+                    }
                 }
             }
         }
     }
+    deleteTarget?.let { project ->
+        DeleteConfirmationDialog(
+            title = "プロジェクトを削除",
+            message = "「${project.name}」を削除します。関連項目のリンクは解除されます。",
+            confirmLabel = "プロジェクトを削除",
+            enabled = !viewModel.isBusy,
+            onDismiss = { deleteTarget = null },
+            onConfirm = {
+                deleteTarget = null
+                viewModel.deleteProject(project.id)
+            },
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ProjectCard(project: Project, clipCount: Int, taskCount: Int, noteCount: Int, onClick: () -> Unit, onEdit: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+private fun ProjectCard(project: Project, clipCount: Int, taskCount: Int, noteCount: Int, onClick: () -> Unit, onEdit: () -> Unit, onToggle: () -> Unit, onLongClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                role = Role.Button,
+                onClickLabel = "プロジェクトを開く",
+                onLongClickLabel = "プロジェクトを削除",
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
+    ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Checkbox(checked = project.isDone, onCheckedChange = { onToggle() })
                 Icon(Icons.Default.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Text(project.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 if (project.isDone) Text("完了", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
@@ -695,6 +957,7 @@ private fun ProjectCard(project: Project, clipCount: Int, taskCount: Int, noteCo
 @Composable
 private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
     val project = viewModel.project(projectId)
+    var showLinks by remember(projectId) { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -709,6 +972,9 @@ private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
                         IconButton(onClick = { viewModel.openProjectEditor(project.id) }, modifier = Modifier.semantics { contentDescription = "プロジェクトを編集" }) {
                             Icon(Icons.Default.Edit, contentDescription = null)
                         }
+                        IconButton(onClick = { showLinks = true }, modifier = Modifier.semantics { contentDescription = "プロジェクトに項目を紐づける" }) {
+                            Icon(Icons.Default.Link, contentDescription = null)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
@@ -721,6 +987,13 @@ private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
         }
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             project.description?.takeIf { it.isNotBlank() }?.let { item { Text(it, style = MaterialTheme.typography.bodyLarge) } }
+            item {
+                OutlinedButton(onClick = { showLinks = true }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Link, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("クリップ・タスク・メモを紐づける")
+                }
+            }
             item { SectionHeading("クリップ") }
             val projectClips = viewModel.projectClips(projectId)
             if (projectClips.isEmpty()) item { Text("関連するクリップはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -730,19 +1003,116 @@ private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
             item { SectionHeading("タスク") }
             val projectTasks = viewModel.projectTasks(projectId)
             if (projectTasks.isEmpty()) item { Text("関連するタスクはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            else items(projectTasks, key = { "task-${it.id}" }) { task -> TaskCard(task, onToggle = { viewModel.toggleTask(task.id) }) }
+            else items(projectTasks, key = { "task-${it.id}" }) { task ->
+                TaskCard(
+                    task = task,
+                    onToggle = { viewModel.toggleTask(task.id) },
+                    onClick = { viewModel.openTaskEditor(task.id) },
+                )
+            }
             item { SectionHeading("メモ") }
             val projectNotes = viewModel.projectNotes(projectId)
             if (projectNotes.isEmpty()) item { Text("関連するメモはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             else items(projectNotes, key = { "note-${it.id}" }) { note -> NoteCard(note, onClick = { viewModel.openNoteEditor(note.id) }) }
         }
     }
+    if (showLinks && project != null) {
+        ProjectLinksDialog(
+            viewModel = viewModel,
+            projectId = project.id,
+            onDismiss = { showLinks = false },
+            onSave = { clipIds, taskIds, noteIds ->
+                showLinks = false
+                viewModel.saveProjectLinks(project.id, clipIds, taskIds, noteIds)
+            },
+        )
+    }
+}
+
+@Composable
+private fun ProjectLinksDialog(
+    viewModel: SparkleViewModel,
+    projectId: Int,
+    onDismiss: () -> Unit,
+    onSave: (Set<Int>, Set<Int>, Set<Int>) -> Unit,
+) {
+    var clipIds by remember(projectId) { mutableStateOf(viewModel.projectClips(projectId).map { it.id }.toSet()) }
+    var taskIds by remember(projectId) { mutableStateOf(viewModel.projectTasks(projectId).map { it.id }.toSet()) }
+    var noteIds by remember(projectId) { mutableStateOf(viewModel.projectNotes(projectId).map { it.id }.toSet()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("プロジェクトに紐づける") },
+        text = {
+            Column(
+                modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                LinkSectionTitle("クリップ")
+                if (viewModel.clips.isEmpty()) {
+                    Text("クリップはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    viewModel.clips.forEach { clip ->
+                        LinkCheckboxRow(
+                            label = clip.displayTitle,
+                            checked = clip.id in clipIds,
+                            onCheckedChange = { checked -> clipIds = if (checked) clipIds + clip.id else clipIds - clip.id },
+                        )
+                    }
+                }
+                LinkSectionTitle("タスク")
+                if (viewModel.tasks.isEmpty()) {
+                    Text("タスクはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    viewModel.tasks.forEach { task ->
+                        LinkCheckboxRow(
+                            label = task.title,
+                            checked = task.id in taskIds,
+                            onCheckedChange = { checked -> taskIds = if (checked) taskIds + task.id else taskIds - task.id },
+                        )
+                    }
+                }
+                LinkSectionTitle("メモ")
+                if (viewModel.notes.isEmpty()) {
+                    Text("メモはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    viewModel.notes.forEach { note ->
+                        LinkCheckboxRow(
+                            label = note.title,
+                            checked = note.id in noteIds,
+                            onCheckedChange = { checked -> noteIds = if (checked) noteIds + note.id else noteIds - note.id },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(clipIds, taskIds, noteIds) }, enabled = !viewModel.isBusy) { Text("保存") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+    )
+}
+
+@Composable
+private fun LinkSectionTitle(title: String) {
+    Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 10.dp))
+}
+
+@Composable
+private fun LinkCheckboxRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Text(label, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProjectEditorScreen(viewModel: SparkleViewModel, projectId: Int) {
-    val project = viewModel.project(projectId)
+private fun ProjectEditorScreen(viewModel: SparkleViewModel, projectId: Int?) {
+    val project = projectId?.let(viewModel::project)
     var name by remember(projectId) { mutableStateOf(project?.name.orEmpty()) }
     var description by remember(projectId) { mutableStateOf(project?.description.orEmpty()) }
     var validationError by remember(projectId) { mutableStateOf<String?>(null) }
@@ -750,9 +1120,12 @@ private fun ProjectEditorScreen(viewModel: SparkleViewModel, projectId: Int) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("プロジェクトを編集") },
+                title = { Text(if (projectId == null) "新規プロジェクト" else "プロジェクトを編集") },
                 navigationIcon = {
-                    IconButton(onClick = { viewModel.openProject(projectId) }, modifier = Modifier.semantics { contentDescription = "プロジェクト詳細へ戻る" }) {
+                    IconButton(
+                        onClick = { projectId?.let(viewModel::openProject) ?: viewModel.openProjects() },
+                        modifier = Modifier.semantics { contentDescription = "プロジェクト一覧へ戻る" },
+                    ) {
                         Icon(Icons.Default.ArrowBack, contentDescription = null)
                     }
                 },
@@ -760,7 +1133,7 @@ private fun ProjectEditorScreen(viewModel: SparkleViewModel, projectId: Int) {
             )
         },
     ) { padding ->
-        if (project == null) {
+        if (projectId != null && project == null) {
             EmptyState(Icons.Default.ErrorOutline, "プロジェクトが見つかりません", "PC側で削除された可能性があります。", Modifier.padding(padding))
             return@Scaffold
         }
@@ -795,7 +1168,7 @@ private fun ProjectEditorScreen(viewModel: SparkleViewModel, projectId: Int) {
                     if (name.trim().isBlank()) {
                         validationError = "プロジェクト名を入力してください。"
                     } else {
-                        viewModel.updateProject(projectId, name, description)
+                        viewModel.saveProject(projectId, name, description)
                     }
                 },
                 enabled = !viewModel.isBusy,
@@ -805,7 +1178,7 @@ private fun ProjectEditorScreen(viewModel: SparkleViewModel, projectId: Int) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
                 }
-                Text("変更を保存")
+                Text(if (projectId == null) "プロジェクトを作成" else "変更を保存")
             }
         }
     }
@@ -813,16 +1186,94 @@ private fun ProjectEditorScreen(viewModel: SparkleViewModel, projectId: Int) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NoteEditorScreen(viewModel: SparkleViewModel, noteId: Int) {
+private fun TaskEditorScreen(viewModel: SparkleViewModel, taskId: Int?) {
+    val task = taskId?.let(viewModel::task)
+    var title by remember(taskId) { mutableStateOf(task?.title.orEmpty()) }
+    var dueDate by remember(taskId) { mutableStateOf(task?.dueDate?.take(10).orEmpty()) }
+    var priority by remember(taskId) { mutableStateOf(task?.priority?.toString().orEmpty()) }
+    var linkedNoteIds by remember(taskId) { mutableStateOf(task?.notes?.map { it.id }?.toSet().orEmpty()) }
+    var validationError by remember(taskId) { mutableStateOf<String?>(null) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(if (taskId == null) "タスクを追加" else "タスクを編集") },
+                navigationIcon = {
+                    IconButton(onClick = { viewModel.openTasksNotes(tab = 0) }, modifier = Modifier.semantics { contentDescription = "タスク一覧へ戻る" }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = null)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            )
+        },
+    ) { padding ->
+        if (taskId != null && task == null) {
+            EmptyState(Icons.Default.ErrorOutline, "タスクが見つかりません", "PC側で削除された可能性があります。", Modifier.padding(padding))
+            return@Scaffold
+        }
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 10.dp).navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("タスクの変更はPC API経由で保存されます。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            viewModel.errorMessage?.let { ErrorBanner(it, viewModel::clearError) }
+            validationError?.let { ErrorBanner(it) { validationError = null } }
+            OutlinedTextField(value = title, onValueChange = { title = it; validationError = null }, modifier = Modifier.fillMaxWidth(), label = { Text("タスク名") }, singleLine = true)
+            OutlinedTextField(value = dueDate, onValueChange = { dueDate = it }, modifier = Modifier.fillMaxWidth(), label = { Text("期限") }, placeholder = { Text("YYYY-MM-DD") }, leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null) }, singleLine = true)
+            OutlinedTextField(value = priority, onValueChange = { priority = it.filter(Char::isDigit).take(1) }, modifier = Modifier.fillMaxWidth(), label = { Text("優先度") }, supportingText = { Text("1〜5、空欄は未設定") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+            Text("関連メモ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            if (viewModel.notes.isEmpty()) {
+                Text("関連付けられるメモはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Column(modifier = Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
+                    viewModel.notes.forEach { note ->
+                        LinkCheckboxRow(
+                            label = note.title,
+                            checked = note.id in linkedNoteIds,
+                            onCheckedChange = { checked -> linkedNoteIds = if (checked) linkedNoteIds + note.id else linkedNoteIds - note.id },
+                        )
+                    }
+                }
+            }
+            Button(
+                onClick = {
+                    if (title.trim().isBlank()) {
+                        validationError = "タスク名を入力してください。"
+                    } else {
+                        val priorityValue = priority.trim().takeIf { it.isNotEmpty() }?.toIntOrNull()
+                        if (priorityValue != null && priorityValue !in 1..5) {
+                            validationError = "優先度は1〜5で入力してください。"
+                        } else {
+                            viewModel.saveTask(taskId, title, dueDate, priorityValue, linkedNoteIds)
+                        }
+                    }
+                },
+                enabled = !viewModel.isBusy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (viewModel.isBusy) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (taskId == null) "タスクを追加" else "変更を保存")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NoteEditorScreen(viewModel: SparkleViewModel, noteId: Int?) {
     val note = viewModel.note(noteId)
     var title by remember(noteId) { mutableStateOf(note?.title.orEmpty()) }
     var body by remember(noteId) { mutableStateOf(note?.body.orEmpty()) }
+    var linkedTaskIds by remember(noteId) { mutableStateOf(note?.taskIds?.toSet().orEmpty()) }
     var validationError by remember(noteId) { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("メモを編集") },
+                title = { Text(if (noteId == null) "メモを追加" else "メモを編集") },
                 navigationIcon = {
                     IconButton(onClick = { viewModel.openTasksNotes(tab = 1) }, modifier = Modifier.semantics { contentDescription = "メモ一覧へ戻る" }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = null)
@@ -832,7 +1283,7 @@ private fun NoteEditorScreen(viewModel: SparkleViewModel, noteId: Int) {
             )
         },
     ) { padding ->
-        if (note == null) {
+        if (noteId != null && note == null) {
             EmptyState(Icons.Default.ErrorOutline, "メモが見つかりません", "PC側で削除された可能性があります。", Modifier.padding(padding))
             return@Scaffold
         }
@@ -862,12 +1313,26 @@ private fun NoteEditorScreen(viewModel: SparkleViewModel, noteId: Int) {
                 label = { Text("本文") },
                 minLines = 8,
             )
+            Text("関連タスク", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            if (viewModel.tasks.isEmpty()) {
+                Text("関連付けられるタスクはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Column(modifier = Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
+                    viewModel.tasks.forEach { task ->
+                        LinkCheckboxRow(
+                            label = task.title,
+                            checked = task.id in linkedTaskIds,
+                            onCheckedChange = { checked -> linkedTaskIds = if (checked) linkedTaskIds + task.id else linkedTaskIds - task.id },
+                        )
+                    }
+                }
+            }
             Button(
                 onClick = {
                     if (title.trim().isBlank()) {
                         validationError = "メモのタイトルを入力してください。"
                     } else {
-                        viewModel.updateNote(noteId, title, body)
+                        viewModel.saveNote(noteId, title, body, linkedTaskIds)
                     }
                 },
                 enabled = !viewModel.isBusy,
@@ -877,7 +1342,7 @@ private fun NoteEditorScreen(viewModel: SparkleViewModel, noteId: Int) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
                 }
-                Text("変更を保存")
+                Text(if (noteId == null) "メモを追加" else "変更を保存")
             }
         }
     }

@@ -12,6 +12,7 @@ import com.sparkle.android.data.Category
 import com.sparkle.android.data.Clip
 import com.sparkle.android.data.ClipCreationSource
 import com.sparkle.android.data.ClipDraft
+import com.sparkle.android.data.ClipSortMode
 import com.sparkle.android.data.ConnectionState
 import com.sparkle.android.data.Note
 import com.sparkle.android.data.Project
@@ -19,12 +20,14 @@ import com.sparkle.android.data.RemoteSnapshot
 import com.sparkle.android.data.Screen
 import com.sparkle.android.data.SparkleApi
 import com.sparkle.android.data.SparklePreferences
+import com.sparkle.android.data.StatusFilter
 import com.sparkle.android.data.Tag
 import com.sparkle.android.data.Task
 import com.sparkle.android.data.UploadSelection
 import java.io.IOException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.random.Random
 
 class SparkleViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = SparklePreferences(application)
@@ -55,6 +58,16 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         private set
     var selectedTags by mutableStateOf<Set<String>>(emptySet())
         private set
+    var favoritesOnly by mutableStateOf(false)
+        private set
+    var clipSortMode by mutableStateOf(preferences.clipSortMode())
+        private set
+    var taskFilter by mutableStateOf(StatusFilter.All)
+        private set
+    var noteFilter by mutableStateOf(StatusFilter.All)
+        private set
+    var projectFilter by mutableStateOf(StatusFilter.All)
+        private set
     var editorSource by mutableStateOf<ClipCreationSource?>(null)
         private set
     var connectionState by mutableStateOf(initialConnectionState())
@@ -66,6 +79,8 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
 
     private var api: SparkleApi? = SparkleApi.fromBaseUrl(baseUrl)
     private var returnHomeAfterConnection = false
+    private val clipOpenedAt = mutableMapOf<Int, Long>()
+    private val randomClipOrder = mutableMapOf<Int, Double>()
 
     init {
         if (api != null) refresh()
@@ -169,6 +184,65 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         mutateClip { currentApi -> currentApi.updateClip(clipId, draft) }
     }
 
+    fun deleteClip(clipId: Int) {
+        runWorkspaceMutation(Screen.Home) { currentApi ->
+            currentApi.deleteClip(clipId)
+        }
+    }
+
+    fun toggleFavorite(clipId: Int) {
+        runWorkspaceMutation(null) { currentApi ->
+            currentApi.toggleFavorite(clipId)
+        }
+    }
+
+    fun saveTask(
+        taskId: Int?,
+        title: String,
+        dueDate: String?,
+        priority: Int?,
+        noteIds: Set<Int>,
+    ) {
+        if (title.isBlank()) {
+            errorMessage = "タスク名を入力してください。"
+            return
+        }
+        val currentApi = requireApi() ?: return
+        val existingNotes = notes
+        isBusy = true
+        errorMessage = null
+        connectionState = ConnectionState.Checking
+        executor.execute {
+            try {
+                val savedTask = if (taskId == null) {
+                    currentApi.createTask(title.trim(), dueDate?.trim()?.takeIf { it.isNotEmpty() }, priority)
+                } else {
+                    currentApi.updateTask(taskId, title.trim(), dueDate?.trim()?.takeIf { it.isNotEmpty() }, priority)
+                }
+                existingNotes.forEach { note ->
+                    val desiredTaskIds = note.taskIds
+                        .filter { it != savedTask.id }
+                        .let { ids -> if (note.id in noteIds) ids + savedTask.id else ids }
+                    if (desiredTaskIds != note.taskIds) {
+                        currentApi.updateNoteTaskLinks(note.id, desiredTaskIds.distinct())
+                    }
+                }
+                postSnapshot(currentApi.loadSnapshot()) {
+                    screen = Screen.TasksNotes
+                    tasksNotesTab = 0
+                }
+            } catch (error: Throwable) {
+                postFailure(error)
+            }
+        }
+    }
+
+    fun deleteTask(taskId: Int) {
+        runWorkspaceMutation(Screen.TasksNotes) { currentApi ->
+            currentApi.deleteTask(taskId)
+        }
+    }
+
     fun toggleTask(taskId: Int) {
         val currentApi = requireApi() ?: return
         isBusy = true
@@ -198,7 +272,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun updateNote(noteId: Int, title: String, body: String?) {
+    fun saveNote(noteId: Int?, title: String, body: String?, taskIds: Set<Int>) {
         if (title.isBlank()) {
             errorMessage = "メモのタイトルを入力してください。"
             return
@@ -209,7 +283,20 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         connectionState = ConnectionState.Checking
         executor.execute {
             try {
-                currentApi.updateNote(noteId, title.trim(), body?.trim()?.takeIf { it.isNotEmpty() })
+                if (noteId == null) {
+                    currentApi.createNote(
+                        title = title.trim(),
+                        body = body?.trim()?.takeIf { it.isNotEmpty() },
+                        taskIds = taskIds.toList(),
+                    )
+                } else {
+                    currentApi.updateNote(
+                        noteId = noteId,
+                        title = title.trim(),
+                        body = body?.trim()?.takeIf { it.isNotEmpty() },
+                        taskIds = taskIds.toList(),
+                    )
+                }
                 val snapshot = currentApi.loadSnapshot()
                 mainHandler.post {
                     applySnapshot(snapshot)
@@ -224,7 +311,13 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun updateProject(projectId: Int, name: String, description: String?) {
+    fun deleteNote(noteId: Int) {
+        runWorkspaceMutation(Screen.TasksNotes) { currentApi ->
+            currentApi.deleteNote(noteId)
+        }
+    }
+
+    fun saveProject(projectId: Int?, name: String, description: String?) {
         if (name.isBlank()) {
             errorMessage = "プロジェクト名を入力してください。"
             return
@@ -235,12 +328,58 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         connectionState = ConnectionState.Checking
         executor.execute {
             try {
-                currentApi.updateProject(projectId, name.trim(), description?.trim()?.takeIf { it.isNotEmpty() })
+                val savedProject = if (projectId == null) {
+                    currentApi.createProject(name.trim(), description?.trim()?.takeIf { it.isNotEmpty() })
+                } else {
+                    currentApi.updateProject(projectId, name.trim(), description?.trim()?.takeIf { it.isNotEmpty() })
+                }
                 val snapshot = currentApi.loadSnapshot()
                 mainHandler.post {
                     applySnapshot(snapshot)
                     isBusy = false
                     connectionState = ConnectionState.Connected
+                    screen = Screen.ProjectDetail(savedProject.id)
+                }
+            } catch (error: Throwable) {
+                postFailure(error)
+            }
+        }
+    }
+
+    fun toggleProject(projectId: Int) {
+        runWorkspaceMutation(null) { currentApi ->
+            currentApi.toggleProject(projectId)
+        }
+    }
+
+    fun deleteProject(projectId: Int) {
+        runWorkspaceMutation(Screen.Projects) { currentApi ->
+            currentApi.deleteProject(projectId)
+        }
+    }
+
+    fun saveProjectLinks(projectId: Int, clipIds: Set<Int>, taskIds: Set<Int>, noteIds: Set<Int>) {
+        val currentApi = requireApi() ?: return
+        val currentClipIds = projectClips(projectId).map { it.id }.toSet()
+        val currentTaskIds = projectTasks(projectId).map { it.id }.toSet()
+        val currentNoteIds = projectNotes(projectId).map { it.id }.toSet()
+        isBusy = true
+        errorMessage = null
+        connectionState = ConnectionState.Checking
+        executor.execute {
+            try {
+                (clipIds - currentClipIds).forEach { currentApi.linkProjectClip(projectId, it) }
+                (currentClipIds - clipIds).forEach { currentApi.unlinkProjectClip(projectId, it) }
+                (noteIds - currentNoteIds).forEach { currentApi.linkProjectNote(projectId, it) }
+                (currentNoteIds - noteIds).forEach { currentApi.unlinkProjectNote(projectId, it) }
+                tasks.forEach { task ->
+                    val shouldBelong = task.id in taskIds
+                    val belongsNow = task.id in currentTaskIds
+                    if (shouldBelong != belongsNow) {
+                        currentApi.updateTaskProject(task.id, if (shouldBelong) projectId else null)
+                    }
+                }
+                postSnapshot(currentApi.loadSnapshot()) {
                     screen = Screen.ProjectDetail(projectId)
                 }
             } catch (error: Throwable) {
@@ -252,6 +391,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
     fun openDetail(clipId: Int) {
         errorMessage = null
         editorSource = null
+        clipOpenedAt[clipId] = System.currentTimeMillis()
         screen = Screen.Detail(clipId)
     }
 
@@ -297,12 +437,17 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         screen = Screen.ProjectDetail(projectId)
     }
 
-    fun openProjectEditor(projectId: Int) {
+    fun openProjectEditor(projectId: Int?) {
         errorMessage = null
         screen = Screen.ProjectEditor(projectId)
     }
 
-    fun openNoteEditor(noteId: Int) {
+    fun openTaskEditor(taskId: Int?) {
+        errorMessage = null
+        screen = Screen.TaskEditor(taskId)
+    }
+
+    fun openNoteEditor(noteId: Int?) {
         errorMessage = null
         tasksNotesTab = 1
         screen = Screen.NoteEditor(noteId)
@@ -313,7 +458,8 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         when (currentScreen) {
             is Screen.Detail, is Screen.Editor, Screen.Settings -> goToHome()
             is Screen.ProjectDetail -> openProjects()
-            is Screen.ProjectEditor -> openProject(currentScreen.projectId)
+            is Screen.ProjectEditor -> currentScreen.projectId?.let(::openProject) ?: openProjects()
+            is Screen.TaskEditor -> openTasksNotes(tab = 0)
             is Screen.NoteEditor -> openTasksNotes(tab = 1)
             else -> goToHome()
         }
@@ -325,6 +471,27 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
 
     fun toggleTag(tagName: String) {
         selectedTags = if (tagName in selectedTags) selectedTags - tagName else selectedTags + tagName
+    }
+
+    fun toggleFavoritesOnly() {
+        favoritesOnly = !favoritesOnly
+    }
+
+    fun selectClipSortMode(mode: ClipSortMode) {
+        clipSortMode = mode
+        preferences.saveClipSortMode(mode)
+    }
+
+    fun selectTaskFilter(filter: StatusFilter) {
+        taskFilter = filter
+    }
+
+    fun selectNoteFilter(filter: StatusFilter) {
+        noteFilter = filter
+    }
+
+    fun selectProjectFilter(filter: StatusFilter) {
+        projectFilter = filter
     }
 
     fun clearFilters() {
@@ -345,10 +512,12 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
 
     fun visibleClips(): List<Clip> {
         val normalizedQuery = query.trim().lowercase()
-        return clips.filter { clip ->
+        val filtered = clips.filter { clip ->
             val matchesCategory = selectedCategory == null || categoryName(clip.categoryId) == selectedCategory
             val matchesTags = selectedTags.all { wanted -> clip.tags.any { it.name == wanted } }
+            val matchesFavorite = !favoritesOnly || clip.isFavorite
             if (!matchesCategory || !matchesTags) return@filter false
+            if (!matchesFavorite) return@filter false
             if (normalizedQuery.isBlank()) return@filter true
             val searchable = buildString {
                 append(clip.displayTitle)
@@ -363,11 +532,25 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
             }.lowercase()
             searchable.contains(normalizedQuery)
         }
+        return when (clipSortMode) {
+            ClipSortMode.DateDesc -> filtered.sortedWith(compareByDescending<Clip> { it.createdAt }.thenByDescending { it.id })
+            ClipSortMode.Title -> filtered.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.displayTitle })
+            ClipSortMode.RecentOpened -> filtered.sortedWith(compareByDescending<Clip> { clipOpenedAt[ it.id ] ?: 0L }.thenByDescending { it.createdAt })
+            ClipSortMode.Random -> filtered.sortedBy { randomClipOrder.getOrPut(it.id) { Random.nextDouble() } }
+        }
     }
+
+    fun visibleTasks(): List<Task> = tasks.filter { task -> taskFilter.matches(task.isDone) }
+
+    fun visibleNotes(): List<Note> = notes.filter { note -> noteFilter.matches(note.isDone) }
+
+    fun visibleProjects(): List<Project> = projects.filter { project -> projectFilter.matches(project.isDone) }
 
     fun project(projectId: Int): Project? = projects.firstOrNull { it.id == projectId }
 
-    fun note(noteId: Int): Note? = notes.firstOrNull { it.id == noteId }
+    fun task(taskId: Int): Task? = tasks.firstOrNull { it.id == taskId }
+
+    fun note(noteId: Int?): Note? = noteId?.let { id -> notes.firstOrNull { it.id == id } }
 
     fun projectClips(projectId: Int): List<Clip> = clips.filter { projectId in it.projectIds }
 
@@ -405,7 +588,24 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         return currentApi
     }
 
-    private fun postSnapshot(snapshot: RemoteSnapshot) {
+    private fun runWorkspaceMutation(destination: Screen?, operation: (SparkleApi) -> Unit) {
+        val currentApi = requireApi() ?: return
+        isBusy = true
+        errorMessage = null
+        connectionState = ConnectionState.Checking
+        executor.execute {
+            try {
+                operation(currentApi)
+                postSnapshot(currentApi.loadSnapshot()) {
+                    destination?.let { screen = it }
+                }
+            } catch (error: Throwable) {
+                postFailure(error)
+            }
+        }
+    }
+
+    private fun postSnapshot(snapshot: RemoteSnapshot, afterApplied: () -> Unit = {}) {
         mainHandler.post {
             applySnapshot(snapshot)
             isBusy = false
@@ -414,6 +614,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
                 returnHomeAfterConnection = false
                 screen = Screen.Home
             }
+            afterApplied()
         }
     }
 
@@ -451,4 +652,10 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         executor.shutdownNow()
         super.onCleared()
     }
+}
+
+private fun StatusFilter.matches(isDone: Boolean): Boolean = when (this) {
+    StatusFilter.All -> true
+    StatusFilter.InProgress -> !isDone
+    StatusFilter.Completed -> isDone
 }

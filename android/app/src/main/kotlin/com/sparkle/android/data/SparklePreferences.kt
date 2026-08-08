@@ -19,8 +19,17 @@ class SparklePreferences(context: Context) {
         preferences.edit().remove(KEY_BASE_URL).apply()
     }
 
+    fun clipSortMode(): ClipSortMode = runCatching {
+        ClipSortMode.valueOf(preferences.getString(KEY_CLIP_SORT_MODE, ClipSortMode.DateDesc.name).orEmpty())
+    }.getOrDefault(ClipSortMode.DateDesc)
+
+    fun saveClipSortMode(mode: ClipSortMode) {
+        preferences.edit().putString(KEY_CLIP_SORT_MODE, mode.name).apply()
+    }
+
     private companion object {
         const val PREFERENCES_NAME = "sparkle_android_preferences"
         const val KEY_BASE_URL = "pc_base_url"
+        const val KEY_CLIP_SORT_MODE = "clip_sort_mode"
     }
 }

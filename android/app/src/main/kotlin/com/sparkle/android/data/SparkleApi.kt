@@ -49,21 +49,132 @@ class SparkleApi private constructor(
     fun updateClip(clipId: Int, draft: ClipDraft): Clip =
         parseClip(request("PUT", "/clips/$clipId", draft.toUpdateJson()))
 
+    fun deleteClip(clipId: Int) {
+        requestRaw("DELETE", "/clips/$clipId", null)
+    }
+
+    fun toggleFavorite(clipId: Int): Boolean =
+        request("PATCH", "/clips/$clipId/favorite").optBoolean("is_favorite")
+
+    fun createTask(
+        title: String,
+        dueDate: String?,
+        priority: Int?,
+        clipId: Int? = null,
+        projectId: Int? = null,
+    ): Task = parseTask(
+        request(
+            "POST",
+            "/tasks",
+            JSONObject().apply {
+                put("title", title)
+                putNullable("due_date", dueDate)
+                putNullableInt("priority", priority)
+                put("clip_id", clipId ?: JSONObject.NULL)
+                put("project_id", projectId ?: JSONObject.NULL)
+            },
+        ),
+    )
+
+    fun updateTask(taskId: Int, title: String, dueDate: String?, priority: Int?): Task =
+        parseTask(
+            request(
+                "PUT",
+                "/tasks/$taskId",
+                JSONObject().apply {
+                    put("title", title)
+                    put("due_date", dueDate ?: JSONObject.NULL)
+                    put("priority", priority ?: JSONObject.NULL)
+                },
+            ),
+        )
+
+    fun updateTaskProject(taskId: Int, projectId: Int?): Task =
+        parseTask(
+            request(
+                "PUT",
+                "/tasks/$taskId",
+                JSONObject().apply { put("project_id", projectId ?: JSONObject.NULL) },
+            ),
+        )
+
     fun toggleTask(taskId: Int): Task =
         parseTask(request("PATCH", "/tasks/$taskId/toggle"))
+
+    fun deleteTask(taskId: Int) {
+        requestRaw("DELETE", "/tasks/$taskId", null)
+    }
 
     fun deleteCategory(categoryId: Int) {
         requestRaw("DELETE", "/categories/$categoryId", null)
     }
 
-    fun updateNote(noteId: Int, title: String, body: String?): Note =
+    fun createNote(
+        title: String,
+        body: String?,
+        clipIds: List<Int> = emptyList(),
+        taskIds: List<Int> = emptyList(),
+        projectIds: List<Int> = emptyList(),
+    ): Note = parseNote(
+        request(
+            "POST",
+            "/notes",
+            JSONObject().apply {
+                put("title", title)
+                putNullable("body", body)
+                put("clip_ids", JSONArray(clipIds))
+                put("task_ids", JSONArray(taskIds))
+                put("project_ids", JSONArray(projectIds))
+            },
+        ),
+    )
+
+    fun updateNote(
+        noteId: Int,
+        title: String,
+        body: String?,
+        clipIds: List<Int>? = null,
+        taskIds: List<Int>? = null,
+        projectIds: List<Int>? = null,
+    ): Note =
         parseNote(
             request(
                 "PUT",
                 "/notes/$noteId",
                 JSONObject().apply {
                     put("title", title)
-                    putNullable("body", body)
+                    // The PC route treats JSON null as "field omitted". An
+                    // empty string therefore represents an intentional clear
+                    // from the Android editor.
+                    put("body", body ?: "")
+                    clipIds?.let { put("clip_ids", JSONArray(it)) }
+                    taskIds?.let { put("task_ids", JSONArray(it)) }
+                    projectIds?.let { put("project_ids", JSONArray(it)) }
+                },
+            ),
+        )
+
+    fun updateNoteTaskLinks(noteId: Int, taskIds: List<Int>): Note =
+        parseNote(
+            request(
+                "PUT",
+                "/notes/$noteId",
+                JSONObject().apply { put("task_ids", JSONArray(taskIds)) },
+            ),
+        )
+
+    fun deleteNote(noteId: Int) {
+        requestRaw("DELETE", "/notes/$noteId", null)
+    }
+
+    fun createProject(name: String, description: String?): Project =
+        parseProject(
+            request(
+                "POST",
+                "/projects",
+                JSONObject().apply {
+                    put("name", name)
+                    putNullable("description", description)
                 },
             ),
         )
@@ -75,10 +186,33 @@ class SparkleApi private constructor(
                 "/projects/$projectId",
                 JSONObject().apply {
                     put("name", name)
-                    putNullable("description", description)
+                    // Keep clearing the field possible through the existing
+                    // PC API, whose update route ignores JSON null values.
+                    put("description", description ?: "")
                 },
             ),
         )
+
+    fun toggleProject(projectId: Int): Project =
+        parseProject(request("PATCH", "/projects/$projectId/toggle"))
+
+    fun deleteProject(projectId: Int) {
+        requestRaw("DELETE", "/projects/$projectId", null)
+    }
+
+    fun linkProjectClip(projectId: Int, clipId: Int): Clip =
+        parseClip(request("POST", "/projects/$projectId/clips/$clipId"))
+
+    fun unlinkProjectClip(projectId: Int, clipId: Int) {
+        requestRaw("DELETE", "/projects/$projectId/clips/$clipId", null)
+    }
+
+    fun linkProjectNote(projectId: Int, noteId: Int): Note =
+        parseNote(request("POST", "/projects/$projectId/notes/$noteId"))
+
+    fun unlinkProjectNote(projectId: Int, noteId: Int) {
+        requestRaw("DELETE", "/projects/$projectId/notes/$noteId", null)
+    }
 
     fun uploadLocalClip(
         contentResolver: ContentResolver,
@@ -392,6 +526,7 @@ class SparkleApi private constructor(
         task = json.optJSONObject("task")?.let {
             TaskSummary(it.optInt("id"), it.optString("title"), it.optBoolean("is_done"))
         },
+        taskIds = json.optIntList("task_ids", "task_id"),
         projectIds = json.optIntList("project_ids", "project_id"),
     )
 
@@ -474,4 +609,8 @@ private fun ClipDraft.toUpdateJson(): JSONObject = JSONObject().apply {
 
 private fun JSONObject.putNullable(key: String, value: String?) {
     put(key, value?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
+}
+
+private fun JSONObject.putNullableInt(key: String, value: Int?) {
+    put(key, value ?: JSONObject.NULL)
 }

@@ -8,8 +8,6 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
-import android.widget.MediaController
-import android.widget.VideoView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -133,7 +131,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -154,6 +151,7 @@ import com.sparkle.android.data.TaskAutoDeleteOption
 import com.sparkle.android.data.UploadSelection
 import com.sparkle.android.ui.SparkleTheme
 import com.sparkle.android.ui.SparkleThumbnail
+import com.sparkle.android.ui.SparkleVideoPreview
 import com.sparkle.android.ui.SparkleViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -1641,7 +1639,7 @@ private fun LocalFileDetail(
                 contentDescription = "${clip.displayTitle}のファイルプレビュー",
             )
             localFileKind(clip) == LocalFileKind.Text -> LocalTextPreview(viewModel, clip.id)
-            localFileKind(clip) == LocalFileKind.Video && fileUrl != null -> LocalVideoPreview(fileUrl)
+            localFileKind(clip) == LocalFileKind.Video && fileUrl != null -> SparkleVideoPreview(fileUrl, mimeType)
             else -> Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 modifier = Modifier.fillMaxWidth(),
@@ -1738,30 +1736,6 @@ private fun LocalTextPreview(viewModel: SparkleViewModel, clipId: Int) {
             Text("テキストプレビューを取得できませんでした。", modifier = Modifier.padding(14.dp))
         }
     }
-}
-
-@Composable
-private fun LocalVideoPreview(fileUrl: String) {
-    AndroidView(
-        factory = { context ->
-            VideoView(context).apply {
-                tag = fileUrl
-                setMediaController(MediaController(context).also { it.setAnchorView(this) })
-                setVideoURI(Uri.parse(fileUrl))
-            }
-        },
-        update = { videoView ->
-            if (videoView.tag != fileUrl) {
-                videoView.tag = fileUrl
-                videoView.setVideoURI(Uri.parse(fileUrl))
-            }
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(220.dp)
-            .clip(MaterialTheme.shapes.medium)
-            .semantics { contentDescription = "動画プレビュー" },
-    )
 }
 
 private enum class LocalFileKind {

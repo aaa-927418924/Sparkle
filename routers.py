@@ -6,6 +6,7 @@ import ctypes
 import hashlib
 import io
 import json
+import mimetypes
 import os
 import re
 import shutil
@@ -20,7 +21,7 @@ from pathlib import Path, PurePosixPath
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 from sqlite3 import Connection
@@ -2516,7 +2517,11 @@ def get_local_file_path(clip_id: int, db: Connection = Depends(get_db)):
 
 
 @router.get("/clips/{clip_id}/file")
-def get_local_file(clip_id: int, db: Connection = Depends(get_db)):
+def get_local_file(
+    clip_id: int,
+    request: Request,
+    db: Connection = Depends(get_db),
+):
     """Serve a local clip's file. Returns FileResponse for local clips."""
     row = db.execute(
         "SELECT url, clip_type FROM clips WHERE id = ?", (clip_id,)
@@ -2542,7 +2547,76 @@ def get_local_file(clip_id: int, db: Connection = Depends(get_db)):
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
-    return FileResponse(str(file_path), filename=file_path.name)
+    total_size = file_path.stat().st_size
+    range_header = request.headers.get("range")
+    if not range_header:
+        return FileResponse(
+            str(file_path),
+            filename=file_path.name,
+            headers={"Accept-Ranges": "bytes"},
+        )
+
+    byte_range = _parse_single_byte_range(range_header, total_size)
+    if byte_range is None:
+        return Response(
+            status_code=416,
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Range": f"bytes */{total_size}",
+            },
+        )
+
+    start, end = byte_range
+    media_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    length = end - start + 1
+    return StreamingResponse(
+        _iter_file_range(file_path, start, length),
+        status_code=206,
+        media_type=media_type,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(length),
+            "Content-Range": f"bytes {start}-{end}/{total_size}",
+        },
+    )
+
+
+def _parse_single_byte_range(value: str, total_size: int) -> Optional[tuple[int, int]]:
+    """Parse one RFC 7233 byte range and return inclusive start/end offsets."""
+    if total_size <= 0 or not value.lower().startswith("bytes="):
+        return None
+    raw_range = value[6:].strip()
+    if not raw_range or "," in raw_range or "-" not in raw_range:
+        return None
+    raw_start, raw_end = (part.strip() for part in raw_range.split("-", 1))
+    try:
+        if not raw_start:
+            suffix_length = int(raw_end)
+            if suffix_length <= 0:
+                return None
+            return max(total_size - suffix_length, 0), total_size - 1
+
+        start = int(raw_start)
+        if start < 0 or start >= total_size:
+            return None
+        end = total_size - 1 if not raw_end else int(raw_end)
+        if end < start:
+            return None
+        return start, min(end, total_size - 1)
+    except ValueError:
+        return None
+
+
+def _iter_file_range(path: Path, start: int, length: int):
+    with path.open("rb") as source:
+        source.seek(start)
+        remaining = length
+        while remaining > 0:
+            chunk = source.read(min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            yield chunk
+            remaining -= len(chunk)
 
 
 @router.post("/clips/{clip_id}/open")

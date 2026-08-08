@@ -70,6 +70,13 @@ selection and Android Sharesheet files use the existing multipart
   `Downloads/Sparkle` directory because the project intentionally avoids broad
   storage permissions. Temporary full-file preview data is capped at 128 MiB;
   it is cache data, not a local copy of the PC clip database.
+- Video previews use Media3/ExoPlayer with the PC file endpoint's single-range
+  HTTP responses. While the player is buffering, the detail screen shows a
+  centered loading spinner; when the player reaches `READY`, playback starts
+  automatically. A bounded 128 MiB LRU byte cache keeps requested ranges
+  temporarily, so seeking or continuing playback does not require downloading
+  the entire video first. This is progressive byte-range playback, not
+  YouTube-style adaptive bitrate transcoding.
 - The launcher and round icon use the repository root `Icon.png` unchanged.
 
 ## Build

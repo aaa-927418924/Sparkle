@@ -55,5 +55,15 @@ if errorlevel 1 (
 )
 
 echo.
-echo Done: dist\Sparkle.exe
+echo Generating Sparkle.exe.sha256...
+powershell -NoProfile -Command "$f = Join-Path 'dist' 'Sparkle.exe'; $h = (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash.ToLowerInvariant(); Set-Content -LiteralPath (Join-Path 'dist' 'Sparkle.exe.sha256') -Value ('{0}  Sparkle.exe' -f $h) -Encoding ascii"
+if errorlevel 1 (
+  echo.
+  echo SHA-256 generation failed.
+  pause
+  exit /b 1
+)
+
+echo.
+echo Done: dist\Sparkle.exe (+ Sparkle.exe.sha256)
 pause

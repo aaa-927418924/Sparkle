@@ -79,6 +79,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -93,6 +95,7 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -144,6 +147,9 @@ import com.sparkle.android.ui.SparkleThumbnail
 import com.sparkle.android.ui.SparkleViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 class MainActivity : ComponentActivity() {
     private var pendingShare by mutableStateOf<ClipCreationSource?>(null)
@@ -1041,11 +1047,30 @@ private fun ProjectPreviewIcon(clipThumbnails: List<String>) {
     }
 }
 
+private enum class ProjectLinkMode(val dialogTitle: String) {
+    Clips("クリップを紐づける"),
+    Tasks("タスクを紐づける"),
+    Notes("メモを紐づける"),
+}
+
+@Composable
+private fun ProjectLinkButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Icon(icon, contentDescription = null)
+        Spacer(Modifier.width(8.dp))
+        Text(label)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
     val project = viewModel.project(projectId)
-    var showLinks by remember(projectId) { mutableStateOf(false) }
+    var linkMode by remember(projectId) { mutableStateOf<ProjectLinkMode?>(null) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -1060,9 +1085,6 @@ private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
                         IconButton(onClick = { viewModel.openProjectEditor(project.id) }, modifier = Modifier.semantics { contentDescription = "プロジェクトを編集" }) {
                             Icon(Icons.Default.Edit, contentDescription = null)
                         }
-                        IconButton(onClick = { showLinks = true }, modifier = Modifier.semantics { contentDescription = "プロジェクトに項目を紐づける" }) {
-                            Icon(Icons.Default.Link, contentDescription = null)
-                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
@@ -1076,10 +1098,13 @@ private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             project.description?.takeIf { it.isNotBlank() }?.let { item { Text(it, style = MaterialTheme.typography.bodyLarge) } }
             item {
-                OutlinedButton(onClick = { showLinks = true }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Link, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("クリップ・タスク・メモを紐づける")
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ProjectLinkButton("クリップを紐づける", Icons.Default.Link) { linkMode = ProjectLinkMode.Clips }
+                    ProjectLinkButton("タスクを紐づける", Icons.Default.CheckCircle) { linkMode = ProjectLinkMode.Tasks }
+                    ProjectLinkButton("メモを紐づける", Icons.Default.Description) { linkMode = ProjectLinkMode.Notes }
                 }
             }
             item { SectionHeading("クリップ") }
@@ -1105,13 +1130,15 @@ private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
             else items(projectNotes, key = { "note-${it.id}" }) { note -> NoteCard(note, onClick = { viewModel.openNoteEditor(note.id) }) }
         }
     }
-    if (showLinks && project != null) {
+    linkMode?.let { mode ->
+        if (project == null) return@let
         ProjectLinksDialog(
             viewModel = viewModel,
             projectId = project.id,
-            onDismiss = { showLinks = false },
+            mode = mode,
+            onDismiss = { linkMode = null },
             onSave = { clipIds, taskIds, noteIds ->
-                showLinks = false
+                linkMode = null
                 viewModel.saveProjectLinks(project.id, clipIds, taskIds, noteIds)
             },
         )
@@ -1122,6 +1149,7 @@ private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
 private fun ProjectLinksDialog(
     viewModel: SparkleViewModel,
     projectId: Int,
+    mode: ProjectLinkMode,
     onDismiss: () -> Unit,
     onSave: (Set<Int>, Set<Int>, Set<Int>) -> Unit,
 ) {
@@ -1130,46 +1158,54 @@ private fun ProjectLinksDialog(
     var noteIds by remember(projectId) { mutableStateOf(viewModel.projectNotes(projectId).map { it.id }.toSet()) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("プロジェクトに紐づける") },
+        title = { Text(mode.dialogTitle) },
         text = {
             Column(
                 modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                LinkSectionTitle("クリップ")
-                if (viewModel.clips.isEmpty()) {
-                    Text("クリップはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    viewModel.clips.forEach { clip ->
-                        LinkCheckboxRow(
-                            label = clip.displayTitle,
-                            checked = clip.id in clipIds,
-                            onCheckedChange = { checked -> clipIds = if (checked) clipIds + clip.id else clipIds - clip.id },
-                        )
+                when (mode) {
+                    ProjectLinkMode.Clips -> {
+                        LinkSectionTitle("クリップ")
+                        if (viewModel.clips.isEmpty()) {
+                            Text("クリップはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            viewModel.clips.forEach { clip ->
+                                LinkCheckboxRow(
+                                    label = clip.displayTitle,
+                                    checked = clip.id in clipIds,
+                                    onCheckedChange = { checked -> clipIds = if (checked) clipIds + clip.id else clipIds - clip.id },
+                                )
+                            }
+                        }
                     }
-                }
-                LinkSectionTitle("タスク")
-                if (viewModel.tasks.isEmpty()) {
-                    Text("タスクはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    viewModel.tasks.forEach { task ->
-                        LinkCheckboxRow(
-                            label = task.title,
-                            checked = task.id in taskIds,
-                            onCheckedChange = { checked -> taskIds = if (checked) taskIds + task.id else taskIds - task.id },
-                        )
+                    ProjectLinkMode.Tasks -> {
+                        LinkSectionTitle("タスク")
+                        if (viewModel.tasks.isEmpty()) {
+                            Text("タスクはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            viewModel.tasks.forEach { task ->
+                                LinkCheckboxRow(
+                                    label = task.title,
+                                    checked = task.id in taskIds,
+                                    onCheckedChange = { checked -> taskIds = if (checked) taskIds + task.id else taskIds - task.id },
+                                )
+                            }
+                        }
                     }
-                }
-                LinkSectionTitle("メモ")
-                if (viewModel.notes.isEmpty()) {
-                    Text("メモはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    viewModel.notes.forEach { note ->
-                        LinkCheckboxRow(
-                            label = note.title,
-                            checked = note.id in noteIds,
-                            onCheckedChange = { checked -> noteIds = if (checked) noteIds + note.id else noteIds - note.id },
-                        )
+                    ProjectLinkMode.Notes -> {
+                        LinkSectionTitle("メモ")
+                        if (viewModel.notes.isEmpty()) {
+                            Text("メモはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            viewModel.notes.forEach { note ->
+                                LinkCheckboxRow(
+                                    label = note.title,
+                                    checked = note.id in noteIds,
+                                    onCheckedChange = { checked -> noteIds = if (checked) noteIds + note.id else noteIds - note.id },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -1282,6 +1318,7 @@ private fun TaskEditorScreen(viewModel: SparkleViewModel, taskId: Int?) {
     var priority by remember(taskId) { mutableStateOf(task?.priority?.toString().orEmpty()) }
     var linkedNoteIds by remember(taskId) { mutableStateOf(task?.notes?.map { it.id }?.toSet().orEmpty()) }
     var validationError by remember(taskId) { mutableStateOf<String?>(null) }
+    var showDatePicker by remember(taskId) { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -1308,7 +1345,26 @@ private fun TaskEditorScreen(viewModel: SparkleViewModel, taskId: Int?) {
             viewModel.errorMessage?.let { ErrorBanner(it, viewModel::clearError) }
             validationError?.let { ErrorBanner(it) { validationError = null } }
             OutlinedTextField(value = title, onValueChange = { title = it; validationError = null }, modifier = Modifier.fillMaxWidth(), label = { Text("タスク名") }, singleLine = true)
-            OutlinedTextField(value = dueDate, onValueChange = { dueDate = it }, modifier = Modifier.fillMaxWidth(), label = { Text("期限") }, placeholder = { Text("YYYY-MM-DD") }, leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null) }, singleLine = true)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = { showDatePicker = true },
+                    enabled = !viewModel.isBusy,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Default.CalendarToday, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (dueDate.isBlank()) "期限を設定" else "期限: $dueDate")
+                }
+                if (dueDate.isNotBlank()) {
+                    TextButton(onClick = { dueDate = "" }, enabled = !viewModel.isBusy) {
+                        Text("解除")
+                    }
+                }
+            }
             OutlinedTextField(value = priority, onValueChange = { priority = it.filter(Char::isDigit).take(1) }, modifier = Modifier.fillMaxWidth(), label = { Text("優先度") }, supportingText = { Text("1〜5、空欄は未設定") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
             Text("関連メモ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             if (viewModel.notes.isEmpty()) {
@@ -1346,6 +1402,27 @@ private fun TaskEditorScreen(viewModel: SparkleViewModel, taskId: Int?) {
                 }
                 Text(if (taskId == null) "タスクを追加" else "変更を保存")
             }
+        }
+    }
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = dueDateToMillis(dueDate))
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { dueDate = millisToDueDate(it) }
+                        showDatePicker = false
+                    },
+                ) {
+                    Text("決定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("キャンセル") }
+            },
+        ) {
+            DatePicker(state = datePickerState, showModeToggle = false)
         }
     }
 }
@@ -1885,6 +1962,13 @@ private fun statusLabel(state: ConnectionState): String = when (state) {
 }
 
 private fun formatDate(value: String): String = value.take(19).replace('T', ' ')
+
+private fun dueDateToMillis(value: String): Long? = runCatching {
+    LocalDate.parse(value).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+}.getOrNull()
+
+private fun millisToDueDate(value: Long): String =
+    Instant.ofEpochMilli(value).atZone(ZoneOffset.UTC).toLocalDate().toString()
 
 private fun openClipUrl(context: Context, rawUrl: String) {
     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(rawUrl)))

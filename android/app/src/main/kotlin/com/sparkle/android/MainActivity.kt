@@ -346,9 +346,9 @@ private fun LibraryScreen(
 
             when {
                 viewModel.isBusy && viewModel.clips.isEmpty() -> LoadingState()
-                viewModel.baseUrl.isBlank() -> UnconfiguredState(onSettings)
+                viewModel.baseUrl.isBlank() -> UnconfiguredState(onOpenSettings)
                 viewModel.clips.isEmpty() && viewModel.connectionState is ConnectionState.Unavailable ->
-                    UnavailableState(onSettings, viewModel::refresh)
+                    UnavailableState(onOpenSettings, viewModel::refresh)
                 visibleClips.isEmpty() -> EmptySearchState()
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),

@@ -17,10 +17,11 @@ and `PUT /clips/{id}` for the initial create/edit flow.
 ## Build
 
 Open this `android` directory in Android Studio, let it install the configured
-Gradle/SDK components, and run:
+Gradle/SDK components, and run the `:app:assembleDebug` task from the Gradle
+tool window. From PowerShell, the project wrapper can also run:
 
-```powershell
-gradlew.bat :app:assembleDebug
+```text
+.\gradlew.bat :app:assembleDebug
 ```
 
 The standalone debug APK is written to:

@@ -50,8 +50,10 @@ selection and Android Sharesheet files use the existing multipart
   edits appear without pressing the refresh button or interrupting an editor.
 - Home keeps the desktop-style spacing and controls, uses a packed Masonry
   layout, and scrolls back to the top when the sort mode changes. Project
-  cards show a small preview stack of attached clip thumbnails. The highest
-  priority unfinished task is sorted first and highlighted with a border.
+   cards show a small preview stack of attached clip thumbnails. The highest
+   priority unfinished task is sorted first and highlighted with a border.
+   Home clip thumbnails preserve each bitmap's aspect ratio and use fit
+   rendering, so tall images are not cropped like fixed-height grid cells.
 - When a URL clip is saved, YouTube URLs use the video's `hqdefault.jpg`
   thumbnail. Other pages use `og:image`/Twitter image metadata when available,
   then a page favicon fallback. The image URL is stored in the PC clip record;

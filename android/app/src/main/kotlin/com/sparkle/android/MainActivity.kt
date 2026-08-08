@@ -668,7 +668,8 @@ private fun ClipCard(
             Box {
                 SparkleThumbnail(
                     url = thumbnailUrl,
-                    modifier = Modifier.fillMaxWidth().height(132.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    preserveImageAspectRatio = true,
                     contentDescription = "${clip.displayTitle}のサムネイル",
                 )
                 if (clip.isFavorite) {

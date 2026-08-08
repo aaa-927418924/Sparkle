@@ -9,6 +9,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
@@ -40,6 +41,7 @@ fun SparkleThumbnail(
     modifier: Modifier = Modifier
         .fillMaxWidth()
         .height(132.dp),
+    preserveImageAspectRatio: Boolean = false,
     contentDescription: String? = null,
 ) {
     val context = LocalContext.current.applicationContext
@@ -52,18 +54,27 @@ fun SparkleThumbnail(
         }
     }
     val shape = MaterialTheme.shapes.medium
+    val imageModifier = if (preserveImageAspectRatio) {
+        modifier.aspectRatio(
+            bitmap?.let { loaded ->
+                loaded.width.toFloat() / loaded.height.toFloat()
+            } ?: (16f / 9f),
+        )
+    } else {
+        modifier
+    }
     if (bitmap != null) {
         Image(
             bitmap = bitmap!!.asImageBitmap(),
             contentDescription = contentDescription,
-            contentScale = ContentScale.Crop,
-            modifier = modifier
+            contentScale = if (preserveImageAspectRatio) ContentScale.Fit else ContentScale.Crop,
+            modifier = imageModifier
                 .clip(shape)
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
         )
     } else {
         Box(
-            modifier = modifier
+            modifier = imageModifier
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),

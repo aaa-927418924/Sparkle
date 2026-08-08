@@ -39,7 +39,8 @@ selection and Android Sharesheet files use the existing multipart
   item, long-pressing deletes it, and task/note forms can manage their links.
   Projects have the same status filters, a new/edit form, and a link dialog
   for clips, tasks, and notes. Long-pressing a project opens its delete
-  confirmation.
+  confirmation. A full reload starts both screens on **進行中**; silent
+  background refreshes preserve the user's selected filter.
 - The app refreshes when it returns to the foreground and polls the PC every
   two seconds while active. These background refreshes are silent, so PC-side
   edits appear without pressing the refresh button or interrupting an editor.

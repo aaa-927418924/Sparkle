@@ -40,6 +40,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.items
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -336,8 +337,12 @@ private fun HomeScreen(
     onPickFile: () -> Unit,
 ) {
     val visibleClips = viewModel.visibleClips()
+    val gridState = rememberLazyStaggeredGridState()
     var clipActionTarget by remember { mutableStateOf<Clip?>(null) }
     var clipDeleteTarget by remember { mutableStateOf<Clip?>(null) }
+    LaunchedEffect(viewModel.clipSortMode) {
+        gridState.scrollToItem(0)
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -391,6 +396,7 @@ private fun HomeScreen(
                     }
                     LazyVerticalStaggeredGrid(
                         columns = StaggeredGridCells.Fixed(columns),
+                        state = gridState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 96.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -444,6 +450,7 @@ private fun HomeScreen(
 @Composable
 private fun HomeClipControls(viewModel: SparkleViewModel) {
     var sortExpanded by remember { mutableStateOf(false) }
+    val controlHeight = 40.dp
     Row(
         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -452,11 +459,15 @@ private fun HomeClipControls(viewModel: SparkleViewModel) {
         FilterChip(
             selected = viewModel.favoritesOnly,
             onClick = viewModel::toggleFavoritesOnly,
+            modifier = Modifier.height(controlHeight),
             leadingIcon = { Icon(Icons.Default.Star, contentDescription = null) },
-            label = { Text("お気に入りのみ") },
+            label = { Text("お気に入り") },
         )
         Box {
-            OutlinedButton(onClick = { sortExpanded = true }) {
+            OutlinedButton(
+                onClick = { sortExpanded = true },
+                modifier = Modifier.height(controlHeight).width(280.dp),
+            ) {
                 Icon(Icons.Default.Sort, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
                 Text(viewModel.clipSortMode.label)
@@ -484,7 +495,16 @@ private fun CategoryFilterRow(viewModel: SparkleViewModel) {
         Text("カテゴリ", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 16.dp, top = 6.dp))
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
-                FilterChip(selected = viewModel.selectedCategory == null, onClick = { viewModel.selectCategory(null) }, label = { Text("すべて") })
+                Box(
+                    modifier = Modifier.height(48.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    FilterChip(
+                        selected = viewModel.selectedCategory == null,
+                        onClick = { viewModel.selectCategory(null) },
+                        label = { Text("すべて") },
+                    )
+                }
             }
             items(viewModel.categories, key = { it.id }) { category ->
                 CategoryFilterChip(

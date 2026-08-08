@@ -62,11 +62,11 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         private set
     var clipSortMode by mutableStateOf(preferences.clipSortMode())
         private set
-    var taskFilter by mutableStateOf(StatusFilter.All)
+    var taskFilter by mutableStateOf(StatusFilter.InProgress)
         private set
-    var noteFilter by mutableStateOf(StatusFilter.All)
+    var noteFilter by mutableStateOf(StatusFilter.InProgress)
         private set
-    var projectFilter by mutableStateOf(StatusFilter.All)
+    var projectFilter by mutableStateOf(StatusFilter.InProgress)
         private set
     var editorSource by mutableStateOf<ClipCreationSource?>(null)
         private set
@@ -98,6 +98,9 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
             isBusy = true
             errorMessage = null
             connectionState = ConnectionState.Checking
+            taskFilter = StatusFilter.InProgress
+            noteFilter = StatusFilter.InProgress
+            projectFilter = StatusFilter.InProgress
         }
         executor.execute {
             try {

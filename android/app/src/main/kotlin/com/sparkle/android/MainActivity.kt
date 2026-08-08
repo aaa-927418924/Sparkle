@@ -42,6 +42,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -360,8 +361,9 @@ private fun HomeScreen(
                 value = viewModel.query,
                 onValueChange = { viewModel.query = it },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                label = { Text("クリップを検索") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                placeholder = { Text("クリップを検索", modifier = Modifier.padding(start = 4.dp)) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.padding(start = 4.dp)) },
+                shape = RoundedCornerShape(28.dp),
                 singleLine = true,
             )
             ActiveTagFilters(viewModel)
@@ -453,9 +455,9 @@ private fun CategoryFilterChip(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    Surface(
+    Box(
         modifier = Modifier
-            .heightIn(min = 48.dp)
+            .height(48.dp)
             .combinedClickable(
                 enabled = enabled,
                 role = Role.Button,
@@ -464,17 +466,24 @@ private fun CategoryFilterChip(
                 onClick = onClick,
                 onLongClick = onLongClick,
             ),
-        shape = MaterialTheme.shapes.small,
-        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
-        contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
-        border = if (selected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            name,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Surface(
+            modifier = Modifier.height(32.dp),
+            shape = MaterialTheme.shapes.small,
+            color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
+            contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+            border = if (selected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    name,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 

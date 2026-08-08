@@ -40,6 +40,27 @@ class SparkleApi private constructor(
         return response.optString("status") == "ok" && response.optString("app") == "Sparkle"
     }
 
+    fun loadAppSettings(): AppSettings = AppSettings(
+        autoCreateNoteOnTask = getSetting("auto_create_note_on_task")?.toBooleanStrictOrNull() ?: false,
+        taskAutoDelete = TaskAutoDeleteOption.fromValue(getSetting("task_auto_delete")).value,
+        autoCreateNoteOnProject = getSetting("auto_create_note_on_project")?.toBooleanStrictOrNull() ?: false,
+    )
+
+    fun updateAppSetting(key: String, value: String): String =
+        putSetting(key, value)
+
+    private fun getSetting(key: String): String? = try {
+        request("GET", "/settings/$key")
+            .optString("value")
+            .takeIf { it.isNotBlank() }
+    } catch (error: ApiException) {
+        if (error.statusCode == 404) null else throw error
+    }
+
+    private fun putSetting(key: String, value: String): String =
+        request("PUT", "/settings/$key", JSONObject().put("value", value))
+            .optString("value")
+
     fun createClip(draft: ClipDraft): Clip {
         val body = draft.toCreateJson()
         resolveThumbnailUrl(draft.url)?.let { body.put("thumbnail_url", it) }

@@ -1,5 +1,13 @@
 const API = window.location.origin;
 const AUTO_KEY = "autoCreateNoteOnTask";
+const AUTO_API_KEY = "auto_create_note_on_task";
+
+async function taskAutoCreateNoteEnabled() {
+  if (typeof window.sparkleSettings?.getBoolean === "function") {
+    return window.sparkleSettings.getBoolean(AUTO_API_KEY, AUTO_KEY);
+  }
+  return localStorage.getItem(AUTO_KEY) === "true";
+}
 
 const state = {
   tasks: [],
@@ -397,7 +405,7 @@ els.taskAdd.addEventListener("submit", async (e) => {
     els.taskInput.value = "";
 
     // 險ｭ螳唹N縺ｪ繧牙酔蜷阪・遨ｺ繝｡繝｢繧定・蜍穂ｽ懈・縺励※邏蝉ｻ倥￠
-    if (localStorage.getItem(AUTO_KEY) === "true") {
+    if (await taskAutoCreateNoteEnabled()) {
       try {
         const note = await api("/notes", {
           method: "POST",
@@ -819,4 +827,3 @@ loadAll().catch((e) => {
   els.memoEmpty.querySelector(".empty-sub").textContent =
     `サーバー (${API}) を起動してください。`;
 });
-

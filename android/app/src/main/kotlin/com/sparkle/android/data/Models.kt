@@ -118,6 +118,25 @@ data class RemoteSnapshot(
     val projects: List<Project>,
 )
 
+data class AppSettings(
+    val autoCreateNoteOnTask: Boolean = false,
+    val taskAutoDelete: String = "1w",
+    val autoCreateNoteOnProject: Boolean = false,
+)
+
+enum class TaskAutoDeleteOption(val value: String, val label: String) {
+    ThreeDays("3d", "3日後"),
+    OneWeek("1w", "1週間後"),
+    OneMonth("1m", "1か月後"),
+    Never("never", "自動削除しない"),
+    ;
+
+    companion object {
+        fun fromValue(value: String?): TaskAutoDeleteOption =
+            values().firstOrNull { it.value == value } ?: OneWeek
+    }
+}
+
 enum class ClipSortMode(val label: String) {
     DateDesc("最近追加した順"),
     Title("アルファベット順（タイトル）"),
@@ -148,6 +167,7 @@ sealed interface Screen {
     data class NoteEditor(val noteId: Int?) : Screen
     data class Detail(val clipId: Int) : Screen
     data class Editor(val clipId: Int?) : Screen
+    data object AppSettings : Screen
     data object Settings : Screen
 }
 

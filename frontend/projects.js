@@ -1,5 +1,14 @@
 const API = window.location.origin;
 const TASK_PROJECT_ONLY_KEY = "taskProjectOnly";
+const PROJECT_AUTO_API_KEY = "auto_create_note_on_project";
+const PROJECT_AUTO_STORAGE_KEY = "autoCreateNoteOnProject";
+
+async function projectAutoCreateNoteEnabled() {
+  if (typeof window.sparkleSettings?.getBoolean === "function") {
+    return window.sparkleSettings.getBoolean(PROJECT_AUTO_API_KEY, PROJECT_AUTO_STORAGE_KEY);
+  }
+  return localStorage.getItem(PROJECT_AUTO_STORAGE_KEY) === "true";
+}
 
 const state = {
   projects: [],
@@ -500,7 +509,7 @@ async function saveProject() {
     savedProject = await api(`/projects/${editingId}`, { method: "PUT", body: JSON.stringify(body) });
   } else {
     savedProject = await api("/projects", { method: "POST", body: JSON.stringify(body) });
-    if (savedProject?.id && localStorage.getItem("autoCreateNoteOnProject") === "true") {
+    if (savedProject?.id && await projectAutoCreateNoteEnabled()) {
       try {
         await api("/notes", {
           method: "POST",

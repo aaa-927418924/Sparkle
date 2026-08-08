@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import com.sparkle.android.data.ApiException
+import com.sparkle.android.data.AppSettings
 import com.sparkle.android.data.Category
 import com.sparkle.android.data.Clip
 import com.sparkle.android.data.ClipCreationSource
@@ -50,6 +51,8 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
     var notes by mutableStateOf<List<Note>>(emptyList())
         private set
     var projects by mutableStateOf<List<Project>>(emptyList())
+        private set
+    var appSettings by mutableStateOf(AppSettings())
         private set
     var tasksNotesTab by mutableStateOf(0)
         private set
@@ -122,7 +125,55 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onAppResumed() {
-        if (api != null && !isBusy) refresh(silent = true)
+        if (api != null && !isBusy) {
+            refresh(silent = true)
+            if (screen is Screen.AppSettings) refreshAppSettings(silent = true)
+        }
+    }
+
+    fun refreshAppSettings(silent: Boolean = false) {
+        val currentApi = api
+        if (currentApi == null) {
+            connectionState = ConnectionState.Unconfigured
+            return
+        }
+        if (!silent) {
+            isBusy = true
+            errorMessage = null
+            connectionState = ConnectionState.Checking
+        }
+        executor.execute {
+            try {
+                val settings = currentApi.loadAppSettings()
+                mainHandler.post {
+                    appSettings = settings
+                    if (!silent) isBusy = false
+                    connectionState = ConnectionState.Connected
+                }
+            } catch (error: Throwable) {
+                postFailure(error, silent)
+            }
+        }
+    }
+
+    fun updateAppSetting(key: String, value: String) {
+        val currentApi = requireApi() ?: return
+        isBusy = true
+        errorMessage = null
+        connectionState = ConnectionState.Checking
+        executor.execute {
+            try {
+                currentApi.updateAppSetting(key, value)
+                val settings = currentApi.loadAppSettings()
+                mainHandler.post {
+                    appSettings = settings
+                    isBusy = false
+                    connectionState = ConnectionState.Connected
+                }
+            } catch (error: Throwable) {
+                postFailure(error)
+            }
+        }
     }
 
     fun saveConnection(rawBaseUrl: String) {
@@ -415,6 +466,12 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         screen = Screen.Settings
     }
 
+    fun openAppSettings() {
+        errorMessage = null
+        screen = Screen.AppSettings
+        refreshAppSettings()
+    }
+
     fun goToHome() {
         errorMessage = null
         editorSource = null
@@ -459,7 +516,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
     fun goBack() {
         val currentScreen = screen
         when (currentScreen) {
-            is Screen.Detail, is Screen.Editor, Screen.Settings -> goToHome()
+            is Screen.Detail, is Screen.Editor, Screen.AppSettings, Screen.Settings -> goToHome()
             is Screen.ProjectDetail -> openProjects()
             is Screen.ProjectEditor -> currentScreen.projectId?.let(::openProject) ?: openProjects()
             is Screen.TaskEditor -> openTasksNotes(tab = 0)
@@ -543,7 +600,18 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun visibleTasks(): List<Task> = tasks.filter { task -> taskFilter.matches(task.isDone) }
+    fun visibleTasks(): List<Task> = tasks
+        .filter { task -> taskFilter.matches(task.isDone) }
+        .sortedWith(compareByDescending<Task> { it.priority ?: -1 }.thenByDescending { it.createdAt })
+
+    fun isHighestPriorityTask(task: Task): Boolean {
+        val highestPriority = tasks
+            .asSequence()
+            .filter { !it.isDone && it.priority != null }
+            .mapNotNull { it.priority }
+            .maxOrNull()
+        return !task.isDone && task.priority != null && task.priority == highestPriority
+    }
 
     fun visibleNotes(): List<Note> = notes.filter { note -> noteFilter.matches(note.isDone) }
 
@@ -557,7 +625,9 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
 
     fun projectClips(projectId: Int): List<Clip> = clips.filter { projectId in it.projectIds }
 
-    fun projectTasks(projectId: Int): List<Task> = tasks.filter { it.projectId == projectId }
+    fun projectTasks(projectId: Int): List<Task> = tasks
+        .filter { it.projectId == projectId }
+        .sortedWith(compareByDescending<Task> { it.priority ?: -1 }.thenByDescending { it.createdAt })
 
     fun projectNotes(projectId: Int): List<Note> = notes.filter { projectId in it.projectIds }
 

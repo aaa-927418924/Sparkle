@@ -1282,7 +1282,15 @@ def get_setting(key: str, db: Connection = Depends(get_db)):
 @router.put("/settings/{key}", response_model=SettingValue)
 def put_setting(key: str, payload: SettingValue, db: Connection = Depends(get_db)):
     value = payload.value
-    if key == "ai_export_enabled":
+    if key in {"auto_create_note_on_task", "auto_create_note_on_project"}:
+        value = payload.value.strip().lower()
+        if value not in {"true", "false"}:
+            raise HTTPException(status_code=422, detail="自動メモ作成の設定値が不正です。")
+    elif key == "task_auto_delete":
+        value = payload.value.strip().lower()
+        if value not in {"3d", "1w", "1m", "never"}:
+            raise HTTPException(status_code=422, detail="タスク自動削除の設定値が不正です。")
+    elif key == "ai_export_enabled":
         value = payload.value.strip().lower()
         if value not in {"true", "false"}:
             raise HTTPException(status_code=422, detail="AI向けエクスポートの設定値が不正です。")

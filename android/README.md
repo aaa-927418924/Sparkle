@@ -21,8 +21,10 @@ selection and Android Sharesheet files use the existing multipart
 
 ## Android behavior
 
-- The left drawer contains **ホーム**, **タスク・メモ**, **プロジェクト**, and
-  **PC接続設定**.
+- The left drawer contains **ホーム**, **タスク・メモ**, **プロジェクト**,
+  **アプリ設定**, and **PC接続設定**. App settings are limited to task and
+  project behavior and are saved to the PC's existing settings store so the
+  desktop app and Android use the same values.
 - Home shows the desktop-style category row, searchable clip metadata,
   clickable tag chips, thumbnails, and a responsive two-to-four-column
   Masonry grid that packs cards by their measured height.
@@ -44,6 +46,10 @@ selection and Android Sharesheet files use the existing multipart
 - The app refreshes when it returns to the foreground and polls the PC every
   two seconds while active. These background refreshes are silent, so PC-side
   edits appear without pressing the refresh button or interrupting an editor.
+- Home keeps the desktop-style spacing and controls, uses a packed Masonry
+  layout, and scrolls back to the top when the sort mode changes. Project
+  cards show a small preview stack of attached clip thumbnails. The highest
+  priority unfinished task is sorted first and highlighted with a border.
 - When a URL clip is saved, YouTube URLs use the video's `hqdefault.jpg`
   thumbnail. Other pages use `og:image`/Twitter image metadata when available,
   then a page favicon fallback. The image URL is stored in the PC clip record;

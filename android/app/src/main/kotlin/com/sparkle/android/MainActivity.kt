@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -94,6 +95,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -110,6 +112,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
@@ -134,6 +137,7 @@ import com.sparkle.android.data.Project
 import com.sparkle.android.data.Screen
 import com.sparkle.android.data.StatusFilter
 import com.sparkle.android.data.Task
+import com.sparkle.android.data.TaskAutoDeleteOption
 import com.sparkle.android.data.UploadSelection
 import com.sparkle.android.ui.SparkleTheme
 import com.sparkle.android.ui.SparkleThumbnail
@@ -226,6 +230,10 @@ private fun SparkleRoot(
                     viewModel.openSettings()
                     closeDrawer()
                 },
+                onAppSettings = {
+                    viewModel.openAppSettings()
+                    closeDrawer()
+                },
             )
         },
     ) {
@@ -260,6 +268,10 @@ private fun SparkleRoot(
                 viewModel = viewModel,
                 onOpenMenu = { scope.launch { drawerState.open() } },
             )
+            Screen.AppSettings -> AppSettingsScreen(
+                viewModel = viewModel,
+                onOpenMenu = { scope.launch { drawerState.open() } },
+            )
         }
     }
 }
@@ -271,6 +283,7 @@ private fun SparkleDrawer(
     onTasksNotes: () -> Unit,
     onProjects: () -> Unit,
     onSettings: () -> Unit,
+    onAppSettings: () -> Unit,
 ) {
     ModalDrawerSheet(
         modifier = Modifier
@@ -285,11 +298,6 @@ private fun SparkleDrawer(
                 .navigationBarsPadding(),
         ) {
             Text("Sparkle", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(
-                "PCのデータを安全に閲覧・編集",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             Spacer(Modifier.height(18.dp))
             ConnectionStatusCard(viewModel.connectionState)
             Spacer(Modifier.height(20.dp))
@@ -317,6 +325,13 @@ private fun SparkleDrawer(
             Spacer(Modifier.height(18.dp))
             HorizontalDivider()
             Spacer(Modifier.height(12.dp))
+            NavigationDrawerItem(
+                label = { Text("アプリ設定") },
+                selected = viewModel.screen is Screen.AppSettings,
+                onClick = onAppSettings,
+                icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                modifier = Modifier.padding(vertical = 2.dp),
+            )
             NavigationDrawerItem(
                 label = { Text("PC接続設定") },
                 selected = viewModel.screen is Screen.Settings,
@@ -374,7 +389,7 @@ private fun HomeScreen(
             OutlinedTextField(
                 value = viewModel.query,
                 onValueChange = { viewModel.query = it },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 8.dp),
                 placeholder = { Text("クリップを検索", modifier = Modifier.padding(start = 4.dp)) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.padding(start = 4.dp)) },
                 shape = RoundedCornerShape(28.dp),
@@ -388,7 +403,7 @@ private fun HomeScreen(
                 viewModel.clips.isEmpty() && viewModel.connectionState is ConnectionState.Unavailable ->
                     UnavailableState(onOpenSettings, viewModel::refresh)
                 visibleClips.isEmpty() -> EmptySearchState()
-                else -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                else -> BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     val columns = when {
                         maxWidth >= 900.dp -> 4
                         maxWidth >= 600.dp -> 3
@@ -451,22 +466,26 @@ private fun HomeScreen(
 private fun HomeClipControls(viewModel: SparkleViewModel) {
     var sortExpanded by remember { mutableStateOf(false) }
     val controlHeight = 40.dp
+    val controlShape = RoundedCornerShape(20.dp)
     Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Spacer(Modifier.width(16.dp))
         FilterChip(
             selected = viewModel.favoritesOnly,
             onClick = viewModel::toggleFavoritesOnly,
             modifier = Modifier.height(controlHeight),
+            shape = controlShape,
             leadingIcon = { Icon(Icons.Default.Star, contentDescription = null) },
             label = { Text("お気に入り") },
         )
         Box {
             OutlinedButton(
                 onClick = { sortExpanded = true },
-                modifier = Modifier.height(controlHeight).width(280.dp),
+                modifier = Modifier.height(controlHeight).width(296.dp),
+                shape = controlShape,
             ) {
                 Icon(Icons.Default.Sort, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
@@ -484,6 +503,7 @@ private fun HomeClipControls(viewModel: SparkleViewModel) {
                 }
             }
         }
+        Spacer(Modifier.width(16.dp))
     }
 }
 
@@ -767,6 +787,7 @@ private fun TasksNotesScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit
                                 onToggle = { viewModel.toggleTask(task.id) },
                                 onClick = { viewModel.openTaskEditor(task.id) },
                                 onLongClick = { taskDeleteTarget = task },
+                                highlighted = viewModel.isHighestPriorityTask(task),
                             )
                         }
                     }
@@ -828,7 +849,13 @@ private fun StatusFilterRow(selected: StatusFilter, onSelect: (StatusFilter) -> 
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TaskCard(task: Task, onToggle: () -> Unit, onClick: () -> Unit = {}, onLongClick: () -> Unit = {}) {
+private fun TaskCard(
+    task: Task,
+    onToggle: () -> Unit,
+    onClick: () -> Unit = {},
+    onLongClick: () -> Unit = {},
+    highlighted: Boolean = false,
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -839,6 +866,12 @@ private fun TaskCard(task: Task, onToggle: () -> Unit, onClick: () -> Unit = {},
                 onClick = onClick,
                 onLongClick = onLongClick,
             ),
+        border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        colors = if (highlighted) {
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        } else {
+            CardDefaults.cardColors()
+        },
     ) {
         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Checkbox(checked = task.isDone, onCheckedChange = { onToggle() })
@@ -918,6 +951,9 @@ private fun ProjectsScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) 
                             clipCount = viewModel.projectClips(project.id).size,
                             taskCount = viewModel.projectTasks(project.id).size,
                             noteCount = viewModel.projectNotes(project.id).size,
+                            clipThumbnails = viewModel.projectClips(project.id)
+                                .mapNotNull { viewModel.thumbnailUrl(it.thumbnailUrl) }
+                                .take(3),
                             onClick = { viewModel.openProject(project.id) },
                             onEdit = { viewModel.openProjectEditor(project.id) },
                             onToggle = { viewModel.toggleProject(project.id) },
@@ -945,7 +981,17 @@ private fun ProjectsScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) 
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ProjectCard(project: Project, clipCount: Int, taskCount: Int, noteCount: Int, onClick: () -> Unit, onEdit: () -> Unit, onToggle: () -> Unit, onLongClick: () -> Unit) {
+private fun ProjectCard(
+    project: Project,
+    clipCount: Int,
+    taskCount: Int,
+    noteCount: Int,
+    clipThumbnails: List<String>,
+    onClick: () -> Unit,
+    onEdit: () -> Unit,
+    onToggle: () -> Unit,
+    onLongClick: () -> Unit,
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -960,7 +1006,7 @@ private fun ProjectCard(project: Project, clipCount: Int, taskCount: Int, noteCo
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Checkbox(checked = project.isDone, onCheckedChange = { onToggle() })
-                Icon(Icons.Default.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                ProjectPreviewIcon(clipThumbnails)
                 Text(project.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 if (project.isDone) Text("完了", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 IconButton(onClick = onEdit, modifier = Modifier.semantics { contentDescription = "${project.name}を編集" }) {
@@ -969,6 +1015,28 @@ private fun ProjectCard(project: Project, clipCount: Int, taskCount: Int, noteCo
             }
             project.description?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis) }
             Text("クリップ $clipCount ・ タスク $taskCount ・ メモ $noteCount", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun ProjectPreviewIcon(clipThumbnails: List<String>) {
+    Box(modifier = Modifier.size(width = 56.dp, height = 46.dp)) {
+        Icon(
+            Icons.Default.Folder,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(34.dp).align(Alignment.BottomStart),
+        )
+        clipThumbnails.forEachIndexed { index, thumbnail ->
+            SparkleThumbnail(
+                url = thumbnail,
+                modifier = Modifier
+                    .size(width = 30.dp, height = 21.dp)
+                    .align(Alignment.TopStart)
+                    .offset(x = (16 + index * 8).dp, y = (index * 3).dp),
+                contentDescription = null,
+            )
         }
     }
 }
@@ -1028,6 +1096,7 @@ private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
                     task = task,
                     onToggle = { viewModel.toggleTask(task.id) },
                     onClick = { viewModel.openTaskEditor(task.id) },
+                    highlighted = viewModel.isHighestPriorityTask(task),
                 )
             }
             item { SectionHeading("メモ") }
@@ -1554,6 +1623,108 @@ private fun EditorScreen(
             }
             Spacer(Modifier.height(28.dp))
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppSettingsScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) {
+    val settings = viewModel.appSettings
+    var deleteExpanded by remember { mutableStateOf(false) }
+    val canEdit = viewModel.baseUrl.isNotBlank() && !viewModel.isBusy
+    val deleteOption = TaskAutoDeleteOption.fromValue(settings.taskAutoDelete)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("アプリ設定") },
+                navigationIcon = {
+                    IconButton(onClick = onOpenMenu, modifier = Modifier.semantics { contentDescription = "メニューを開く" }) {
+                        Icon(Icons.Default.Menu, contentDescription = null)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 10.dp)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                "タスクとプロジェクトに関する設定をPCと共有します。変更は保存した直後からPC側の処理にも反映されます。",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            ConnectionBanner(viewModel.connectionState, viewModel::refreshAppSettings, viewModel::openSettings)
+            viewModel.errorMessage?.let { ErrorBanner(it, viewModel::clearError) }
+
+            Text("タスクの設定", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            AppSettingSwitchRow(
+                title = "タスク作成時に同名の空メモを自動作成",
+                checked = settings.autoCreateNoteOnTask,
+                enabled = canEdit,
+                onCheckedChange = { checked ->
+                    viewModel.updateAppSetting("auto_create_note_on_task", checked.toString())
+                },
+            )
+            Text("完了したタスクを自動削除", style = MaterialTheme.typography.bodyLarge)
+            Box {
+                OutlinedButton(
+                    onClick = { deleteExpanded = true },
+                    enabled = canEdit,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(deleteOption.label, modifier = Modifier.weight(1f))
+                    Icon(Icons.Default.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp).rotate(270f))
+                }
+                DropdownMenu(
+                    expanded = deleteExpanded,
+                    onDismissRequest = { deleteExpanded = false },
+                ) {
+                    TaskAutoDeleteOption.values().forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.label) },
+                            onClick = {
+                                deleteExpanded = false
+                                viewModel.updateAppSetting("task_auto_delete", option.value)
+                            },
+                        )
+                    }
+                }
+            }
+
+            Text("プロジェクトの設定", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            AppSettingSwitchRow(
+                title = "プロジェクト作成時に同名の空メモを自動作成",
+                checked = settings.autoCreateNoteOnProject,
+                enabled = canEdit,
+                onCheckedChange = { checked ->
+                    viewModel.updateAppSetting("auto_create_note_on_project", checked.toString())
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppSettingSwitchRow(
+    title: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }
 

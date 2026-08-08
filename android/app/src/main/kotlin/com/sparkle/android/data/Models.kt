@@ -1,5 +1,7 @@
 package com.sparkle.android.data
 
+import android.net.Uri
+
 data class Tag(
     val id: Int,
     val name: String,
@@ -21,11 +23,70 @@ data class Clip(
     val createdAt: String,
     val clipType: String,
     val fileRef: String?,
+    val fileSize: Long?,
+    val isFolder: Boolean,
+    val projectIds: List<Int>,
     val tags: List<Tag>,
 ) {
     val displayTitle: String
         get() = title?.trim()?.takeIf { it.isNotEmpty() } ?: url
 }
+
+data class ClipSummary(
+    val id: Int,
+    val title: String?,
+    val url: String,
+    val thumbnailUrl: String?,
+    val comment: String?,
+    val tags: List<Tag>,
+) {
+    val displayTitle: String
+        get() = title?.trim()?.takeIf { it.isNotEmpty() } ?: url
+}
+
+data class TaskSummary(
+    val id: Int,
+    val title: String,
+    val isDone: Boolean,
+)
+
+data class Task(
+    val id: Int,
+    val title: String,
+    val isDone: Boolean,
+    val clipId: Int?,
+    val dueDate: String?,
+    val priority: Int?,
+    val createdAt: String,
+    val projectId: Int?,
+    val clip: ClipSummary?,
+    val notes: List<NoteSummary>,
+)
+
+data class NoteSummary(
+    val id: Int,
+    val title: String,
+)
+
+data class Note(
+    val id: Int,
+    val title: String,
+    val body: String?,
+    val isDone: Boolean,
+    val createdAt: String,
+    val updatedAt: String,
+    val clips: List<ClipSummary>,
+    val task: TaskSummary?,
+    val projectIds: List<Int>,
+)
+
+data class Project(
+    val id: Int,
+    val name: String,
+    val description: String?,
+    val isDone: Boolean,
+    val createdAt: String,
+)
 
 data class ClipDraft(
     val url: String,
@@ -35,10 +96,25 @@ data class ClipDraft(
     val tags: List<String>,
 )
 
+data class UploadSelection(
+    val uri: Uri,
+    val displayName: String,
+    val mimeType: String?,
+)
+
+data class ClipCreationSource(
+    val url: String = "",
+    val title: String? = null,
+    val upload: UploadSelection? = null,
+)
+
 data class RemoteSnapshot(
     val clips: List<Clip>,
     val categories: List<Category>,
     val tags: List<Tag>,
+    val tasks: List<Task>,
+    val notes: List<Note>,
+    val projects: List<Project>,
 )
 
 sealed interface ConnectionState {
@@ -49,16 +125,13 @@ sealed interface ConnectionState {
 }
 
 sealed interface Screen {
-    data object Library : Screen
+    data object Home : Screen
+    data object TasksNotes : Screen
+    data object Projects : Screen
+    data class ProjectDetail(val projectId: Int) : Screen
     data class Detail(val clipId: Int) : Screen
     data class Editor(val clipId: Int?) : Screen
     data object Settings : Screen
-}
-
-sealed interface LibraryFilter {
-    data object All : LibraryFilter
-    data class Category(val name: String) : LibraryFilter
-    data class Tag(val name: String) : LibraryFilter
 }
 
 class ApiException(

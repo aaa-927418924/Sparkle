@@ -3,13 +3,20 @@ package com.sparkle.android
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,24 +25,37 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Menu
@@ -48,9 +68,11 @@ import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,6 +83,8 @@ import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -71,53 +95,84 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.sparkle.android.data.Category
 import com.sparkle.android.data.Clip
+import com.sparkle.android.data.ClipCreationSource
 import com.sparkle.android.data.ClipDraft
 import com.sparkle.android.data.ConnectionState
-import com.sparkle.android.data.LibraryFilter
+import com.sparkle.android.data.Note
+import com.sparkle.android.data.Project
 import com.sparkle.android.data.Screen
+import com.sparkle.android.data.Task
+import com.sparkle.android.data.UploadSelection
 import com.sparkle.android.ui.SparkleTheme
+import com.sparkle.android.ui.SparkleThumbnail
 import com.sparkle.android.ui.SparkleViewModel
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private var pendingShare by mutableStateOf<ClipCreationSource?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingShare = parseShareIntent(this, intent)
         enableEdgeToEdge()
         setContent {
             SparkleTheme {
-                SparkleRoot()
+                SparkleRoot(
+                    pendingShare = pendingShare,
+                    onShareConsumed = { pendingShare = null },
+                )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingShare = parseShareIntent(this, intent)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SparkleRoot(viewModel: SparkleViewModel = viewModel()) {
+private fun SparkleRoot(
+    pendingShare: ClipCreationSource?,
+    onShareConsumed: () -> Unit,
+    viewModel: SparkleViewModel = viewModel(),
+) {
     val drawerState = androidx.compose.material3.rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val closeDrawer = { scope.launch { drawerState.close() } }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        viewModel.beginCreate(ClipCreationSource(upload = selectionForUri(context, uri)))
+    }
+    val openFilePicker = { filePicker.launch(arrayOf("*/*")) }
+
+    LaunchedEffect(pendingShare) {
+        pendingShare?.let {
+            viewModel.beginCreate(it)
+            onShareConsumed()
+        }
+    }
 
     BackHandler(enabled = drawerState.isOpen) { closeDrawer() }
-    BackHandler(enabled = drawerState.isClosed && viewModel.screen !is Screen.Library) {
-        viewModel.goToLibrary()
+    BackHandler(enabled = drawerState.isClosed && viewModel.screen !is Screen.Home) {
+        viewModel.goBack()
     }
 
     ModalNavigationDrawer(
@@ -125,16 +180,16 @@ private fun SparkleRoot(viewModel: SparkleViewModel = viewModel()) {
         drawerContent = {
             SparkleDrawer(
                 viewModel = viewModel,
-                onSelectAll = {
-                    viewModel.chooseFilter(LibraryFilter.All)
+                onHome = {
+                    viewModel.goToHome()
                     closeDrawer()
                 },
-                onSelectCategory = { category ->
-                    viewModel.chooseFilter(LibraryFilter.Category(category.name))
+                onTasksNotes = {
+                    viewModel.openTasksNotes()
                     closeDrawer()
                 },
-                onSelectTag = { tag ->
-                    viewModel.chooseFilter(LibraryFilter.Tag(tag))
+                onProjects = {
+                    viewModel.openProjects()
                     closeDrawer()
                 },
                 onSettings = {
@@ -145,18 +200,28 @@ private fun SparkleRoot(viewModel: SparkleViewModel = viewModel()) {
         },
     ) {
         when (val currentScreen = viewModel.screen) {
-            Screen.Library -> LibraryScreen(
+            Screen.Home -> HomeScreen(
                 viewModel = viewModel,
                 onOpenMenu = { scope.launch { drawerState.open() } },
                 onOpenSettings = viewModel::openSettings,
+                onPickFile = openFilePicker,
             )
-            is Screen.Detail -> DetailScreen(
+            Screen.TasksNotes -> TasksNotesScreen(
                 viewModel = viewModel,
-                clipId = currentScreen.clipId,
+                onOpenMenu = { scope.launch { drawerState.open() } },
             )
+            Screen.Projects -> ProjectsScreen(
+                viewModel = viewModel,
+                onOpenMenu = { scope.launch { drawerState.open() } },
+            )
+            is Screen.ProjectDetail -> ProjectDetailScreen(viewModel, currentScreen.projectId)
+            is Screen.Detail -> DetailScreen(viewModel, currentScreen.clipId)
             is Screen.Editor -> EditorScreen(
                 viewModel = viewModel,
                 clipId = currentScreen.clipId,
+                onOpenMenu = { scope.launch { drawerState.open() } },
+                onOpenSettings = viewModel::openSettings,
+                onPickFile = openFilePicker,
             )
             Screen.Settings -> SettingsScreen(
                 viewModel = viewModel,
@@ -169,9 +234,9 @@ private fun SparkleRoot(viewModel: SparkleViewModel = viewModel()) {
 @Composable
 private fun SparkleDrawer(
     viewModel: SparkleViewModel,
-    onSelectAll: () -> Unit,
-    onSelectCategory: (Category) -> Unit,
-    onSelectTag: (String) -> Unit,
+    onHome: () -> Unit,
+    onTasksNotes: () -> Unit,
+    onProjects: () -> Unit,
     onSettings: () -> Unit,
 ) {
     ModalDrawerSheet(
@@ -188,51 +253,34 @@ private fun SparkleDrawer(
         ) {
             Text("Sparkle", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(
-                "PCのクリップを安全に閲覧・編集",
+                "PCのデータを安全に閲覧・編集",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(18.dp))
             ConnectionStatusCard(viewModel.connectionState)
             Spacer(Modifier.height(20.dp))
-
             NavigationDrawerItem(
-                label = { Text("すべてのクリップ") },
-                selected = viewModel.screen is Screen.Library && viewModel.filter == LibraryFilter.All,
-                onClick = onSelectAll,
-                icon = { Icon(Icons.Default.Link, contentDescription = null) },
+                label = { Text("ホーム") },
+                selected = viewModel.screen is Screen.Home || viewModel.screen is Screen.Detail || viewModel.screen is Screen.Editor,
+                onClick = onHome,
+                icon = { Icon(Icons.Default.Home, contentDescription = null) },
                 modifier = Modifier.padding(vertical = 2.dp),
             )
-            Spacer(Modifier.height(18.dp))
-            DrawerSectionTitle("カテゴリ")
-            if (viewModel.categories.isEmpty()) {
-                DrawerEmptyText("PCからカテゴリを読み込むと表示されます")
-            } else {
-                viewModel.categories.forEach { category ->
-                    NavigationDrawerItem(
-                        label = { Text(category.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        selected = viewModel.filter == LibraryFilter.Category(category.name),
-                        onClick = { onSelectCategory(category) },
-                        icon = { Icon(Icons.Default.Category, contentDescription = null) },
-                        modifier = Modifier.padding(vertical = 2.dp),
-                    )
-                }
-            }
-            Spacer(Modifier.height(18.dp))
-            DrawerSectionTitle("タグ")
-            if (viewModel.tags.isEmpty()) {
-                DrawerEmptyText("PCからタグを読み込むと表示されます")
-            } else {
-                viewModel.tags.forEach { tag ->
-                    NavigationDrawerItem(
-                        label = { Text(tag.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        selected = viewModel.filter == LibraryFilter.Tag(tag.name),
-                        onClick = { onSelectTag(tag.name) },
-                        icon = { Icon(Icons.Default.Label, contentDescription = null) },
-                        modifier = Modifier.padding(vertical = 2.dp),
-                    )
-                }
-            }
+            NavigationDrawerItem(
+                label = { Text("タスク・メモ") },
+                selected = viewModel.screen is Screen.TasksNotes,
+                onClick = onTasksNotes,
+                icon = { Icon(Icons.Default.CheckCircle, contentDescription = null) },
+                modifier = Modifier.padding(vertical = 2.dp),
+            )
+            NavigationDrawerItem(
+                label = { Text("プロジェクト") },
+                selected = viewModel.screen is Screen.Projects || viewModel.screen is Screen.ProjectDetail,
+                onClick = onProjects,
+                icon = { Icon(Icons.Default.Folder, contentDescription = null) },
+                modifier = Modifier.padding(vertical = 2.dp),
+            )
             Spacer(Modifier.height(18.dp))
             HorizontalDivider()
             Spacer(Modifier.height(12.dp))
@@ -247,64 +295,27 @@ private fun SparkleDrawer(
     }
 }
 
-@Composable
-private fun DrawerSectionTitle(title: String) {
-    Text(
-        title,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, bottom = 4.dp),
-    )
-}
-
-@Composable
-private fun DrawerEmptyText(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-    )
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LibraryScreen(
+private fun HomeScreen(
     viewModel: SparkleViewModel,
     onOpenMenu: () -> Unit,
     onOpenSettings: () -> Unit,
+    onPickFile: () -> Unit,
 ) {
     val visibleClips = viewModel.visibleClips()
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text("クリップ")
-                        if (viewModel.filter !is LibraryFilter.All) {
-                            Text(
-                                filterLabel(viewModel.filter),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                },
+                title = { Text("ホーム") },
                 navigationIcon = {
-                    IconButton(
-                        onClick = onOpenMenu,
-                        modifier = Modifier.semantics { contentDescription = "メニューを開く" },
-                    ) {
+                    IconButton(onClick = onOpenMenu, modifier = Modifier.semantics { contentDescription = "メニューを開く" }) {
                         Icon(Icons.Default.Menu, contentDescription = null)
                     }
                 },
                 actions = {
                     ConnectionStatusIcon(viewModel.connectionState)
-                    IconButton(
-                        onClick = viewModel::refresh,
-                        enabled = !viewModel.isBusy,
-                        modifier = Modifier.semantics { contentDescription = "PCから更新" },
-                    ) {
+                    IconButton(onClick = viewModel::refresh, enabled = !viewModel.isBusy, modifier = Modifier.semantics { contentDescription = "PCから更新" }) {
                         Icon(Icons.Default.Refresh, contentDescription = null)
                     }
                 },
@@ -312,55 +323,53 @@ private fun LibraryScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = viewModel::beginCreate,
-                modifier = Modifier.navigationBarsPadding(),
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "クリップを作成")
+            FloatingActionButton(onClick = onPickFile, modifier = Modifier.navigationBarsPadding()) {
+                Icon(Icons.Default.AttachFile, contentDescription = "スマホのファイルからクリップを作成")
             }
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            ConnectionBanner(
-                state = viewModel.connectionState,
-                onRetry = viewModel::refresh,
-                onSettings = onOpenSettings,
-            )
-            viewModel.errorMessage?.let { message ->
-                ErrorBanner(message = message, onDismiss = viewModel::clearError)
-            }
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            ConnectionBanner(viewModel.connectionState, viewModel::refresh, onOpenSettings)
+            viewModel.errorMessage?.let { ErrorBanner(it, viewModel::clearError) }
+            CategoryFilterRow(viewModel)
             OutlinedTextField(
                 value = viewModel.query,
                 onValueChange = { viewModel.query = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 label = { Text("クリップを検索") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 singleLine = true,
             )
-
+            ActiveTagFilters(viewModel)
             when {
                 viewModel.isBusy && viewModel.clips.isEmpty() -> LoadingState()
                 viewModel.baseUrl.isBlank() -> UnconfiguredState(onOpenSettings)
                 viewModel.clips.isEmpty() && viewModel.connectionState is ConnectionState.Unavailable ->
                     UnavailableState(onOpenSettings, viewModel::refresh)
                 visibleClips.isEmpty() -> EmptySearchState()
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    items(visibleClips, key = { it.id }) { clip ->
-                        ClipCard(
-                            clip = clip,
-                            categoryName = viewModel.categoryName(clip.categoryId),
-                            onClick = { viewModel.openDetail(clip.id) },
-                        )
+                else -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val columns = when {
+                        maxWidth >= 900.dp -> 4
+                        maxWidth >= 600.dp -> 3
+                        else -> 2
+                    }
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(columns),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 96.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(visibleClips, key = { it.id }) { clip ->
+                            ClipCard(
+                                clip = clip,
+                                categoryName = viewModel.categoryName(clip.categoryId),
+                                thumbnailUrl = viewModel.thumbnailUrl(clip.thumbnailUrl),
+                                selectedTags = viewModel.selectedTags,
+                                onToggleTag = viewModel::toggleTag,
+                                onClick = { viewModel.openDetail(clip.id) },
+                            )
+                        }
                     }
                 }
             }
@@ -369,63 +378,278 @@ private fun LibraryScreen(
 }
 
 @Composable
+private fun CategoryFilterRow(viewModel: SparkleViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("カテゴリ", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 16.dp, top = 6.dp))
+        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
+                FilterChip(selected = viewModel.selectedCategory == null, onClick = { viewModel.selectCategory(null) }, label = { Text("すべて") })
+            }
+            items(viewModel.categories, key = { it.id }) { category ->
+                FilterChip(
+                    selected = viewModel.selectedCategory == category.name,
+                    onClick = { viewModel.selectCategory(category.name) },
+                    label = { Text(category.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveTagFilters(viewModel: SparkleViewModel) {
+    if (viewModel.selectedTags.isEmpty()) return
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("タグ:", style = MaterialTheme.typography.labelMedium)
+        viewModel.selectedTags.forEach { tag ->
+            FilterChip(
+                selected = true,
+                onClick = { viewModel.toggleTag(tag) },
+                label = { Text(tag) },
+                trailingIcon = { Icon(Icons.Default.Clear, contentDescription = "タグ絞り込みを解除") },
+            )
+        }
+        TextButton(onClick = viewModel::clearFilters) { Text("すべて解除") }
+    }
+}
+
+@Composable
 private fun ClipCard(
     clip: Clip,
     categoryName: String?,
+    thumbnailUrl: String?,
+    selectedTags: Set<String>,
+    onToggleTag: (String) -> Unit,
     onClick: () -> Unit,
 ) {
     Card(
         onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = "クリップ ${clip.displayTitle}" },
+        modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp).semantics { contentDescription = "クリップ \${clip.displayTitle}" },
         shape = MaterialTheme.shapes.large,
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Text(
-                    clip.displayTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Box {
+                SparkleThumbnail(
+                    url = thumbnailUrl,
+                    modifier = Modifier.fillMaxWidth().height(132.dp),
+                    contentDescription = "\${clip.displayTitle}のサムネイル",
                 )
                 if (clip.isFavorite) {
                     Icon(
                         Icons.Default.Star,
                         contentDescription = "お気に入り",
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.padding(8.dp).size(20.dp).align(Alignment.TopEnd).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape),
                     )
                 }
             }
-            Text(
-                clip.url,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            clip.comment?.trim()?.takeIf { it.isNotEmpty() }?.let { comment ->
-                Text(
-                    comment,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            Text(clip.displayTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(clip.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            categoryName?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            clip.comment?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            val metadata = listOfNotNull(categoryName, clip.tags.joinToString(" · ") { it.name }.takeIf { it.isNotBlank() })
-            if (metadata.isNotEmpty()) {
-                Text(
-                    metadata.joinToString("  •  "),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            if (clip.tags.isNotEmpty()) {
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    clip.tags.forEach { tag ->
+                        FilterChip(
+                            selected = tag.name in selectedTags,
+                            onClick = { onToggleTag(tag.name) },
+                            label = { Text(tag.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TasksNotesScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) {
+    var selectedTab by remember { mutableStateOf(0) }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("タスク・メモ") },
+                navigationIcon = {
+                    IconButton(onClick = onOpenMenu, modifier = Modifier.semantics { contentDescription = "メニューを開く" }) {
+                        Icon(Icons.Default.Menu, contentDescription = null)
+                    }
+                },
+                actions = { ConnectionStatusIcon(viewModel.connectionState) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            )
+        },
+    ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            ConnectionBanner(viewModel.connectionState, viewModel::refresh, null)
+            TabRow(selectedTabIndex = selectedTab) {
+                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("タスク") }, icon = { Icon(Icons.Default.CheckCircle, contentDescription = null) })
+                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("メモ") }, icon = { Icon(Icons.Default.Description, contentDescription = null) })
+            }
+            if (viewModel.isBusy && viewModel.tasks.isEmpty() && viewModel.notes.isEmpty()) {
+                LoadingState()
+            } else if (selectedTab == 0) {
+                if (viewModel.tasks.isEmpty()) {
+                    EmptyState(Icons.Default.CheckCircle, "タスクはありません", "PC側で作成したタスクがここに表示されます。")
+                } else {
+                    LazyColumn(contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(viewModel.tasks, key = { it.id }) { task -> TaskCard(task, onToggle = { viewModel.toggleTask(task.id) }) }
+                    }
+                }
+            } else if (viewModel.notes.isEmpty()) {
+                EmptyState(Icons.Default.Description, "メモはありません", "PC側で作成したメモがここに表示されます。")
+            } else {
+                LazyColumn(contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(viewModel.notes, key = { it.id }) { note -> NoteCard(note) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskCard(task: Task, onToggle: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Checkbox(checked = task.isDone, onCheckedChange = { onToggle() })
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.weight(1f)) {
+                Text(task.title, style = MaterialTheme.typography.titleMedium, textDecoration = if (task.isDone) TextDecoration.LineThrough else TextDecoration.None)
+                task.clip?.let { Text("関連クリップ: \${it.displayTitle}", style = MaterialTheme.typography.bodySmall) }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    task.dueDate?.takeIf { it.isNotBlank() }?.let { Text("期限 \${it.take(10)}", style = MaterialTheme.typography.labelMedium) }
+                    task.priority?.let { Text("優先度 $it", style = MaterialTheme.typography.labelMedium) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoteCard(note: Note) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text(note.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textDecoration = if (note.isDone) TextDecoration.LineThrough else TextDecoration.None)
+            note.body?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 5, overflow = TextOverflow.Ellipsis) }
+            if (note.clips.isNotEmpty()) {
+                Text("関連クリップ: " + note.clips.joinToString("、") { it.displayTitle }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            note.task?.let { Text("関連タスク: \${it.title}", style = MaterialTheme.typography.bodySmall) }
+            Text("更新 \${formatDate(note.updatedAt)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProjectsScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("プロジェクト") },
+                navigationIcon = {
+                    IconButton(onClick = onOpenMenu, modifier = Modifier.semantics { contentDescription = "メニューを開く" }) {
+                        Icon(Icons.Default.Menu, contentDescription = null)
+                    }
+                },
+                actions = { ConnectionStatusIcon(viewModel.connectionState) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            )
+        },
+    ) { padding ->
+        if (viewModel.projects.isEmpty()) {
+            EmptyState(Icons.Default.Folder, "プロジェクトはありません", "PC側で作成したプロジェクトがここに表示されます。", Modifier.padding(padding))
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(viewModel.projects, key = { it.id }) { project ->
+                    ProjectCard(
+                        project = project,
+                        clipCount = viewModel.projectClips(project.id).size,
+                        taskCount = viewModel.projectTasks(project.id).size,
+                        noteCount = viewModel.projectNotes(project.id).size,
+                        onClick = { viewModel.openProject(project.id) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProjectCard(project: Project, clipCount: Int, taskCount: Int, noteCount: Int, onClick: () -> Unit) {
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Default.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(project.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                if (project.isDone) Text("完了", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            }
+            project.description?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis) }
+            Text("クリップ $clipCount ・ タスク $taskCount ・ メモ $noteCount", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
+    val project = viewModel.project(projectId)
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(project?.name ?: "プロジェクト") },
+                navigationIcon = {
+                    IconButton(onClick = viewModel::openProjects, modifier = Modifier.semantics { contentDescription = "プロジェクト一覧へ戻る" }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = null)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            )
+        },
+    ) { padding ->
+        if (project == null) {
+            EmptyState(Icons.Default.ErrorOutline, "プロジェクトが見つかりません", "PC側で削除された可能性があります。", Modifier.padding(padding))
+            return@Scaffold
+        }
+        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            project.description?.takeIf { it.isNotBlank() }?.let { item { Text(it, style = MaterialTheme.typography.bodyLarge) } }
+            item { SectionHeading("クリップ") }
+            val projectClips = viewModel.projectClips(projectId)
+            if (projectClips.isEmpty()) item { Text("関連するクリップはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            else items(projectClips, key = { "clip-\${it.id}" }) { clip ->
+                ProjectClipRow(clip, viewModel.thumbnailUrl(clip.thumbnailUrl), onClick = { viewModel.openDetail(clip.id) })
+            }
+            item { SectionHeading("タスク") }
+            val projectTasks = viewModel.projectTasks(projectId)
+            if (projectTasks.isEmpty()) item { Text("関連するタスクはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            else items(projectTasks, key = { "task-\${it.id}" }) { task -> TaskCard(task, onToggle = { viewModel.toggleTask(task.id) }) }
+            item { SectionHeading("メモ") }
+            val projectNotes = viewModel.projectNotes(projectId)
+            if (projectNotes.isEmpty()) item { Text("関連するメモはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            else items(projectNotes, key = { "note-\${it.id}" }) { note -> NoteCard(note) }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeading(title: String) {
+    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
+}
+
+@Composable
+private fun ProjectClipRow(clip: Clip, thumbnailUrl: String?, onClick: () -> Unit) {
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SparkleThumbnail(url = thumbnailUrl, modifier = Modifier.size(width = 84.dp, height = 64.dp), contentDescription = "\${clip.displayTitle}のサムネイル")
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(clip.displayTitle, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(clip.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -435,25 +659,19 @@ private fun ClipCard(
 @Composable
 private fun DetailScreen(viewModel: SparkleViewModel, clipId: Int) {
     val clip = viewModel.clip(clipId)
-    val context = LocalContext.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("クリップ詳細") },
                 navigationIcon = {
-                    IconButton(
-                        onClick = viewModel::goToLibrary,
-                        modifier = Modifier.semantics { contentDescription = "クリップ一覧へ戻る" },
-                    ) {
+                    IconButton(onClick = viewModel::goToHome, modifier = Modifier.semantics { contentDescription = "ホームへ戻る" }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = null)
                     }
                 },
                 actions = {
                     if (clip != null) {
-                        IconButton(
-                            onClick = { viewModel.beginEdit(clip.id) },
-                            modifier = Modifier.semantics { contentDescription = "クリップを編集" },
-                        ) {
+                        IconButton(onClick = { viewModel.beginEdit(clip.id) }, modifier = Modifier.semantics { contentDescription = "クリップを編集" }) {
                             Icon(Icons.Default.Edit, contentDescription = null)
                         }
                     }
@@ -463,53 +681,27 @@ private fun DetailScreen(viewModel: SparkleViewModel, clipId: Int) {
         },
     ) { padding ->
         if (clip == null) {
-            EmptyState(
-                icon = Icons.Default.ErrorOutline,
-                title = "クリップが見つかりません",
-                message = "PC側で削除された可能性があります。",
-                modifier = Modifier.padding(padding),
-            )
+            EmptyState(Icons.Default.ErrorOutline, "クリップが見つかりません", "PC側で削除された可能性があります。", Modifier.padding(padding))
             return@Scaffold
         }
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            viewModel.errorMessage?.let { message ->
-                ErrorBanner(message = message, onDismiss = viewModel::clearError)
-            }
-            Text(
-                clip.displayTitle,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                clip.url,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            OutlinedButton(
-                onClick = { openClipUrl(context, clip.url) },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(Icons.Default.OpenInNew, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("リンクを開く")
+        Column(modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            SparkleThumbnail(url = viewModel.thumbnailUrl(clip.thumbnailUrl), modifier = Modifier.fillMaxWidth().height(210.dp), contentDescription = "\${clip.displayTitle}のサムネイル")
+            Text(clip.displayTitle, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(clip.url, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            if (clip.url.startsWith("http://") || clip.url.startsWith("https://")) {
+                OutlinedButton(onClick = { openClipUrl(context, clip.url) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.OpenInNew, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("リンクを開く")
+                }
             }
             HorizontalDivider()
             DetailField("カテゴリ", viewModel.categoryName(clip.categoryId) ?: "未設定")
             DetailField("タグ", clip.tags.joinToString("、") { it.name }.ifBlank { "未設定" })
-            DetailField("保存日時", clip.createdAt.take(19).replace('T', ' '))
+            DetailField("保存日時", formatDate(clip.createdAt))
+            DetailField("種別", if (clip.clipType == "local") "ファイル" else "URL")
             Text("コメント", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                clip.comment?.takeIf { it.isNotBlank() } ?: "コメントはありません。",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text(clip.comment?.takeIf { it.isNotBlank() } ?: "コメントはありません。", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -525,116 +717,99 @@ private fun DetailField(label: String, value: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EditorScreen(viewModel: SparkleViewModel, clipId: Int?) {
+private fun EditorScreen(
+    viewModel: SparkleViewModel,
+    clipId: Int?,
+    onOpenMenu: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onPickFile: () -> Unit,
+) {
     val existingClip = clipId?.let(viewModel::clip)
-    var url by remember(clipId) { mutableStateOf(existingClip?.url.orEmpty()) }
-    var title by remember(clipId) { mutableStateOf(existingClip?.title.orEmpty()) }
-    var comment by remember(clipId) { mutableStateOf(existingClip?.comment.orEmpty()) }
-    var category by remember(clipId) { mutableStateOf(viewModel.categoryName(existingClip?.categoryId).orEmpty()) }
-    var tags by remember(clipId) { mutableStateOf(existingClip?.tags?.joinToString(", ") { it.name }.orEmpty()) }
-    var validationError by remember(clipId) { mutableStateOf<String?>(null) }
-    val urlFocusRequester = remember(clipId) { FocusRequester() }
-
-    LaunchedEffect(validationError) {
-        if (validationError != null && clipId == null) urlFocusRequester.requestFocus()
+    val source = if (clipId == null) viewModel.editorSource else null
+    var url by remember(clipId, source) { mutableStateOf(source?.url.orEmpty().ifBlank { existingClip?.url.orEmpty() }) }
+    var title by remember(clipId, source) {
+        mutableStateOf(
+            source?.title.orEmpty()
+                .ifBlank { source?.upload?.displayName.orEmpty() }
+                .ifBlank { existingClip?.title.orEmpty() },
+        )
     }
+    var comment by remember(clipId, source) { mutableStateOf(existingClip?.comment.orEmpty()) }
+    var category by remember(clipId, source) { mutableStateOf(viewModel.categoryName(existingClip?.categoryId).orEmpty()) }
+    var tags by remember(clipId, source) { mutableStateOf(existingClip?.tags?.joinToString(", ") { it.name }.orEmpty()) }
+    var validationError by remember(clipId, source) { mutableStateOf<String?>(null) }
+    val upload = source?.upload
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(if (clipId == null) "クリップを作成" else "クリップを編集") },
                 navigationIcon = {
-                    IconButton(
-                        onClick = { if (clipId == null) viewModel.goToLibrary() else viewModel.openDetail(clipId) },
-                        modifier = Modifier.semantics { contentDescription = "編集をキャンセル" },
-                    ) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = null)
+                    if (clipId == null) {
+                        IconButton(onClick = onOpenMenu, modifier = Modifier.semantics { contentDescription = "メニューを開く" }) {
+                            Icon(Icons.Default.Menu, contentDescription = null)
+                        }
+                    } else {
+                        IconButton(onClick = { viewModel.openDetail(clipId) }, modifier = Modifier.semantics { contentDescription = "編集をキャンセル" }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = null)
+                        }
                     }
+                },
+                actions = {
+                    if (viewModel.baseUrl.isBlank()) TextButton(onClick = onOpenSettings) { Text("設定") }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp)
-                .navigationBarsPadding(),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Text(
-                "変更はPC API経由で保存されます。Android側にはクリップDBを保存しません。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            viewModel.errorMessage?.let { message ->
-                ErrorBanner(message = message, onDismiss = viewModel::clearError)
+        Column(modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("変更はPC API経由で保存されます。Android側にはクリップDBを保存しません。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            viewModel.errorMessage?.let { ErrorBanner(it, viewModel::clearError) }
+            validationError?.let { ErrorBanner(it) { validationError = null } }
+            if (upload != null) {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), modifier = Modifier.fillMaxWidth()) {
+                    Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.Default.AttachFile, contentDescription = null)
+                        Text(upload.displayName, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                OutlinedButton(onClick = onPickFile, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.AttachFile, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("別のファイルを選択")
+                }
+            } else {
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it; validationError = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("URL") },
+                    leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    readOnly = existingClip != null,
+                    supportingText = if (existingClip != null) { { Text("既存クリップのURLは変更できません。") } } else { { Text("ブラウザの共有から受け取ったURLを編集できます。") } },
+                    singleLine = true,
+                )
             }
-            validationError?.let { error ->
-                ErrorBanner(message = error, onDismiss = { validationError = null })
-            }
-            OutlinedTextField(
-                value = url,
-                onValueChange = { url = it; validationError = null },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(urlFocusRequester),
-                label = { Text("URL") },
-                leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                readOnly = existingClip != null,
-                supportingText = if (existingClip != null) {
-                    { Text("既存クリップのURLは変更できません。") }
-                } else null,
-                singleLine = true,
-            )
-            OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("タイトル") },
-                singleLine = false,
-                maxLines = 3,
-            )
-            OutlinedTextField(
-                value = comment,
-                onValueChange = { comment = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("コメント") },
-                minLines = 4,
-            )
-            OutlinedTextField(
-                value = category,
-                onValueChange = { category = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("カテゴリ") },
-                supportingText = { Text("新しい名前を入力するとPC側で作成されます。") },
-                singleLine = true,
-            )
-            OutlinedTextField(
-                value = tags,
-                onValueChange = { tags = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("タグ") },
-                supportingText = { Text("カンマ区切りで入力") },
-                singleLine = false,
-                maxLines = 3,
-            )
+            OutlinedTextField(value = title, onValueChange = { title = it }, modifier = Modifier.fillMaxWidth(), label = { Text("タイトル") }, maxLines = 3)
+            OutlinedTextField(value = comment, onValueChange = { comment = it }, modifier = Modifier.fillMaxWidth(), label = { Text("コメント") }, minLines = 4)
+            OutlinedTextField(value = category, onValueChange = { category = it }, modifier = Modifier.fillMaxWidth(), label = { Text("カテゴリ") }, supportingText = { Text("新しい名前を入力するとPC側で作成されます。") }, singleLine = true)
+            OutlinedTextField(value = tags, onValueChange = { tags = it }, modifier = Modifier.fillMaxWidth(), label = { Text("タグ") }, supportingText = { Text("カンマ区切りで入力") }, maxLines = 3)
             Button(
                 onClick = {
-                    if (clipId == null && url.trim().isBlank()) {
-                        validationError = "URLを入力してください。"
+                    if (upload == null && url.trim().isBlank()) {
+                        validationError = "共有URLを入力するか、ファイルを選択してください。"
                     } else {
-                        val draft = ClipDraft(
-                            url = url.trim(),
-                            title = title.trim().takeIf { it.isNotEmpty() },
-                            comment = comment.trim().takeIf { it.isNotEmpty() },
-                            category = category.trim().takeIf { it.isNotEmpty() },
-                            tags = tags.split(',').map(String::trim).filter(String::isNotEmpty),
+                        viewModel.createClip(
+                            draft = ClipDraft(
+                                url = url.trim(),
+                                title = title.trim().takeIf { it.isNotEmpty() },
+                                comment = comment.trim().takeIf { it.isNotEmpty() },
+                                category = category.trim().takeIf { it.isNotEmpty() },
+                                tags = tags.split(',').map(String::trim).filter(String::isNotEmpty),
+                            ),
+                            upload = upload,
                         )
-                        if (clipId == null) viewModel.createClip(draft) else viewModel.updateClip(clipId, draft)
                     }
                 },
                 enabled = !viewModel.isBusy,
@@ -644,7 +819,7 @@ private fun EditorScreen(viewModel: SparkleViewModel, clipId: Int?) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
                 }
-                Text(if (clipId == null) "PCに保存" else "変更を保存")
+                Text(if (clipId == null) "保存" else "変更を保存")
             }
             Spacer(Modifier.height(28.dp))
         }
@@ -660,10 +835,7 @@ private fun SettingsScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) 
             TopAppBar(
                 title = { Text("PC接続設定") },
                 navigationIcon = {
-                    IconButton(
-                        onClick = onOpenMenu,
-                        modifier = Modifier.semantics { contentDescription = "メニューを開く" },
-                    ) {
+                    IconButton(onClick = onOpenMenu, modifier = Modifier.semantics { contentDescription = "メニューを開く" }) {
                         Icon(Icons.Default.Menu, contentDescription = null)
                     }
                 },
@@ -671,86 +843,34 @@ private fun SettingsScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) 
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 10.dp)
-                .navigationBarsPadding(),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(
-                "SparkleのPC APIに接続します。PCがクリップDBの唯一の所有者で、Android側にはDBの複製を作りません。",
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+        Column(modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 10.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("SparkleのPC APIに接続します。PCがクリップDBの唯一の所有者で、Android側にはDBの複製を作りません。", style = MaterialTheme.typography.bodyLarge)
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Icon(Icons.Default.Wifi, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text(
-                        "Tailscale Serveで公開したHTTPS URLを入力してください。例: https://sparkle.example.ts.net",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                    Text("Tailscale Serveで公開したHTTPS URLを入力してください。", style = MaterialTheme.typography.bodyMedium)
                 }
             }
-            viewModel.errorMessage?.let { message ->
-                ErrorBanner(message = message, onDismiss = viewModel::clearError)
-            }
-            OutlinedTextField(
-                value = inputUrl,
-                onValueChange = { inputUrl = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("PC API URL") },
-                placeholder = { Text("https://sparkle.example.ts.net") },
-                leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                supportingText = { Text("認証情報は保存せず、URLだけを端末の設定に保存します。") },
-                singleLine = true,
-            )
+            viewModel.errorMessage?.let { ErrorBanner(it, viewModel::clearError) }
+            OutlinedTextField(value = inputUrl, onValueChange = { inputUrl = it }, modifier = Modifier.fillMaxWidth(), label = { Text("PC API URL") }, placeholder = { Text("https://sparkle.example.ts.net") }, leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), supportingText = { Text("認証情報は保存せず、URLだけを端末の設定に保存します。") }, singleLine = true)
             ConnectionStatusCard(viewModel.connectionState)
-            ConnectionBanner(
-                state = viewModel.connectionState,
-                onRetry = viewModel::refresh,
-                onSettings = null,
-            )
-            Button(
-                onClick = { viewModel.saveConnection(inputUrl) },
-                enabled = !viewModel.isBusy,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+            ConnectionBanner(viewModel.connectionState, viewModel::refresh, null)
+            Button(onClick = { viewModel.saveConnection(inputUrl) }, enabled = !viewModel.isBusy, modifier = Modifier.fillMaxWidth()) {
                 if (viewModel.isBusy) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
                 }
                 Text("保存して接続確認")
             }
-            OutlinedButton(
-                onClick = {
-                    inputUrl = ""
-                    viewModel.clearConnection()
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("接続設定を消去")
-            }
+            OutlinedButton(onClick = { inputUrl = ""; viewModel.clearConnection() }, modifier = Modifier.fillMaxWidth()) { Text("接続設定を消去") }
         }
     }
 }
 
 @Composable
 private fun ConnectionStatusCard(state: ConnectionState) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ConnectionStatusIcon(state)
             Column {
                 Text("PC接続状態", style = MaterialTheme.typography.labelMedium)
@@ -772,32 +892,23 @@ private fun ConnectionStatusIcon(state: ConnectionState) {
 }
 
 @Composable
-private fun ConnectionBanner(
-    state: ConnectionState,
-    onRetry: (() -> Unit)?,
-    onSettings: (() -> Unit)?,
-) {
+private fun ConnectionBanner(state: ConnectionState, onRetry: (() -> Unit)?, onSettings: (() -> Unit)?) {
     if (state is ConnectionState.Connected) return
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-    ) {
+    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 ConnectionStatusIcon(state)
                 Text(statusLabel(state), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             }
             when (state) {
-                ConnectionState.Unconfigured -> Text("PC URLを設定すると、クリップを読み込めます。")
+                ConnectionState.Unconfigured -> Text("PC URLを設定すると、PCのデータを読み込めます。")
                 ConnectionState.Checking -> Text("PC APIに接続しています…")
                 is ConnectionState.Unavailable -> Text(state.reason)
                 ConnectionState.Connected -> Unit
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                onSettings?.let { action -> TextButton(onClick = action) { Text("接続設定") } }
-                onRetry?.let { action -> TextButton(onClick = action, enabled = state !is ConnectionState.Checking) { Text("再試行") } }
+                onSettings?.let { TextButton(onClick = it) { Text("接続設定") } }
+                onRetry?.let { TextButton(onClick = it, enabled = state !is ConnectionState.Checking) { Text("再試行") } }
             }
         }
     }
@@ -805,17 +916,8 @@ private fun ConnectionBanner(
 
 @Composable
 private fun ErrorBanner(message: String, onDismiss: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+        Row(modifier = Modifier.padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Icon(Icons.Default.ErrorOutline, contentDescription = "エラー", tint = MaterialTheme.colorScheme.error)
             Text(message, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             TextButton(onClick = onDismiss) { Text("閉じる") }
@@ -825,30 +927,20 @@ private fun ErrorBanner(message: String, onDismiss: () -> Unit) {
 
 @Composable
 private fun LoadingState() {
-    EmptyState(
-        icon = Icons.Default.Refresh,
-        title = "PCから読み込み中",
-        message = "クリップ、カテゴリ、タグを取得しています。",
-        showProgress = true,
-    )
+    EmptyState(Icons.Default.Refresh, "PCから読み込み中", "クリップ、タスク、メモ、プロジェクトを取得しています。", showProgress = true)
 }
 
 @Composable
 private fun UnconfiguredState(onSettings: () -> Unit) {
-    EmptyState(
-        icon = Icons.Default.CloudOff,
-        title = "PCが未接続です",
-        message = "左メニューのPC接続設定からTailscale URLを登録してください。",
-        action = { Button(onClick = onSettings) { Text("接続設定を開く") } },
-    )
+    EmptyState(Icons.Default.CloudOff, "PCが未接続です", "PC接続設定からTailscale URLを登録してください。", action = { Button(onClick = onSettings) { Text("接続設定を開く") } })
 }
 
 @Composable
 private fun UnavailableState(onSettings: () -> Unit, onRetry: () -> Unit) {
     EmptyState(
-        icon = Icons.Default.CloudOff,
-        title = "PCを利用できません",
-        message = "PCが起動中か、Tailscale接続とURLが正しいか確認してください。",
+        Icons.Default.CloudOff,
+        "PCを利用できません",
+        "PCが起動中か、Tailscale接続とURLが正しいか確認してください。",
         action = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onRetry) { Text("再試行") }
@@ -860,11 +952,7 @@ private fun UnavailableState(onSettings: () -> Unit, onRetry: () -> Unit) {
 
 @Composable
 private fun EmptySearchState() {
-    EmptyState(
-        icon = Icons.Default.Search,
-        title = "該当するクリップがありません",
-        message = "検索語やメニューの絞り込みを変更してください。",
-    )
+    EmptyState(Icons.Default.Search, "該当するクリップがありません", "検索語、カテゴリ、タグの絞り込みを変更してください。")
 }
 
 @Composable
@@ -876,28 +964,12 @@ private fun EmptyState(
     showProgress: Boolean = false,
     action: (@Composable () -> Unit)? = null,
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(28.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            if (showProgress) {
-                CircularProgressIndicator(modifier = Modifier.size(36.dp))
-            } else {
-                Icon(icon, contentDescription = null, modifier = Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
-            }
+    Box(modifier = modifier.fillMaxSize().padding(28.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (showProgress) CircularProgressIndicator(modifier = Modifier.size(36.dp))
+            else Icon(icon, contentDescription = null, modifier = Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text(
-                message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.widthIn(max = 340.dp),
-            )
+            Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.widthIn(max = 340.dp))
             action?.invoke()
         }
     }
@@ -910,14 +982,41 @@ private fun statusLabel(state: ConnectionState): String = when (state) {
     is ConnectionState.Unavailable -> "PC未接続"
 }
 
-private fun filterLabel(filter: LibraryFilter): String = when (filter) {
-    LibraryFilter.All -> "すべて"
-    is LibraryFilter.Category -> "カテゴリ: ${filter.name}"
-    is LibraryFilter.Tag -> "タグ: ${filter.name}"
-}
+private fun formatDate(value: String): String = value.take(19).replace('T', ' ')
 
 private fun openClipUrl(context: Context, rawUrl: String) {
-    val uri = Uri.parse(rawUrl)
-    val intent = Intent(Intent.ACTION_VIEW, uri)
-    context.startActivity(intent)
+    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(rawUrl)))
+}
+
+private fun selectionForUri(context: Context, uri: Uri): UploadSelection {
+    val displayName = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME)) else null
+        }
+        ?.takeIf { it.isNotBlank() }
+        ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+        ?: "shared-file"
+    return UploadSelection(uri, displayName, context.contentResolver.getType(uri))
+}
+
+private fun parseShareIntent(context: Context, intent: Intent?): ClipCreationSource? {
+    if (intent == null || intent.action !in setOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) return null
+    val sharedUri = if (Build.VERSION.SDK_INT >= 33) {
+        intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            ?: intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)?.firstOrNull()
+    } else {
+        @Suppress("DEPRECATION")
+        intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+    }
+    if (sharedUri != null) {
+        return ClipCreationSource(title = intent.getStringExtra(Intent.EXTRA_SUBJECT), upload = selectionForUri(context, sharedUri))
+    }
+    val sharedText = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.trim().orEmpty()
+    if (sharedText.isBlank()) return null
+    val sharedUrl = Regex("https?://[^\\s]+", RegexOption.IGNORE_CASE)
+        .find(sharedText)
+        ?.value
+        ?.trimEnd('.', ',', ')', ']', '}', '>')
+        ?: sharedText
+    return ClipCreationSource(url = sharedUrl, title = intent.getStringExtra(Intent.EXTRA_SUBJECT))
 }

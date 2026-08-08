@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -36,9 +37,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -86,6 +87,7 @@ import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -104,6 +106,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -316,7 +319,7 @@ private fun SparkleDrawer(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun HomeScreen(
     viewModel: SparkleViewModel,
@@ -374,12 +377,12 @@ private fun HomeScreen(
                         maxWidth >= 600.dp -> 3
                         else -> 2
                     }
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(columns),
+                    LazyVerticalStaggeredGrid(
+                        columns = StaggeredGridCells.Fixed(columns),
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 96.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalItemSpacing = 10.dp,
                     ) {
                         items(visibleClips, key = { it.id }) { clip ->
                             ClipCard(
@@ -409,14 +412,12 @@ private fun CategoryFilterRow(viewModel: SparkleViewModel) {
                 FilterChip(selected = viewModel.selectedCategory == null, onClick = { viewModel.selectCategory(null) }, label = { Text("すべて") })
             }
             items(viewModel.categories, key = { it.id }) { category ->
-                FilterChip(
+                CategoryFilterChip(
+                    name = category.name,
                     selected = viewModel.selectedCategory == category.name,
+                    enabled = !viewModel.isBusy,
                     onClick = { viewModel.selectCategory(category.name) },
-                    modifier = Modifier.combinedClickable(
-                        onClick = { viewModel.selectCategory(category.name) },
-                        onLongClick = { deleteTarget = category },
-                    ),
-                    label = { Text(category.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    onLongClick = { deleteTarget = category },
                 )
             }
         }
@@ -440,6 +441,39 @@ private fun CategoryFilterRow(viewModel: SparkleViewModel) {
             dismissButton = {
                 TextButton(onClick = { deleteTarget = null }) { Text("キャンセル") }
             },
+        )
+    }
+}
+
+@Composable
+private fun CategoryFilterChip(
+    name: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .heightIn(min = 48.dp)
+            .combinedClickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClickLabel = "カテゴリで絞り込む",
+                onLongClickLabel = "カテゴリを削除",
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
+        shape = MaterialTheme.shapes.small,
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
+        contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+        border = if (selected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+    ) {
+        Text(
+            name,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -476,7 +510,7 @@ private fun ClipCard(
 ) {
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp).semantics { contentDescription = "クリップ ${clip.displayTitle}" },
+        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "クリップ ${clip.displayTitle}" },
         shape = MaterialTheme.shapes.large,
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {

@@ -24,7 +24,8 @@ selection and Android Sharesheet files use the existing multipart
 - The left drawer contains **ホーム**, **タスク・メモ**, **プロジェクト**, and
   **PC接続設定**.
 - Home shows the desktop-style category row, searchable clip metadata,
-  clickable tag chips, thumbnails, and a responsive two-to-four-column grid.
+  clickable tag chips, thumbnails, and a responsive two-to-four-column
+  Masonry grid that packs cards by their measured height.
   Long-pressing a category opens a confirmation dialog for deleting that
   category through the PC API.
 - The attach button selects a phone file. The Android Sharesheet can send a URL

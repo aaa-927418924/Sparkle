@@ -13,6 +13,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -66,6 +68,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -111,6 +114,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.sparkle.android.data.Category
 import com.sparkle.android.data.Clip
 import com.sparkle.android.data.ClipCreationSource
 import com.sparkle.android.data.ClipDraft
@@ -172,8 +176,8 @@ private fun SparkleRoot(
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             viewModel.onAppResumed()
             while (true) {
-                delay(30_000L)
-                viewModel.refresh()
+                delay(2_000L)
+                viewModel.refresh(silent = true)
             }
         }
     }
@@ -394,8 +398,10 @@ private fun HomeScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CategoryFilterRow(viewModel: SparkleViewModel) {
+    var deleteTarget by remember { mutableStateOf<Category?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("カテゴリ", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 16.dp, top = 6.dp))
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -406,10 +412,35 @@ private fun CategoryFilterRow(viewModel: SparkleViewModel) {
                 FilterChip(
                     selected = viewModel.selectedCategory == category.name,
                     onClick = { viewModel.selectCategory(category.name) },
+                    modifier = Modifier.combinedClickable(
+                        onClick = { viewModel.selectCategory(category.name) },
+                        onLongClick = { deleteTarget = category },
+                    ),
                     label = { Text(category.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 )
             }
         }
+    }
+    deleteTarget?.let { category ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("カテゴリを削除") },
+            text = { Text("「" + category.name + "」を削除します。既存クリップのカテゴリ設定も解除されます。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        deleteTarget = null
+                        viewModel.deleteCategory(category.id)
+                    },
+                    enabled = !viewModel.isBusy,
+                ) {
+                    Text("削除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("キャンセル") }
+            },
+        )
     }
 }
 
@@ -669,8 +700,8 @@ private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
 @Composable
 private fun ProjectEditorScreen(viewModel: SparkleViewModel, projectId: Int) {
     val project = viewModel.project(projectId)
-    var name by remember(projectId, project) { mutableStateOf(project?.name.orEmpty()) }
-    var description by remember(projectId, project) { mutableStateOf(project?.description.orEmpty()) }
+    var name by remember(projectId) { mutableStateOf(project?.name.orEmpty()) }
+    var description by remember(projectId) { mutableStateOf(project?.description.orEmpty()) }
     var validationError by remember(projectId) { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -741,8 +772,8 @@ private fun ProjectEditorScreen(viewModel: SparkleViewModel, projectId: Int) {
 @Composable
 private fun NoteEditorScreen(viewModel: SparkleViewModel, noteId: Int) {
     val note = viewModel.note(noteId)
-    var title by remember(noteId, note) { mutableStateOf(note?.title.orEmpty()) }
-    var body by remember(noteId, note) { mutableStateOf(note?.body.orEmpty()) }
+    var title by remember(noteId) { mutableStateOf(note?.title.orEmpty()) }
+    var body by remember(noteId) { mutableStateOf(note?.body.orEmpty()) }
     var validationError by remember(noteId) { mutableStateOf<String?>(null) }
 
     Scaffold(

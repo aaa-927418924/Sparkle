@@ -25,13 +25,20 @@ selection and Android Sharesheet files use the existing multipart
   **PC接続設定**.
 - Home shows the desktop-style category row, searchable clip metadata,
   clickable tag chips, thumbnails, and a responsive two-to-four-column grid.
+  Long-pressing a category opens a confirmation dialog for deleting that
+  category through the PC API.
 - The attach button selects a phone file. The Android Sharesheet can send a URL
   or file to Sparkle; the app opens the save form so comments and tags can be
   added before saving through the PC API.
 - Tasks and notes are loaded from the PC; tapping a note opens its edit form.
   Project details include a PC-backed edit form.
-- The app refreshes when it returns to the foreground and periodically while
-  active, so PC-side edits appear without pressing the refresh button.
+- The app refreshes when it returns to the foreground and polls the PC every
+  two seconds while active. These background refreshes are silent, so PC-side
+  edits appear without pressing the refresh button or interrupting an editor.
+- When a URL clip is saved, YouTube URLs use the video's `hqdefault.jpg`
+  thumbnail. Other pages use `og:image`/Twitter image metadata when available,
+  then a page favicon fallback. The image URL is stored in the PC clip record;
+  the Android client does not take screenshots or create a local database copy.
 - Thumbnails are cached in memory (12 MiB LRU) and the Android cache directory
   (64 MiB limit, 8 MiB per entry) to reduce first-render lag without unbounded
   storage growth.

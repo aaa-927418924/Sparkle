@@ -3,13 +3,16 @@ package com.sparkle.android.data
 import android.content.ContentResolver
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import java.net.URLDecoder
 import java.net.URLEncoder
+import java.util.Locale
 import java.util.UUID
 
 class SparkleApi private constructor(
@@ -37,14 +40,21 @@ class SparkleApi private constructor(
         return response.optString("status") == "ok" && response.optString("app") == "Sparkle"
     }
 
-    fun createClip(draft: ClipDraft): Clip =
-        parseClip(request("POST", "/clips", draft.toCreateJson()))
+    fun createClip(draft: ClipDraft): Clip {
+        val body = draft.toCreateJson()
+        resolveThumbnailUrl(draft.url)?.let { body.put("thumbnail_url", it) }
+        return parseClip(request("POST", "/clips", body))
+    }
 
     fun updateClip(clipId: Int, draft: ClipDraft): Clip =
         parseClip(request("PUT", "/clips/$clipId", draft.toUpdateJson()))
 
     fun toggleTask(taskId: Int): Task =
         parseTask(request("PATCH", "/tasks/$taskId/toggle"))
+
+    fun deleteCategory(categoryId: Int) {
+        requestRaw("DELETE", "/categories/$categoryId", null)
+    }
 
     fun updateNote(noteId: Int, title: String, body: String?): Note =
         parseNote(
@@ -115,6 +125,135 @@ class SparkleApi private constructor(
         val encoded = URLEncoder.encode(candidate, Charsets.UTF_8.name())
         return "$baseUrl/thumbnail-proxy?url=$encoded"
     }
+
+    /** Resolves a stable remote image URL before a URL clip is created. */
+    private fun resolveThumbnailUrl(rawUrl: String): String? {
+        val candidate = rawUrl.trim()
+        if (!candidate.startsWith("http://") && !candidate.startsWith("https://")) return null
+        youtubeThumbnail(candidate)?.let { return it }
+
+        val page = fetchHtml(candidate)
+        if (page != null) {
+            val (html, finalUrl) = page
+            extractHtmlThumbnail(html, finalUrl)?.let { return it }
+            extractFavicon(html, finalUrl)?.let { return it }
+        }
+        return runCatching { URI(candidate).resolve("/favicon.ico").toString() }.getOrNull()
+    }
+
+    private fun fetchHtml(rawUrl: String): Pair<String, String>? {
+        val connection = (URL(rawUrl).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = METADATA_TIMEOUT_MS
+            readTimeout = METADATA_TIMEOUT_MS
+            instanceFollowRedirects = true
+            useCaches = true
+            setRequestProperty("User-Agent", BROWSER_USER_AGENT)
+            setRequestProperty("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1")
+            setRequestProperty("Accept-Encoding", "identity")
+        }
+        return try {
+            if (connection.responseCode !in 200..299) return null
+            val html = connection.inputStream.use(::readMetadataText)
+            html to (connection.url?.toString() ?: rawUrl)
+        } catch (_: Exception) {
+            null
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun readMetadataText(input: InputStream): String {
+        val output = ByteArrayOutputStream(MAX_METADATA_BYTES)
+        val buffer = ByteArray(BUFFER_SIZE)
+        var total = 0
+        while (total < MAX_METADATA_BYTES) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            val writable = minOf(count, MAX_METADATA_BYTES - total)
+            output.write(buffer, 0, writable)
+            total += writable
+            if (writable < count) break
+        }
+        return output.toString(Charsets.UTF_8.name())
+    }
+
+    private fun extractHtmlThumbnail(html: String, pageUrl: String): String? {
+        val priorities = mapOf(
+            "og:image" to 0,
+            "og:image:url" to 1,
+            "twitter:image" to 2,
+            "twitter:image:src" to 3,
+            "image" to 4,
+        )
+        var best: Pair<Int, String>? = null
+        META_TAG_REGEX.findAll(html).forEach { match ->
+            val attributes = parseHtmlAttributes(match.value)
+            val kind = (attributes["property"] ?: attributes["name"] ?: attributes["itemprop"])
+                ?.lowercase(Locale.ROOT)
+                ?: return@forEach
+            val content = attributes["content"] ?: return@forEach
+            val priority = priorities[kind] ?: return@forEach
+            val resolved = resolveResourceUrl(content, pageUrl) ?: return@forEach
+            if (best == null || priority < best!!.first) best = priority to resolved
+        }
+        return best?.second
+    }
+
+    private fun extractFavicon(html: String, pageUrl: String): String? {
+        LINK_TAG_REGEX.findAll(html).forEach { match ->
+            val attributes = parseHtmlAttributes(match.value)
+            val rel = attributes["rel"].orEmpty().lowercase(Locale.ROOT)
+            if ("icon" in rel) {
+                resolveResourceUrl(attributes["href"].orEmpty(), pageUrl)?.let { return it }
+            }
+        }
+        return resolveResourceUrl("/favicon.ico", pageUrl)
+    }
+
+    private fun parseHtmlAttributes(tag: String): Map<String, String> =
+        HTML_ATTRIBUTE_REGEX.findAll(tag).associate { match ->
+            match.groupValues[1].lowercase(Locale.ROOT) to decodeHtmlEntities(match.groupValues[3])
+        }
+
+    private fun resolveResourceUrl(raw: String, pageUrl: String): String? {
+        val candidate = decodeHtmlEntities(raw).trim()
+        if (candidate.isBlank() || candidate.startsWith("data:")) return null
+        return runCatching {
+            val uri = URI(pageUrl).resolve(candidate)
+            uri.takeIf { it.scheme == "http" || it.scheme == "https" }?.toString()
+        }.getOrNull()
+    }
+
+    private fun youtubeThumbnail(rawUrl: String): String? {
+        val uri = runCatching { URI(rawUrl) }.getOrNull() ?: return null
+        val host = uri.host?.lowercase(Locale.ROOT) ?: return null
+        val id = when {
+            host == "youtu.be" -> uri.path.trim('/').substringBefore('/').takeIf { it.isNotBlank() }
+            host == "youtube.com" || host.endsWith(".youtube.com") || host == "youtube-nocookie.com" || host.endsWith(".youtube-nocookie.com") -> {
+                queryParameter(uri.rawQuery, "v")
+                    ?: Regex("^/(?:shorts|embed|v)/([^/]+)").find(uri.path)?.groupValues?.getOrNull(1)
+            }
+            else -> null
+        }
+        val cleanId = id?.let { Regex("^[A-Za-z0-9_-]{11}").find(it)?.value } ?: return null
+        return "https://img.youtube.com/vi/$cleanId/hqdefault.jpg"
+    }
+
+    private fun queryParameter(rawQuery: String?, name: String): String? =
+        rawQuery.orEmpty().split('&').asSequence()
+            .map { it.split('=', limit = 2) }
+            .firstOrNull { it.firstOrNull() == name }
+            ?.getOrNull(1)
+            ?.let { runCatching { URLDecoder.decode(it, Charsets.UTF_8.name()) }.getOrNull() }
+
+    private fun decodeHtmlEntities(value: String): String = value
+        .replace("&amp;", "&", ignoreCase = true)
+        .replace("&quot;", "\"", ignoreCase = true)
+        .replace("&#39;", "'", ignoreCase = true)
+        .replace("&#x27;", "'", ignoreCase = true)
+        .replace("&lt;", "<", ignoreCase = true)
+        .replace("&gt;", ">", ignoreCase = true)
 
     private fun writeTextPart(output: OutputStream, boundary: String, name: String, value: String) {
         output.write("--$boundary\r\n".toByteArray(Charsets.UTF_8))
@@ -268,6 +407,12 @@ class SparkleApi private constructor(
         private const val TIMEOUT_MS = 10_000
         private const val UPLOAD_TIMEOUT_MS = 120_000
         private const val BUFFER_SIZE = 16 * 1024
+        private const val METADATA_TIMEOUT_MS = 8_000
+        private const val MAX_METADATA_BYTES = 512 * 1024
+        private const val BROWSER_USER_AGENT = "Mozilla/5.0 (Android) AppleWebKit/537.36 Sparkle/Android"
+        private val META_TAG_REGEX = Regex("<meta\\b[^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        private val LINK_TAG_REGEX = Regex("<link\\b[^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        private val HTML_ATTRIBUTE_REGEX = Regex("""([A-Za-z_:][A-Za-z0-9:_.-]*)\s*=\s*(['"])(.*?)\2""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
 
         fun fromBaseUrl(rawBaseUrl: String): SparkleApi? {
             val normalized = normalizeBaseUrl(rawBaseUrl) ?: return null

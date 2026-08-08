@@ -30,6 +30,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
     private val preferences = SparklePreferences(application)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var refreshInFlight = false
 
     var baseUrl by mutableStateOf(preferences.baseUrl)
         private set
@@ -70,27 +71,40 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         if (api != null) refresh()
     }
 
-    fun refresh() {
+    fun refresh(silent: Boolean = false) {
         val currentApi = api
         if (currentApi == null) {
             connectionState = ConnectionState.Unconfigured
             return
         }
-        if (isBusy) return
-        isBusy = true
-        errorMessage = null
-        connectionState = ConnectionState.Checking
+        if (isBusy || refreshInFlight) return
+        refreshInFlight = true
+        if (!silent) {
+            isBusy = true
+            errorMessage = null
+            connectionState = ConnectionState.Checking
+        }
         executor.execute {
             try {
-                postSnapshot(currentApi.loadSnapshot())
+                val snapshot = currentApi.loadSnapshot()
+                mainHandler.post {
+                    refreshInFlight = false
+                    applySnapshot(snapshot)
+                    if (!silent) isBusy = false
+                    connectionState = ConnectionState.Connected
+                    if (returnHomeAfterConnection) {
+                        returnHomeAfterConnection = false
+                        screen = Screen.Home
+                    }
+                }
             } catch (error: Throwable) {
-                postFailure(error)
+                postFailure(error, silent)
             }
         }
     }
 
     fun onAppResumed() {
-        if (api != null && !isBusy) refresh()
+        if (api != null && !isBusy) refresh(silent = true)
     }
 
     fun saveConnection(rawBaseUrl: String) {
@@ -162,6 +176,21 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         executor.execute {
             try {
                 currentApi.toggleTask(taskId)
+                postSnapshot(currentApi.loadSnapshot())
+            } catch (error: Throwable) {
+                postFailure(error)
+            }
+        }
+    }
+
+    fun deleteCategory(categoryId: Int) {
+        val currentApi = requireApi() ?: return
+        isBusy = true
+        errorMessage = null
+        connectionState = ConnectionState.Checking
+        executor.execute {
+            try {
+                currentApi.deleteCategory(categoryId)
                 postSnapshot(currentApi.loadSnapshot())
             } catch (error: Throwable) {
                 postFailure(error)
@@ -391,14 +420,18 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
     private fun applySnapshot(snapshot: RemoteSnapshot) {
         clips = snapshot.clips
         categories = snapshot.categories
+        if (selectedCategory != null && categories.none { it.name == selectedCategory }) {
+            selectedCategory = null
+        }
         tags = snapshot.tags
         tasks = snapshot.tasks
         notes = snapshot.notes
         projects = snapshot.projects
     }
 
-    private fun postFailure(error: Throwable) {
+    private fun postFailure(error: Throwable, silent: Boolean = false) {
         mainHandler.post {
+            refreshInFlight = false
             isBusy = false
             returnHomeAfterConnection = false
             val message = when (error) {
@@ -406,7 +439,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
                 is IOException -> "PCに接続できません。Tailscale接続とURLを確認してください。"
                 else -> "PCデータを読み込めませんでした。URLとPCの状態を確認してください。"
             }
-            errorMessage = message
+            if (!silent) errorMessage = message
             connectionState = ConnectionState.Unavailable(message)
         }
     }

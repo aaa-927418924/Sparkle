@@ -47,6 +47,8 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         private set
     var projects by mutableStateOf<List<Project>>(emptyList())
         private set
+    var tasksNotesTab by mutableStateOf(0)
+        private set
     var query by mutableStateOf("")
     var selectedCategory by mutableStateOf<String?>(null)
         private set
@@ -62,6 +64,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     private var api: SparkleApi? = SparkleApi.fromBaseUrl(baseUrl)
+    private var returnHomeAfterConnection = false
 
     init {
         if (api != null) refresh()
@@ -73,6 +76,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
             connectionState = ConnectionState.Unconfigured
             return
         }
+        if (isBusy) return
         isBusy = true
         errorMessage = null
         connectionState = ConnectionState.Checking
@@ -85,6 +89,10 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun onAppResumed() {
+        if (api != null && !isBusy) refresh()
+    }
+
     fun saveConnection(rawBaseUrl: String) {
         val normalized = SparkleApi.normalizeBaseUrl(rawBaseUrl)
         if (normalized == null) {
@@ -95,6 +103,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         preferences.saveBaseUrl(normalized)
         baseUrl = normalized
         api = SparkleApi.fromBaseUrl(normalized)
+        returnHomeAfterConnection = true
         refresh()
     }
 
@@ -110,6 +119,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         projects = emptyList()
         query = ""
         clearFilters()
+        returnHomeAfterConnection = false
         errorMessage = null
         connectionState = ConnectionState.Unconfigured
         goToHome()
@@ -159,6 +169,57 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun updateNote(noteId: Int, title: String, body: String?) {
+        if (title.isBlank()) {
+            errorMessage = "メモのタイトルを入力してください。"
+            return
+        }
+        val currentApi = requireApi() ?: return
+        isBusy = true
+        errorMessage = null
+        connectionState = ConnectionState.Checking
+        executor.execute {
+            try {
+                currentApi.updateNote(noteId, title.trim(), body?.trim()?.takeIf { it.isNotEmpty() })
+                val snapshot = currentApi.loadSnapshot()
+                mainHandler.post {
+                    applySnapshot(snapshot)
+                    isBusy = false
+                    connectionState = ConnectionState.Connected
+                    tasksNotesTab = 1
+                    screen = Screen.TasksNotes
+                }
+            } catch (error: Throwable) {
+                postFailure(error)
+            }
+        }
+    }
+
+    fun updateProject(projectId: Int, name: String, description: String?) {
+        if (name.isBlank()) {
+            errorMessage = "プロジェクト名を入力してください。"
+            return
+        }
+        val currentApi = requireApi() ?: return
+        isBusy = true
+        errorMessage = null
+        connectionState = ConnectionState.Checking
+        executor.execute {
+            try {
+                currentApi.updateProject(projectId, name.trim(), description?.trim()?.takeIf { it.isNotEmpty() })
+                val snapshot = currentApi.loadSnapshot()
+                mainHandler.post {
+                    applySnapshot(snapshot)
+                    isBusy = false
+                    connectionState = ConnectionState.Connected
+                    screen = Screen.ProjectDetail(projectId)
+                }
+            } catch (error: Throwable) {
+                postFailure(error)
+            }
+        }
+    }
+
     fun openDetail(clipId: Int) {
         errorMessage = null
         editorSource = null
@@ -186,16 +247,20 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         errorMessage = null
         editorSource = null
         screen = Screen.Home
+        refresh()
     }
 
-    fun openTasksNotes() {
+    fun openTasksNotes(tab: Int = 0) {
         errorMessage = null
+        tasksNotesTab = tab.coerceIn(0, 1)
         screen = Screen.TasksNotes
+        refresh()
     }
 
     fun openProjects() {
         errorMessage = null
         screen = Screen.Projects
+        refresh()
     }
 
     fun openProject(projectId: Int) {
@@ -203,10 +268,24 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         screen = Screen.ProjectDetail(projectId)
     }
 
+    fun openProjectEditor(projectId: Int) {
+        errorMessage = null
+        screen = Screen.ProjectEditor(projectId)
+    }
+
+    fun openNoteEditor(noteId: Int) {
+        errorMessage = null
+        tasksNotesTab = 1
+        screen = Screen.NoteEditor(noteId)
+    }
+
     fun goBack() {
-        when (screen) {
+        val currentScreen = screen
+        when (currentScreen) {
             is Screen.Detail, is Screen.Editor, Screen.Settings -> goToHome()
             is Screen.ProjectDetail -> openProjects()
+            is Screen.ProjectEditor -> openProject(currentScreen.projectId)
+            is Screen.NoteEditor -> openTasksNotes(tab = 1)
             else -> goToHome()
         }
     }
@@ -259,6 +338,8 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
 
     fun project(projectId: Int): Project? = projects.firstOrNull { it.id == projectId }
 
+    fun note(noteId: Int): Note? = notes.firstOrNull { it.id == noteId }
+
     fun projectClips(projectId: Int): List<Clip> = clips.filter { projectId in it.projectIds }
 
     fun projectTasks(projectId: Int): List<Task> = tasks.filter { it.projectId == projectId }
@@ -300,6 +381,10 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
             applySnapshot(snapshot)
             isBusy = false
             connectionState = ConnectionState.Connected
+            if (returnHomeAfterConnection) {
+                returnHomeAfterConnection = false
+                screen = Screen.Home
+            }
         }
     }
 
@@ -315,6 +400,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
     private fun postFailure(error: Throwable) {
         mainHandler.post {
             isBusy = false
+            returnHomeAfterConnection = false
             val message = when (error) {
                 is ApiException -> "PC APIに接続できません（HTTP ${error.statusCode}）。"
                 is IOException -> "PCに接続できません。Tailscale接続とURLを確認してください。"

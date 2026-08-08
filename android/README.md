@@ -3,6 +3,8 @@
 This module is a PC-connected client for Sparkle. The Windows app remains the
 only owner of the clip database; this app keeps only the configured PC API URL,
 the current in-memory response data, and the current file/share selection.
+Thumbnail bytes use a bounded Android memory cache and OS-managed cache
+directory; they are not a copy of the PC database.
 
 ## Connection
 
@@ -26,6 +28,13 @@ selection and Android Sharesheet files use the existing multipart
 - The attach button selects a phone file. The Android Sharesheet can send a URL
   or file to Sparkle; the app opens the save form so comments and tags can be
   added before saving through the PC API.
+- Tasks and notes are loaded from the PC; tapping a note opens its edit form.
+  Project details include a PC-backed edit form.
+- The app refreshes when it returns to the foreground and periodically while
+  active, so PC-side edits appear without pressing the refresh button.
+- Thumbnails are cached in memory (12 MiB LRU) and the Android cache directory
+  (64 MiB limit, 8 MiB per entry) to reduce first-render lag without unbounded
+  storage growth.
 
 ## Build
 

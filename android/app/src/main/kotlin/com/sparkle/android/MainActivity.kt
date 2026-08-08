@@ -107,6 +107,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sparkle.android.data.Clip
 import com.sparkle.android.data.ClipCreationSource
@@ -120,6 +123,7 @@ import com.sparkle.android.data.UploadSelection
 import com.sparkle.android.ui.SparkleTheme
 import com.sparkle.android.ui.SparkleThumbnail
 import com.sparkle.android.ui.SparkleViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -162,6 +166,17 @@ private fun SparkleRoot(
         viewModel.beginCreate(ClipCreationSource(upload = selectionForUri(context, uri)))
     }
     val openFilePicker = { filePicker.launch(arrayOf("*/*")) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner, viewModel) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.onAppResumed()
+            while (true) {
+                delay(30_000L)
+                viewModel.refresh()
+            }
+        }
+    }
 
     LaunchedEffect(pendingShare) {
         pendingShare?.let {
@@ -215,6 +230,8 @@ private fun SparkleRoot(
                 onOpenMenu = { scope.launch { drawerState.open() } },
             )
             is Screen.ProjectDetail -> ProjectDetailScreen(viewModel, currentScreen.projectId)
+            is Screen.ProjectEditor -> ProjectEditorScreen(viewModel, currentScreen.projectId)
+            is Screen.NoteEditor -> NoteEditorScreen(viewModel, currentScreen.noteId)
             is Screen.Detail -> DetailScreen(viewModel, currentScreen.clipId)
             is Screen.Editor -> EditorScreen(
                 viewModel = viewModel,
@@ -276,7 +293,7 @@ private fun SparkleDrawer(
             )
             NavigationDrawerItem(
                 label = { Text("プロジェクト") },
-                selected = viewModel.screen is Screen.Projects || viewModel.screen is Screen.ProjectDetail,
+                selected = viewModel.screen is Screen.Projects || viewModel.screen is Screen.ProjectDetail || viewModel.screen is Screen.ProjectEditor,
                 onClick = onProjects,
                 icon = { Icon(Icons.Default.Folder, contentDescription = null) },
                 modifier = Modifier.padding(vertical = 2.dp),
@@ -428,7 +445,7 @@ private fun ClipCard(
 ) {
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp).semantics { contentDescription = "クリップ \${clip.displayTitle}" },
+        modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp).semantics { contentDescription = "クリップ ${clip.displayTitle}" },
         shape = MaterialTheme.shapes.large,
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
@@ -437,7 +454,7 @@ private fun ClipCard(
                 SparkleThumbnail(
                     url = thumbnailUrl,
                     modifier = Modifier.fillMaxWidth().height(132.dp),
-                    contentDescription = "\${clip.displayTitle}のサムネイル",
+                    contentDescription = "${clip.displayTitle}のサムネイル",
                 )
                 if (clip.isFavorite) {
                     Icon(
@@ -472,7 +489,7 @@ private fun ClipCard(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TasksNotesScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) {
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by remember { mutableStateOf(viewModel.tasksNotesTab) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -507,7 +524,7 @@ private fun TasksNotesScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit
                 EmptyState(Icons.Default.Description, "メモはありません", "PC側で作成したメモがここに表示されます。")
             } else {
                 LazyColumn(contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(viewModel.notes, key = { it.id }) { note -> NoteCard(note) }
+                    items(viewModel.notes, key = { it.id }) { note -> NoteCard(note, onClick = { viewModel.openNoteEditor(note.id) }) }
                 }
             }
         }
@@ -521,9 +538,9 @@ private fun TaskCard(task: Task, onToggle: () -> Unit) {
             Checkbox(checked = task.isDone, onCheckedChange = { onToggle() })
             Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.weight(1f)) {
                 Text(task.title, style = MaterialTheme.typography.titleMedium, textDecoration = if (task.isDone) TextDecoration.LineThrough else TextDecoration.None)
-                task.clip?.let { Text("関連クリップ: \${it.displayTitle}", style = MaterialTheme.typography.bodySmall) }
+                task.clip?.let { Text("関連クリップ: ${it.displayTitle}", style = MaterialTheme.typography.bodySmall) }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    task.dueDate?.takeIf { it.isNotBlank() }?.let { Text("期限 \${it.take(10)}", style = MaterialTheme.typography.labelMedium) }
+                    task.dueDate?.takeIf { it.isNotBlank() }?.let { Text("期限 ${it.take(10)}", style = MaterialTheme.typography.labelMedium) }
                     task.priority?.let { Text("優先度 $it", style = MaterialTheme.typography.labelMedium) }
                 }
             }
@@ -532,16 +549,16 @@ private fun TaskCard(task: Task, onToggle: () -> Unit) {
 }
 
 @Composable
-private fun NoteCard(note: Note) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+private fun NoteCard(note: Note, onClick: () -> Unit) {
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(note.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textDecoration = if (note.isDone) TextDecoration.LineThrough else TextDecoration.None)
             note.body?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 5, overflow = TextOverflow.Ellipsis) }
             if (note.clips.isNotEmpty()) {
                 Text("関連クリップ: " + note.clips.joinToString("、") { it.displayTitle }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            note.task?.let { Text("関連タスク: \${it.title}", style = MaterialTheme.typography.bodySmall) }
-            Text("更新 \${formatDate(note.updatedAt)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            note.task?.let { Text("関連タスク: ${it.title}", style = MaterialTheme.typography.bodySmall) }
+            Text("更新 ${formatDate(note.updatedAt)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -574,6 +591,7 @@ private fun ProjectsScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) 
                         taskCount = viewModel.projectTasks(project.id).size,
                         noteCount = viewModel.projectNotes(project.id).size,
                         onClick = { viewModel.openProject(project.id) },
+                        onEdit = { viewModel.openProjectEditor(project.id) },
                     )
                 }
             }
@@ -582,13 +600,16 @@ private fun ProjectsScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) 
 }
 
 @Composable
-private fun ProjectCard(project: Project, clipCount: Int, taskCount: Int, noteCount: Int, onClick: () -> Unit) {
+private fun ProjectCard(project: Project, clipCount: Int, taskCount: Int, noteCount: Int, onClick: () -> Unit, onEdit: () -> Unit) {
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.Default.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Text(project.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 if (project.isDone) Text("完了", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                IconButton(onClick = onEdit, modifier = Modifier.semantics { contentDescription = "${project.name}を編集" }) {
+                    Icon(Icons.Default.Edit, contentDescription = null)
+                }
             }
             project.description?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis) }
             Text("クリップ $clipCount ・ タスク $taskCount ・ メモ $noteCount", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -609,6 +630,13 @@ private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
                         Icon(Icons.Default.ArrowBack, contentDescription = null)
                     }
                 },
+                actions = {
+                    if (project != null) {
+                        IconButton(onClick = { viewModel.openProjectEditor(project.id) }, modifier = Modifier.semantics { contentDescription = "プロジェクトを編集" }) {
+                            Icon(Icons.Default.Edit, contentDescription = null)
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             )
         },
@@ -622,17 +650,161 @@ private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
             item { SectionHeading("クリップ") }
             val projectClips = viewModel.projectClips(projectId)
             if (projectClips.isEmpty()) item { Text("関連するクリップはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            else items(projectClips, key = { "clip-\${it.id}" }) { clip ->
+            else items(projectClips, key = { "clip-${it.id}" }) { clip ->
                 ProjectClipRow(clip, viewModel.thumbnailUrl(clip.thumbnailUrl), onClick = { viewModel.openDetail(clip.id) })
             }
             item { SectionHeading("タスク") }
             val projectTasks = viewModel.projectTasks(projectId)
             if (projectTasks.isEmpty()) item { Text("関連するタスクはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            else items(projectTasks, key = { "task-\${it.id}" }) { task -> TaskCard(task, onToggle = { viewModel.toggleTask(task.id) }) }
+            else items(projectTasks, key = { "task-${it.id}" }) { task -> TaskCard(task, onToggle = { viewModel.toggleTask(task.id) }) }
             item { SectionHeading("メモ") }
             val projectNotes = viewModel.projectNotes(projectId)
             if (projectNotes.isEmpty()) item { Text("関連するメモはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            else items(projectNotes, key = { "note-\${it.id}" }) { note -> NoteCard(note) }
+            else items(projectNotes, key = { "note-${it.id}" }) { note -> NoteCard(note, onClick = { viewModel.openNoteEditor(note.id) }) }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProjectEditorScreen(viewModel: SparkleViewModel, projectId: Int) {
+    val project = viewModel.project(projectId)
+    var name by remember(projectId, project) { mutableStateOf(project?.name.orEmpty()) }
+    var description by remember(projectId, project) { mutableStateOf(project?.description.orEmpty()) }
+    var validationError by remember(projectId) { mutableStateOf<String?>(null) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("プロジェクトを編集") },
+                navigationIcon = {
+                    IconButton(onClick = { viewModel.openProject(projectId) }, modifier = Modifier.semantics { contentDescription = "プロジェクト詳細へ戻る" }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = null)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            )
+        },
+    ) { padding ->
+        if (project == null) {
+            EmptyState(Icons.Default.ErrorOutline, "プロジェクトが見つかりません", "PC側で削除された可能性があります。", Modifier.padding(padding))
+            return@Scaffold
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 10.dp)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("プロジェクトの変更はPC API経由で保存されます。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            viewModel.errorMessage?.let { ErrorBanner(it, viewModel::clearError) }
+            validationError?.let { ErrorBanner(it) { validationError = null } }
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it; validationError = null },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("プロジェクト名") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("説明") },
+                minLines = 5,
+            )
+            Button(
+                onClick = {
+                    if (name.trim().isBlank()) {
+                        validationError = "プロジェクト名を入力してください。"
+                    } else {
+                        viewModel.updateProject(projectId, name, description)
+                    }
+                },
+                enabled = !viewModel.isBusy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (viewModel.isBusy) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text("変更を保存")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NoteEditorScreen(viewModel: SparkleViewModel, noteId: Int) {
+    val note = viewModel.note(noteId)
+    var title by remember(noteId, note) { mutableStateOf(note?.title.orEmpty()) }
+    var body by remember(noteId, note) { mutableStateOf(note?.body.orEmpty()) }
+    var validationError by remember(noteId) { mutableStateOf<String?>(null) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("メモを編集") },
+                navigationIcon = {
+                    IconButton(onClick = { viewModel.openTasksNotes(tab = 1) }, modifier = Modifier.semantics { contentDescription = "メモ一覧へ戻る" }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = null)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            )
+        },
+    ) { padding ->
+        if (note == null) {
+            EmptyState(Icons.Default.ErrorOutline, "メモが見つかりません", "PC側で削除された可能性があります。", Modifier.padding(padding))
+            return@Scaffold
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 10.dp)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("メモの変更はPC API経由で保存されます。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            viewModel.errorMessage?.let { ErrorBanner(it, viewModel::clearError) }
+            validationError?.let { ErrorBanner(it) { validationError = null } }
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it; validationError = null },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("タイトル") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = body,
+                onValueChange = { body = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("本文") },
+                minLines = 8,
+            )
+            Button(
+                onClick = {
+                    if (title.trim().isBlank()) {
+                        validationError = "メモのタイトルを入力してください。"
+                    } else {
+                        viewModel.updateNote(noteId, title, body)
+                    }
+                },
+                enabled = !viewModel.isBusy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (viewModel.isBusy) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text("変更を保存")
+            }
         }
     }
 }
@@ -646,7 +818,7 @@ private fun SectionHeading(title: String) {
 private fun ProjectClipRow(clip: Clip, thumbnailUrl: String?, onClick: () -> Unit) {
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SparkleThumbnail(url = thumbnailUrl, modifier = Modifier.size(width = 84.dp, height = 64.dp), contentDescription = "\${clip.displayTitle}のサムネイル")
+            SparkleThumbnail(url = thumbnailUrl, modifier = Modifier.size(width = 84.dp, height = 64.dp), contentDescription = "${clip.displayTitle}のサムネイル")
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(clip.displayTitle, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(clip.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -685,7 +857,7 @@ private fun DetailScreen(viewModel: SparkleViewModel, clipId: Int) {
             return@Scaffold
         }
         Column(modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            SparkleThumbnail(url = viewModel.thumbnailUrl(clip.thumbnailUrl), modifier = Modifier.fillMaxWidth().height(210.dp), contentDescription = "\${clip.displayTitle}のサムネイル")
+            SparkleThumbnail(url = viewModel.thumbnailUrl(clip.thumbnailUrl), modifier = Modifier.fillMaxWidth().height(210.dp), contentDescription = "${clip.displayTitle}のサムネイル")
             Text(clip.displayTitle, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(clip.url, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
             if (clip.url.startsWith("http://") || clip.url.startsWith("https://")) {

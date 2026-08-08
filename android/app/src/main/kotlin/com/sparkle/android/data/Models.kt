@@ -129,6 +129,8 @@ sealed interface Screen {
     data object TasksNotes : Screen
     data object Projects : Screen
     data class ProjectDetail(val projectId: Int) : Screen
+    data class ProjectEditor(val projectId: Int) : Screen
+    data class NoteEditor(val noteId: Int) : Screen
     data class Detail(val clipId: Int) : Screen
     data class Editor(val clipId: Int?) : Screen
     data object Settings : Screen

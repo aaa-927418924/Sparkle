@@ -46,6 +46,30 @@ class SparkleApi private constructor(
     fun toggleTask(taskId: Int): Task =
         parseTask(request("PATCH", "/tasks/$taskId/toggle"))
 
+    fun updateNote(noteId: Int, title: String, body: String?): Note =
+        parseNote(
+            request(
+                "PUT",
+                "/notes/$noteId",
+                JSONObject().apply {
+                    put("title", title)
+                    putNullable("body", body)
+                },
+            ),
+        )
+
+    fun updateProject(projectId: Int, name: String, description: String?): Project =
+        parseProject(
+            request(
+                "PUT",
+                "/projects/$projectId",
+                JSONObject().apply {
+                    put("name", name)
+                    putNullable("description", description)
+                },
+            ),
+        )
+
     fun uploadLocalClip(
         contentResolver: ContentResolver,
         selection: UploadSelection,

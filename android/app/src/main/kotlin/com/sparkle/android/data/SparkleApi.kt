@@ -267,6 +267,64 @@ class SparkleApi private constructor(
         }
     }
 
+    /** Returns the PC-mediated stream URL for a local clip. */
+    fun localFileUrl(clipId: Int): String = "$baseUrl/clips/$clipId/file"
+
+    /** Loads the small text preview exposed by the existing PC API. */
+    fun loadTextPreview(clipId: Int): String {
+        val response = request("GET", "/clips/$clipId/text-preview")
+        return response.optString("preview", response.optString("text"))
+    }
+
+    /**
+     * Streams a local clip from the PC without exposing its filesystem path.
+     * A preview limit keeps opening large files from filling the app cache.
+     */
+    fun streamLocalFile(
+        clipId: Int,
+        output: OutputStream,
+        maxBytes: Long? = null,
+    ) {
+        val connection = (URL(localFileUrl(clipId)).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = TIMEOUT_MS
+            readTimeout = FILE_TRANSFER_TIMEOUT_MS
+            useCaches = false
+            setRequestProperty("Accept", "*/*")
+        }
+        try {
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                throw ApiException(status, "PC API returned HTTP $status")
+            }
+            val contentLength = connection.contentLengthLong
+            if (maxBytes != null && contentLength > maxBytes) {
+                throw IOException("プレビュー対象のファイルが大きすぎます")
+            }
+            connection.inputStream.use { input ->
+                val buffer = ByteArray(BUFFER_SIZE)
+                var total = 0L
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    if (maxBytes != null && total > maxBytes) {
+                        throw IOException("プレビュー対象のファイルが大きすぎます")
+                    }
+                    output.write(buffer, 0, count)
+                }
+            }
+        } catch (error: ApiException) {
+            throw error
+        } catch (error: IOException) {
+            throw error
+        } catch (error: Exception) {
+            throw IOException("ローカルファイルを取得できません", error)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     /**
      * Converts an API thumbnail into an HTTPS URL the Android client can load.
      * External URLs go through the PC's existing thumbnail proxy so the app does
@@ -562,6 +620,7 @@ class SparkleApi private constructor(
     companion object {
         private const val TIMEOUT_MS = 10_000
         private const val UPLOAD_TIMEOUT_MS = 120_000
+        private const val FILE_TRANSFER_TIMEOUT_MS = 180_000
         private const val BUFFER_SIZE = 16 * 1024
         private const val METADATA_TIMEOUT_MS = 8_000
         private const val MAX_METADATA_BYTES = 512 * 1024

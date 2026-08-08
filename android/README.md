@@ -59,6 +59,18 @@ selection and Android Sharesheet files use the existing multipart
 - Thumbnails are cached in memory (12 MiB LRU) and the Android cache directory
   (64 MiB limit, 8 MiB per entry) to reduce first-render lag without unbounded
   storage growth.
+- Local clips stay on the PC and are retrieved through `GET
+  /clips/{id}/file`; the Android client never requests the PC filesystem path.
+  Image, text, and video files can be previewed in the detail screen. Other
+  file types are streamed into a bounded temporary cache and opened through an
+  Android `FileProvider` when a compatible app is installed. Folders are shown
+  as unavailable for preview/download.
+- The download action saves files to the public `Downloads/Sparkle` directory
+  on Android 10 and later. Older supported Android versions use the app's
+  `Downloads/Sparkle` directory because the project intentionally avoids broad
+  storage permissions. Temporary full-file preview data is capped at 128 MiB;
+  it is cache data, not a local copy of the PC clip database.
+- The launcher and round icon use the repository root `Icon.png` unchanged.
 
 ## Build
 

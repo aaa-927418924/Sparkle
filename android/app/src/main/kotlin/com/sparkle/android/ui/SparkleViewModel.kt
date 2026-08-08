@@ -1,11 +1,16 @@
 package com.sparkle.android.ui
 
 import android.app.Application
+import android.content.ContentValues
 import android.os.Handler
 import android.os.Looper
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.annotation.RequiresApi
 import androidx.lifecycle.AndroidViewModel
 import com.sparkle.android.data.ApiException
 import com.sparkle.android.data.AppSettings
@@ -25,7 +30,9 @@ import com.sparkle.android.data.StatusFilter
 import com.sparkle.android.data.Tag
 import com.sparkle.android.data.Task
 import com.sparkle.android.data.UploadSelection
+import java.io.File
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.random.Random
@@ -78,6 +85,10 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
     var isBusy by mutableStateOf(false)
         private set
     var errorMessage by mutableStateOf<String?>(null)
+        private set
+    var fileActionMessage by mutableStateOf<String?>(null)
+        private set
+    var fileActionBusy by mutableStateOf(false)
         private set
 
     private var api: SparkleApi? = SparkleApi.fromBaseUrl(baseUrl)
@@ -232,6 +243,89 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
                 postFailure(error)
             }
         }
+    }
+
+    fun localFileUrl(clipId: Int): String? = api?.localFileUrl(clipId)
+
+    fun loadTextPreview(clipId: Int): String {
+        return api?.loadTextPreview(clipId) ?: throw IOException("PC接続設定がありません")
+    }
+
+    fun prepareLocalFilePreview(
+        clipId: Int,
+        fileName: String,
+        mimeType: String?,
+        onReady: (path: String, mimeType: String?) -> Unit,
+    ) {
+        val currentApi = api ?: run {
+            fileActionMessage = "先にPC接続設定を登録してください。"
+            return
+        }
+        if (fileActionBusy) return
+        fileActionBusy = true
+        fileActionMessage = null
+        executor.execute {
+            val previewDirectory = File(getApplication<Application>().cacheDir, "sparkle-file-preview")
+                .apply { mkdirs() }
+            trimPreviewCache(previewDirectory)
+            val target = File(previewDirectory, "${clipId}-${UUID.randomUUID()}-${sanitizeFileName(fileName)}")
+            try {
+                target.outputStream().use { output ->
+                    currentApi.streamLocalFile(clipId, output, MAX_LOCAL_PREVIEW_BYTES)
+                }
+                trimPreviewCache(previewDirectory, protected = target)
+                mainHandler.post {
+                    fileActionBusy = false
+                    onReady(target.absolutePath, mimeType)
+                }
+            } catch (error: Throwable) {
+                target.delete()
+                mainHandler.post {
+                    fileActionBusy = false
+                    fileActionMessage = localFileErrorMessage(error, preview = true)
+                }
+            }
+        }
+    }
+
+    fun downloadLocalFile(clipId: Int, fileName: String, mimeType: String?) {
+        val currentApi = api ?: run {
+            fileActionMessage = "先にPC接続設定を登録してください。"
+            return
+        }
+        if (fileActionBusy) return
+        fileActionBusy = true
+        fileActionMessage = null
+        executor.execute {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    downloadToMediaStore(currentApi, clipId, fileName, mimeType)
+                } else {
+                    downloadToAppSpecificDirectory(currentApi, clipId, fileName)
+                }
+                mainHandler.post {
+                    fileActionBusy = false
+                    fileActionMessage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        "「${sanitizeFileName(fileName)}」をDownloads/Sparkleに保存しました。"
+                    } else {
+                        "「${sanitizeFileName(fileName)}」をアプリ専用のDownloads/Sparkleに保存しました。"
+                    }
+                }
+            } catch (error: Throwable) {
+                mainHandler.post {
+                    fileActionBusy = false
+                    fileActionMessage = localFileErrorMessage(error, preview = false)
+                }
+            }
+        }
+    }
+
+    fun clearFileActionMessage() {
+        fileActionMessage = null
+    }
+
+    fun showFileActionMessage(message: String) {
+        fileActionMessage = message
     }
 
     fun updateClip(clipId: Int, draft: ClipDraft) {
@@ -721,10 +815,84 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
     private fun initialConnectionState(): ConnectionState =
         if (baseUrl.isBlank()) ConnectionState.Unconfigured else ConnectionState.Checking
 
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun downloadToMediaStore(
+        currentApi: SparkleApi,
+        clipId: Int,
+        fileName: String,
+        mimeType: String?,
+    ) {
+        val resolver = getApplication<Application>().contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, sanitizeFileName(fileName))
+            mimeType?.let { put(MediaStore.MediaColumns.MIME_TYPE, it) }
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/Sparkle")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val uri = resolver.insert(collection, values)
+            ?: throw IOException("Downloadsフォルダへ保存できません")
+        try {
+            resolver.openOutputStream(uri)?.use { output ->
+                currentApi.streamLocalFile(clipId, output)
+            } ?: throw IOException("保存先を開けません")
+            resolver.update(
+                uri,
+                ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
+                null,
+                null,
+            )
+        } catch (error: Throwable) {
+            resolver.delete(uri, null, null)
+            throw error
+        }
+    }
+
+    private fun downloadToAppSpecificDirectory(currentApi: SparkleApi, clipId: Int, fileName: String) {
+        val root = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: throw IOException("Downloadsフォルダを利用できません")
+        val directory = File(root, "Sparkle").apply { mkdirs() }
+        File(directory, sanitizeFileName(fileName)).outputStream().use { output ->
+            currentApi.streamLocalFile(clipId, output)
+        }
+    }
+
+    private fun trimPreviewCache(directory: File, protected: File? = null) {
+        val files = directory.listFiles { file -> file.isFile }.orEmpty()
+        var total = files.sumOf { it.length() }
+        if (total <= FILE_PREVIEW_CACHE_BYTES) return
+        files.sortedBy { it.lastModified() }.forEach { file ->
+            if (total <= FILE_PREVIEW_CACHE_BYTES) return@forEach
+            if (file == protected) return@forEach
+            total -= file.length()
+            file.delete()
+        }
+    }
+
+    private fun localFileErrorMessage(error: Throwable, preview: Boolean): String = when {
+        error is ApiException -> "ローカルファイルを取得できません（HTTP ${error.statusCode}）。"
+        error is IOException && preview && error.message?.contains("大きすぎます") == true ->
+            "プレビューできるサイズを超えています。ダウンロードを試してください。"
+        error is IOException -> "PCからローカルファイルを取得できません。PCとTailscale接続を確認してください。"
+        else -> if (preview) "ローカルファイルをプレビューできませんでした。" else "ローカルファイルをダウンロードできませんでした。"
+    }
+
     override fun onCleared() {
         executor.shutdownNow()
         super.onCleared()
     }
+}
+
+private const val MAX_LOCAL_PREVIEW_BYTES = 128L * 1024 * 1024
+private const val FILE_PREVIEW_CACHE_BYTES = 128L * 1024 * 1024
+
+private fun sanitizeFileName(raw: String): String {
+    val sanitized = raw
+        .replace(Regex("[<>:\"/\\\\|?*]"), "_")
+        .trim()
+        .trimEnd('.')
+        .take(180)
+    return sanitized.ifBlank { "sparkle-file" }
 }
 
 private fun StatusFilter.matches(isDone: Boolean): Boolean = when (this) {

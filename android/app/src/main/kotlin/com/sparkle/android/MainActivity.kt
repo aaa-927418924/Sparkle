@@ -1,11 +1,15 @@
 package com.sparkle.android
 
 import android.content.Context
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
+import android.widget.MediaController
+import android.widget.VideoView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -46,6 +50,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -58,6 +63,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Folder
@@ -110,6 +116,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -121,10 +128,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -145,8 +155,12 @@ import com.sparkle.android.data.UploadSelection
 import com.sparkle.android.ui.SparkleTheme
 import com.sparkle.android.ui.SparkleThumbnail
 import com.sparkle.android.ui.SparkleViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.Locale
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -1562,9 +1576,20 @@ private fun DetailScreen(viewModel: SparkleViewModel, clipId: Int) {
             return@Scaffold
         }
         Column(modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            SparkleThumbnail(url = viewModel.thumbnailUrl(clip.thumbnailUrl), modifier = Modifier.fillMaxWidth().height(210.dp), contentDescription = "${clip.displayTitle}のサムネイル")
+            viewModel.errorMessage?.let { ErrorBanner(it, viewModel::clearError) }
+            viewModel.fileActionMessage?.let { FileActionBanner(it, viewModel::clearFileActionMessage) }
+            if (clip.clipType == "local") {
+                LocalFileDetail(viewModel, clip, context)
+            } else {
+                SparkleThumbnail(url = viewModel.thumbnailUrl(clip.thumbnailUrl), modifier = Modifier.fillMaxWidth().height(210.dp), contentDescription = "${clip.displayTitle}のサムネイル")
+            }
             Text(clip.displayTitle, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(clip.url, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            if (clip.clipType == "local") {
+                DetailField("ファイル名", localFileName(clip))
+                clip.fileSize?.let { DetailField("サイズ", formatFileSize(it)) }
+            } else {
+                Text(clip.url, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
             if (clip.url.startsWith("http://") || clip.url.startsWith("https://")) {
                 OutlinedButton(onClick = { openClipUrl(context, clip.url) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.OpenInNew, contentDescription = null)
@@ -1581,6 +1606,227 @@ private fun DetailScreen(viewModel: SparkleViewModel, clipId: Int) {
             Text(clip.comment?.takeIf { it.isNotBlank() } ?: "コメントはありません。", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(24.dp))
         }
+    }
+}
+
+@Composable
+private fun LocalFileDetail(
+    viewModel: SparkleViewModel,
+    clip: Clip,
+    context: Context,
+) {
+    val fileName = localFileName(clip)
+    val mimeType = localFileMimeType(clip)
+    val fileUrl = viewModel.localFileUrl(clip.id)
+    var isPreparingPreview by remember(clip.id) { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        when {
+            clip.isFolder -> Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(Icons.Default.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text("フォルダはAndroid上でプレビュー・ダウンロードできません。", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            localFileKind(clip) == LocalFileKind.Image && fileUrl != null -> SparkleThumbnail(
+                url = fileUrl,
+                modifier = Modifier.fillMaxWidth().height(240.dp),
+                contentDescription = "${clip.displayTitle}のファイルプレビュー",
+            )
+            localFileKind(clip) == LocalFileKind.Text -> LocalTextPreview(viewModel, clip.id)
+            localFileKind(clip) == LocalFileKind.Video && fileUrl != null -> LocalVideoPreview(fileUrl)
+            else -> Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(Icons.Default.AttachFile, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text("この形式は、端末の対応アプリでプレビューできます。", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+
+        if (!clip.isFolder) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (localFileKind(clip) == LocalFileKind.Other) {
+                    OutlinedButton(
+                        onClick = {
+                            isPreparingPreview = true
+                            viewModel.prepareLocalFilePreview(clip.id, fileName, mimeType) { path, preparedMimeType ->
+                                isPreparingPreview = false
+                                if (!openLocalFile(context, path, preparedMimeType ?: mimeType)) {
+                                    viewModel.showFileActionMessage("このファイルを開ける対応アプリがありません。")
+                                }
+                            }
+                        },
+                        enabled = fileUrl != null && !viewModel.fileActionBusy,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        if (isPreparingPreview) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.OpenInNew, contentDescription = null)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text("対応アプリでプレビュー")
+                    }
+                }
+                Button(
+                    onClick = { viewModel.downloadLocalFile(clip.id, fileName, mimeType) },
+                    enabled = fileUrl != null && !viewModel.fileActionBusy,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("ダウンロード")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalTextPreview(viewModel: SparkleViewModel, clipId: Int) {
+    val state by produceState<LocalTextPreviewState>(
+        initialValue = LocalTextPreviewState.Loading,
+        key1 = clipId,
+        key2 = viewModel.baseUrl,
+    ) {
+        value = try {
+            LocalTextPreviewState.Loaded(withContext(Dispatchers.IO) { viewModel.loadTextPreview(clipId) })
+        } catch (_: Throwable) {
+            LocalTextPreviewState.Failed
+        }
+    }
+    when (state) {
+        LocalTextPreviewState.Loading -> Card(modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text("テキストを読み込んでいます…")
+            }
+        }
+        is LocalTextPreviewState.Loaded -> Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            SelectionContainer {
+                Text(
+                    (state as LocalTextPreviewState.Loaded).text.ifBlank { "（内容が空です）" },
+                    modifier = Modifier.padding(14.dp),
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                )
+            }
+        }
+        LocalTextPreviewState.Failed -> Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("テキストプレビューを取得できませんでした。", modifier = Modifier.padding(14.dp))
+        }
+    }
+}
+
+@Composable
+private fun LocalVideoPreview(fileUrl: String) {
+    AndroidView(
+        factory = { context ->
+            VideoView(context).apply {
+                tag = fileUrl
+                setMediaController(MediaController(context).also { it.setAnchorView(this) })
+                setVideoURI(Uri.parse(fileUrl))
+            }
+        },
+        update = { videoView ->
+            if (videoView.tag != fileUrl) {
+                videoView.tag = fileUrl
+                videoView.setVideoURI(Uri.parse(fileUrl))
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(220.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .semantics { contentDescription = "動画プレビュー" },
+    )
+}
+
+private enum class LocalFileKind {
+    Image,
+    Text,
+    Video,
+    Other,
+}
+
+private sealed interface LocalTextPreviewState {
+    data object Loading : LocalTextPreviewState
+    data class Loaded(val text: String) : LocalTextPreviewState
+    data object Failed : LocalTextPreviewState
+}
+
+private fun localFileKind(clip: Clip): LocalFileKind = when (localFileExtension(clip).orEmpty()) {
+    in setOf("png", "jpg", "jpeg", "gif", "webp", "bmp", "ico") -> LocalFileKind.Image
+    in setOf("txt", "md", "json", "csv", "log", "xml", "yaml", "yml", "toml", "ini", "cfg", "conf", "py", "js", "ts", "html", "css", "java", "c", "cpp", "h", "rs", "go", "rb", "php", "sh", "bat", "sql") -> LocalFileKind.Text
+    in setOf("mp4", "webm", "ogg", "mov", "avi", "mkv") -> LocalFileKind.Video
+    else -> LocalFileKind.Other
+}
+
+private fun localFileExtension(clip: Clip): String? {
+    val source = clip.url.substringBefore('?').substringAfterLast('/').substringAfterLast('\\')
+    return source.substringAfterLast('.', "").lowercase(Locale.ROOT).takeIf { it.isNotBlank() && it.length <= 10 }
+}
+
+private fun localFileName(clip: Clip): String {
+    val source = clip.url.substringBefore('?').substringAfterLast('/').substringAfterLast('\\')
+    val extension = localFileExtension(clip)
+    val title = clip.title?.trim().takeIf { !it.isNullOrBlank() } ?: source.ifBlank { "sparkle-file" }
+    val withExtension = if (extension != null && !title.lowercase(Locale.ROOT).endsWith(".$extension")) {
+        "$title.$extension"
+    } else {
+        title
+    }
+    return withExtension
+        .replace(Regex("[<>:\"/\\\\|?*]"), "_")
+        .trim()
+        .trimEnd('.')
+        .take(180)
+        .ifBlank { "sparkle-file" }
+}
+
+private fun localFileMimeType(clip: Clip): String? =
+    localFileExtension(clip)?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) }
+
+private fun openLocalFile(context: Context, path: String, mimeType: String?): Boolean {
+    val file = File(path)
+    if (!file.isFile) return false
+    val uri = runCatching {
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    }.getOrNull() ?: return false
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, mimeType ?: "application/octet-stream")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    return try {
+        context.startActivity(intent)
+        true
+    } catch (_: ActivityNotFoundException) {
+        false
+    } catch (_: SecurityException) {
+        false
     }
 }
 
@@ -1905,6 +2151,24 @@ private fun ErrorBanner(message: String, onDismiss: () -> Unit) {
 }
 
 @Composable
+private fun FileActionBanner(message: String, onDismiss: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Text(message, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            TextButton(onClick = onDismiss) { Text("閉じる") }
+        }
+    }
+}
+
+@Composable
 private fun LoadingState() {
     EmptyState(Icons.Default.Refresh, "PCから読み込み中", "クリップ、タスク、メモ、プロジェクトを取得しています。", showProgress = true)
 }
@@ -1962,6 +2226,19 @@ private fun statusLabel(state: ConnectionState): String = when (state) {
 }
 
 private fun formatDate(value: String): String = value.take(19).replace('T', ' ')
+
+private fun formatFileSize(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val units = listOf("KB", "MB", "GB", "TB")
+    var value = bytes.toDouble()
+    var unit = units.first()
+    for (candidate in units) {
+        value /= 1024.0
+        unit = candidate
+        if (value < 1024.0 || candidate == units.last()) break
+    }
+    return "%.1f %s".format(Locale.ROOT, value, unit)
+}
 
 private fun dueDateToMillis(value: String): Long? = runCatching {
     LocalDate.parse(value).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()

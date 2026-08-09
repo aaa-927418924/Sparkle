@@ -6,7 +6,14 @@
   const backdrop = document.getElementById("remoteDrawerBackdrop");
   const menuButton = document.getElementById("remoteMenuButton");
   const drawerClose = document.getElementById("remoteDrawerClose");
-  if (!main || !fileInput || !toast || !drawer || !backdrop || !menuButton || !drawerClose) return;
+  const clipActionDialog = document.getElementById("remoteClipActionDialog");
+  const clipActionSummary = document.getElementById("remoteClipActionSummary");
+  const clipFavoriteAction = document.getElementById("remoteClipFavoriteAction");
+  const clipDeleteAction = document.getElementById("remoteClipDeleteAction");
+  if (
+    !main || !fileInput || !toast || !drawer || !backdrop || !menuButton || !drawerClose ||
+    !clipActionDialog || !clipActionSummary || !clipFavoriteAction || !clipDeleteAction
+  ) return;
 
   const state = {
     screen: "home",
@@ -19,6 +26,7 @@
     projects: [],
     search: "",
     category: "",
+    tagFilter: "",
     favoritesOnly: false,
     sort: "date_desc",
     editingClip: null,
@@ -29,6 +37,8 @@
     loading: false,
   };
   let toastTimer = null;
+  let clipActionTarget = null;
+  let clipActionTrigger = null;
 
   function escapeHtml(value) {
     return String(value == null ? "" : value)
@@ -113,9 +123,33 @@
     return category ? category.name : "";
   }
 
+  function youtubeThumbnailUrl(rawUrl) {
+    const source = safeHref(rawUrl);
+    if (!source) return "";
+    try {
+      const parsed = new URL(source);
+      const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      let videoId = "";
+      if (host === "youtu.be") {
+        videoId = parts[0] || "";
+      } else if (host === "youtube.com" || host === "youtube-nocookie.com") {
+        if (parts[0] === "watch") videoId = parsed.searchParams.get("v") || "";
+        if (["shorts", "embed", "live", "v"].includes(parts[0])) videoId = parts[1] || "";
+      }
+      if (!/^[A-Za-z0-9_-]{6,64}$/.test(videoId)) return "";
+      return "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg";
+    } catch {
+      return "";
+    }
+  }
+
   function clipImageUrl(clip) {
-    if (!clip?.thumbnail_url) return "";
-    const raw = String(clip.thumbnail_url);
+    const raw = String(clip?.thumbnail_url || "").trim();
+    if (!raw) {
+      const fallback = youtubeThumbnailUrl(clip?.url);
+      return fallback ? "/thumbnail-proxy?url=" + encodeURIComponent(fallback) : "";
+    }
     if (raw.startsWith("/")) return raw;
     const external = safeHref(raw);
     return external ? "/thumbnail-proxy?url=" + encodeURIComponent(external) : "";
@@ -142,7 +176,11 @@
     const values = Array.isArray(tags) ? tags : [];
     if (!values.length) return "";
     return '<div class="remote-tag-row">' + values.map((tag) => (
-      '<span class="remote-chip">' + escapeHtml(tag.name || tag) + "</span>"
+      (() => {
+        const name = String(tag.name || tag);
+        const selected = state.tagFilter === name;
+        return '<button class="remote-chip remote-tag-chip ' + (selected ? "active" : "") + '" type="button" data-tag-filter="' + escapeHtml(name) + '" aria-pressed="' + (selected ? "true" : "false") + '" aria-label="タグ「' + escapeHtml(name) + '」で絞り込む">' + escapeHtml(name) + "</button>";
+      })()
     )).join("") + "</div>";
   }
 
@@ -163,6 +201,7 @@
     let clips = state.clips.filter((clip) => {
       if (state.favoritesOnly && !clip.is_favorite) return false;
       if (state.category && String(clip.category_id) !== String(state.category)) return false;
+      if (state.tagFilter && !(Array.isArray(clip.tags) && clip.tags.some((tag) => String(tag.name || tag) === state.tagFilter))) return false;
       if (!query) return true;
       const haystack = [
         clip.title,
@@ -185,15 +224,17 @@
   function renderClipCard(clip) {
     const image = clipImageUrl(clip);
     const source = safeHref(clip?.url);
+    const title = clipTitle(clip);
     return (
-      '<article class="remote-card">' +
+      '<article class="remote-card" data-detail-id="' + Number(clip.id) + '" tabindex="0" role="button" aria-label="' + escapeHtml(title) + 'の詳細を見る">' +
         '<div class="remote-card-media">' +
         (image
           ? '<img src="' + escapeHtml(image) + '" alt="" loading="lazy" />'
           : '<span class="remote-card-media-placeholder" aria-hidden="true">' + (clip.clip_type === "local" ? "▧" : "✦") + "</span>") +
+        (clip.is_favorite ? '<span class="remote-card-favorite" aria-label="お気に入り">★</span>' : "") +
         "</div>" +
         '<div class="remote-card-body">' +
-          '<h2 class="remote-card-title">' + escapeHtml(clipTitle(clip)) + "</h2>" +
+          '<h2 class="remote-card-title">' + escapeHtml(title) + "</h2>" +
           '<div class="remote-card-meta"><span>' + escapeHtml(clipSourceLabel(clip)) + "</span>" +
           (categoryName(clip.category_id) ? "<span>·</span><span>" + escapeHtml(categoryName(clip.category_id)) + "</span>" : "") +
           (clip.created_at ? "<span>·</span><span>" + escapeHtml(formatDate(clip.created_at)) + "</span>" : "") +
@@ -202,10 +243,6 @@
             ? '<a class="remote-card-url" href="' + escapeHtml(source) + '" target="_blank" rel="noreferrer">' + escapeHtml(clip.url) + "</a>"
             : '<span class="remote-card-url">' + escapeHtml(clip.url || "PC内のファイル") + "</span>") +
           renderTags(clip.tags) +
-          '<div class="remote-card-actions">' +
-            '<button class="remote-primary-button remote-card-open" type="button" data-detail-id="' + Number(clip.id) + '">詳細を見る</button>' +
-            '<button class="remote-quiet-button remote-star ' + (clip.is_favorite ? "active" : "") + '" type="button" data-favorite-id="' + Number(clip.id) + '" aria-label="' + (clip.is_favorite ? "お気に入りを解除" : "お気に入りに追加") + '">' + (clip.is_favorite ? "★" : "☆") + "</button>" +
-          "</div>" +
         "</div>" +
       "</article>"
     );
@@ -232,6 +269,11 @@
           '<button id="remoteFavoriteFilter" class="remote-secondary-button" type="button">' + (state.favoritesOnly ? "★ お気に入り中" : "☆ お気に入り") + "</button>" +
         "</div>" +
         '<div class="remote-filter-row" aria-label="カテゴリ">' + categories + "</div>" +
+        '<div class="remote-filter-row remote-tag-filter-row" aria-label="タグ絞り込み">' +
+          (state.tagFilter
+            ? '<span class="remote-filter-label">タグ:</span><button class="remote-chip active" type="button" data-clear-tag-filter aria-label="タグ「' + escapeHtml(state.tagFilter) + '」の絞り込みを解除">' + escapeHtml(state.tagFilter) + ' ×</button>'
+            : '<span class="remote-filter-hint">クリップのタグをタップすると、そのタグだけに絞り込めます。</span>') +
+        "</div>" +
         '<div class="remote-filter-row">' +
           '<label class="remote-field" style="min-width: 170px;">並び順<select id="remoteSort"><option value="date_desc">最近追加した順</option><option value="title">タイトル順</option><option value="random">ランダム</option></select></label>' +
         "</div>" +
@@ -265,13 +307,115 @@
         renderHome();
       });
     });
-    main.querySelectorAll("[data-detail-id]").forEach((button) => {
-      button.addEventListener("click", () => renderDetail(Number(button.dataset.detailId)));
+    main.querySelector("[data-clear-tag-filter]")?.addEventListener("click", () => {
+      state.tagFilter = "";
+      renderHome();
     });
-    main.querySelectorAll("[data-favorite-id]").forEach((button) => {
-      button.addEventListener("click", () => toggleFavorite(Number(button.dataset.favoriteId)));
+    main.querySelectorAll("[data-tag-filter]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const tag = button.dataset.tagFilter || "";
+        state.tagFilter = state.tagFilter === tag ? "" : tag;
+        renderHome();
+      });
+    });
+    main.querySelectorAll("[data-detail-id]").forEach((card) => {
+      let pressTimer = null;
+      let pressStart = null;
+      let longPressed = false;
+      const clearPress = (resetLongPress = false) => {
+        if (pressTimer !== null) window.clearTimeout(pressTimer);
+        pressTimer = null;
+        pressStart = null;
+        if (resetLongPress) longPressed = false;
+      };
+      card.addEventListener("pointerdown", (event) => {
+        if (event.target.closest("a, button")) return;
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        clearPress(true);
+        pressStart = { x: event.clientX, y: event.clientY };
+        pressTimer = window.setTimeout(() => {
+          longPressed = true;
+          clearPress();
+          openClipActionDialog(Number(card.dataset.detailId), card);
+        }, 550);
+      });
+      card.addEventListener("pointermove", (event) => {
+        if (!pressStart) return;
+        if (Math.hypot(event.clientX - pressStart.x, event.clientY - pressStart.y) > 10) {
+          clearPress(true);
+        }
+      });
+      card.addEventListener("pointerup", () => clearPress());
+      card.addEventListener("pointercancel", () => clearPress(true));
+      card.addEventListener("pointerleave", (event) => {
+        if (event.pointerType === "mouse") clearPress(true);
+      });
+      card.addEventListener("contextmenu", (event) => {
+        if (longPressed) event.preventDefault();
+      });
+      card.addEventListener("click", (event) => {
+        if (longPressed) {
+          longPressed = false;
+          event.preventDefault();
+          return;
+        }
+        if (event.target.closest("a, button")) return;
+        renderDetail(Number(card.dataset.detailId));
+      });
+      card.addEventListener("keydown", (event) => {
+        if (event.target !== card || !["Enter", " "].includes(event.key)) return;
+        event.preventDefault();
+        renderDetail(Number(card.dataset.detailId));
+      });
     });
   }
+
+  function closeClipActionDialog() {
+    clipActionTarget = null;
+    if (clipActionDialog.open) clipActionDialog.close();
+    else clipActionDialog.removeAttribute("open");
+  }
+
+  function openClipActionDialog(id, trigger) {
+    const clip = state.clips.find((item) => Number(item.id) === Number(id));
+    if (!clip) return;
+    clipActionTarget = clip;
+    clipActionTrigger = trigger || null;
+    clipActionSummary.textContent = clipTitle(clip);
+    clipFavoriteAction.textContent = clip.is_favorite ? "お気に入りを解除" : "お気に入り";
+    clipFavoriteAction.setAttribute("aria-label", clip.is_favorite ? "お気に入りを解除" : "お気に入りに追加");
+    if (typeof clipActionDialog.showModal === "function") {
+      clipActionDialog.showModal();
+    } else {
+      clipActionDialog.setAttribute("open", "");
+    }
+    clipFavoriteAction.focus();
+  }
+
+  clipActionDialog.addEventListener("click", (event) => {
+    if (event.target === clipActionDialog) closeClipActionDialog();
+  });
+  clipActionDialog.addEventListener("close", () => {
+    clipActionTarget = null;
+    const trigger = clipActionTrigger;
+    clipActionTrigger = null;
+    if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+  });
+  clipFavoriteAction.addEventListener("click", async () => {
+    const clip = clipActionTarget;
+    if (!clip) return;
+    clipFavoriteAction.disabled = true;
+    await toggleFavorite(clip.id);
+    clipFavoriteAction.disabled = false;
+    closeClipActionDialog();
+  });
+  clipDeleteAction.addEventListener("click", async () => {
+    const clip = clipActionTarget;
+    if (!clip) return;
+    closeClipActionDialog();
+    await deleteClip(clip.id);
+  });
 
   async function toggleFavorite(id) {
     try {
@@ -305,7 +449,8 @@
           (image ? '<img src="' + escapeHtml(image) + '" alt="" />' : '<span class="remote-card-media-placeholder" aria-hidden="true">✦</span>') +
           '<div><p class="remote-page-kicker">' + escapeHtml(clipSourceLabel(clip)) + "</p>" +
           '<h1 class="remote-page-title">' + escapeHtml(clipTitle(clip)) + "</h1>" +
-          '<button id="remoteDetailFavorite" class="remote-quiet-button remote-star ' + (clip.is_favorite ? "active" : "") + '" type="button">' + (clip.is_favorite ? "★ お気に入り" : "☆ お気に入り") + "</button></div>" +
+          (clip.is_favorite ? '<span class="remote-detail-favorite">★ お気に入り</span>' : "") +
+          "</div>" +
         "</div>" +
         '<dl class="remote-detail-list">' +
           '<div><dt>URL / ファイル</dt><dd>' + (source
@@ -323,10 +468,6 @@
     document.getElementById("remoteDetailBack").addEventListener("click", renderHome);
     document.getElementById("remoteDetailEdit").addEventListener("click", () => renderEditor(clip, null));
     document.getElementById("remoteDetailDelete").addEventListener("click", () => deleteClip(clip.id));
-    document.getElementById("remoteDetailFavorite").addEventListener("click", async () => {
-      await toggleFavorite(clip.id);
-      renderDetail(clip.id);
-    });
     if (clip.clip_type === "local") {
       api("/clips/" + Number(clip.id) + "/text-preview")
         .then((data) => {
@@ -370,6 +511,7 @@
     const isUpload = Boolean(uploadFile);
     const isEdit = Boolean(clip);
     const tags = Array.isArray(clip?.tags) ? clip.tags.map((tag) => tag.name || tag).join(", ") : "";
+    let metadataThumbnailUrl = String(clip?.thumbnail_url || "");
     main.innerHTML =
       '<div class="remote-panel">' +
         '<div class="remote-panel-heading"><div><p class="remote-page-kicker">' + (isEdit ? "CLIP EDITOR" : "NEW CLIP") + "</p><h1 class=\"remote-page-title\">" + (isEdit ? "クリップを編集" : "クリップを追加") + "</h1></div></div>" +
@@ -399,12 +541,16 @@
     document.getElementById("remoteClipForm").addEventListener("submit", submitClipForm);
     const urlInput = main.querySelector("[name=url]");
     const titleInput = main.querySelector("[name=title]");
+    urlInput?.addEventListener("input", () => {
+      metadataThumbnailUrl = "";
+    });
     urlInput?.addEventListener("blur", async () => {
       const url = String(urlInput.value || "").trim();
-      if (!safeHref(url) || titleInput.value.trim()) return;
+      if (!safeHref(url)) return;
       try {
         const metadata = await api("/url-metadata?url=" + encodeURIComponent(url));
         if (metadata?.title && !titleInput.value.trim()) titleInput.value = metadata.title;
+        if (metadata?.thumbnail_url) metadataThumbnailUrl = metadata.thumbnail_url;
       } catch {
         // Metadata lookup is a convenience; saving the URL must still work.
       }
@@ -447,6 +593,7 @@
           body: JSON.stringify({
             url,
             title: title || null,
+            thumbnail_url: metadataThumbnailUrl || null,
             comment: comment || null,
             category: category || null,
             tags,
@@ -796,7 +943,6 @@
     else if (state.screen === "workspace") renderWorkspace();
     else if (state.screen === "projects") renderProjects();
     else if (state.screen === "settings") renderSettings();
-    main.focus({ preventScroll: true });
   }
 
   function openDrawer() {

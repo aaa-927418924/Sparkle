@@ -62,6 +62,7 @@ class ClipCreate(BaseModel):
 class UrlMetadataOut(BaseModel):
     url: str
     title: Optional[str] = None
+    thumbnail_url: Optional[str] = None
 
 
 class ClipUpdate(BaseModel):

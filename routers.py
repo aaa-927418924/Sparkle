@@ -451,6 +451,19 @@ X_HOSTS = frozenset(
 X_STATUS_PATH_RE = re.compile(r"(?:^|/)status/(\d+)(?:/|$)", re.IGNORECASE)
 X_OEMBED_ENDPOINT = "https://publish.twitter.com/oembed"
 X_TITLE_BODY_MAX_CHARS = 240
+YOUTUBE_HOSTS = frozenset(
+    {
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "music.youtube.com",
+        "youtube-nocookie.com",
+        "www.youtube-nocookie.com",
+        "youtu.be",
+        "www.youtu.be",
+    }
+)
+YOUTUBE_OEMBED_ENDPOINT = "https://www.youtube.com/oembed"
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -466,6 +479,7 @@ class _PageMetadataParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.document_title_parts: List[str] = []
         self.meta_titles: dict[str, str] = {}
+        self.meta_images: dict[str, str] = {}
         self._title_depth = 0
 
     def handle_starttag(self, tag: str, attrs):
@@ -485,6 +499,15 @@ class _PageMetadataParser(HTMLParser):
             return
         if key in {"og:title", "twitter:title", "title"}:
             self.meta_titles.setdefault(key, values["content"])
+        if key in {
+            "og:image",
+            "og:image:url",
+            "og:image:secure_url",
+            "twitter:image",
+            "twitter:image:src",
+            "image",
+        }:
+            self.meta_images.setdefault(key, values["content"])
 
     def handle_endtag(self, tag: str):
         if tag.lower() == "title" and self._title_depth > 0:
@@ -530,6 +553,35 @@ def _is_x_status_url(raw_url: str) -> bool:
     parsed = urllib.parse.urlsplit(raw_url.strip())
     host = (parsed.hostname or "").lower().rstrip(".")
     return host in X_HOSTS and X_STATUS_PATH_RE.search(parsed.path or "") is not None
+
+
+def _youtube_video_id(raw_url: str) -> Optional[str]:
+    parsed = urllib.parse.urlsplit(raw_url.strip())
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if host not in YOUTUBE_HOSTS:
+        return None
+
+    path_parts = [urllib.parse.unquote(part) for part in parsed.path.split("/") if part]
+    candidate = None
+    if host in {"youtu.be", "www.youtu.be"}:
+        candidate = path_parts[0] if path_parts else None
+    elif path_parts and path_parts[0].lower() == "watch":
+        candidate = urllib.parse.parse_qs(parsed.query).get("v", [None])[0]
+    else:
+        for marker in ("shorts", "embed", "live", "v"):
+            if marker in [part.lower() for part in path_parts]:
+                marker_index = [part.lower() for part in path_parts].index(marker)
+                if marker_index + 1 < len(path_parts):
+                    candidate = path_parts[marker_index + 1]
+                    break
+    if not candidate or re.fullmatch(r"[A-Za-z0-9_-]{6,64}", candidate) is None:
+        return None
+    return candidate
+
+
+def _youtube_thumbnail_url(raw_url: str) -> Optional[str]:
+    video_id = _youtube_video_id(raw_url)
+    return f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg" if video_id else None
 
 
 def _normalize_x_title(value: Optional[str]) -> Optional[str]:
@@ -608,6 +660,20 @@ def _fetch_x_oembed_title(url: str) -> Optional[str]:
             payload.get("author_name"),
             _extract_oembed_post_text(payload.get("html")),
         )
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
+def _fetch_youtube_oembed_title(url: str) -> Optional[str]:
+    endpoint = f"{YOUTUBE_OEMBED_ENDPOINT}?{urllib.parse.urlencode({'url': url, 'format': 'json'})}"
+    try:
+        response = _fetch_metadata_page(endpoint)
+        if response is None:
+            return None
+        payload = json.loads(response[0])
+        if not isinstance(payload, dict):
+            return None
+        return _clean_metadata_title(payload.get("title"))
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return None
 
@@ -698,20 +764,51 @@ def _extract_page_title(page: str) -> Optional[str]:
     return _clean_metadata_title("".join(parser.document_title_parts))
 
 
-@router.get("/url-metadata", response_model=UrlMetadataOut)
-def get_url_metadata(url: str = Query(..., min_length=1, max_length=4096)):
+def _extract_page_image(page: str) -> Optional[str]:
+    parser = _PageMetadataParser()
     try:
-        validated_url = _validate_metadata_url(url)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
+        parser.feed(page)
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+    for key in (
+        "og:image:secure_url",
+        "og:image",
+        "og:image:url",
+        "twitter:image",
+        "twitter:image:src",
+        "image",
+    ):
+        image = parser.meta_images.get(key)
+        if image:
+            return image.strip()
+    return None
+
+
+def _resolve_metadata_image(raw_image: Optional[str], base_url: str) -> Optional[str]:
+    if not raw_image:
+        return None
+    candidate = urllib.parse.urljoin(base_url, html.unescape(raw_image.strip()))
+    try:
+        return _validate_metadata_url(candidate)
+    except ValueError:
+        return None
+
+
+def _collect_url_metadata(validated_url: str) -> Optional[tuple[str, Optional[str], Optional[str]]]:
     is_x_status = _is_x_status_url(validated_url)
+    youtube_thumbnail = _youtube_thumbnail_url(validated_url)
     page = _fetch_metadata_page(validated_url)
     if page is None:
+        title = None
         if is_x_status:
-            x_title = _fetch_x_oembed_title(validated_url)
-            if x_title:
-                return UrlMetadataOut(url=validated_url, title=x_title)
-        raise HTTPException(status_code=502, detail="failed to fetch page metadata")
+            title = _fetch_x_oembed_title(validated_url)
+        elif _youtube_video_id(validated_url):
+            title = _fetch_youtube_oembed_title(validated_url)
+        if title or youtube_thumbnail:
+            return validated_url, title, youtube_thumbnail
+        return None
+
     page_html, final_url = page
     if is_x_status or _is_x_status_url(final_url):
         title = _extract_x_page_title(page_html) or _fetch_x_oembed_title(final_url)
@@ -719,7 +816,49 @@ def get_url_metadata(url: str = Query(..., min_length=1, max_length=4096)):
             title = _extract_page_title(page_html)
     else:
         title = _extract_page_title(page_html)
-    return UrlMetadataOut(url=final_url, title=title)
+        if title is None and _youtube_video_id(final_url):
+            title = _fetch_youtube_oembed_title(final_url)
+    thumbnail = _resolve_metadata_image(_extract_page_image(page_html), final_url)
+    if thumbnail is None:
+        thumbnail = _youtube_thumbnail_url(final_url) or youtube_thumbnail
+    return final_url, title, thumbnail
+
+
+def _enrich_url_clip_metadata(
+    url: str,
+    title: Optional[str],
+    thumbnail_url: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    resolved_title = title.strip() if isinstance(title, str) and title.strip() else None
+    resolved_thumbnail = (
+        thumbnail_url.strip()
+        if isinstance(thumbnail_url, str) and thumbnail_url.strip()
+        else None
+    )
+    if resolved_title and resolved_thumbnail:
+        return resolved_title, resolved_thumbnail
+    try:
+        validated_url = _validate_metadata_url(url)
+        metadata = _collect_url_metadata(validated_url)
+    except (OSError, TypeError, ValueError):
+        return resolved_title, resolved_thumbnail
+    if metadata is None:
+        return resolved_title, resolved_thumbnail
+    _, fetched_title, fetched_thumbnail = metadata
+    return resolved_title or fetched_title, resolved_thumbnail or fetched_thumbnail
+
+
+@router.get("/url-metadata", response_model=UrlMetadataOut)
+def get_url_metadata(url: str = Query(..., min_length=1, max_length=4096)):
+    try:
+        validated_url = _validate_metadata_url(url)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    metadata = _collect_url_metadata(validated_url)
+    if metadata is None:
+        raise HTTPException(status_code=502, detail="failed to fetch page metadata")
+    final_url, title, thumbnail_url = metadata
+    return UrlMetadataOut(url=final_url, title=title, thumbnail_url=thumbnail_url)
 
 
 @router.get("/categories", response_model=List[CategoryOut])
@@ -1001,6 +1140,14 @@ def unlink_project_note(project_id: int, note_id: int, db: Connection = Depends(
 
 @router.post("/clips", response_model=ClipOut, status_code=201)
 def create_clip(payload: ClipCreate, db: Connection = Depends(get_db)):
+    title = payload.title
+    thumbnail_url = payload.thumbnail_url
+    if (payload.clip_type or "url") != "local":
+        title, thumbnail_url = _enrich_url_clip_metadata(
+            payload.url,
+            title,
+            thumbnail_url,
+        )
     category_id = _resolve_category(db, payload.category)
     tag_ids = _resolve_tags(db, payload.tags)
 
@@ -1009,8 +1156,8 @@ def create_clip(payload: ClipCreate, db: Connection = Depends(get_db)):
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             payload.url,
-            payload.title,
-            payload.thumbnail_url,
+            title,
+            thumbnail_url,
             payload.comment,
             category_id,
             payload.clip_type or "url",

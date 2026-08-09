@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
     <title>Sparkle — Web</title>
-    <link rel="stylesheet" href="/remote/static/remote.css?v=remote-ui-20260810-v1" />
+    <link rel="stylesheet" href="/remote/static/remote.css?v=remote-ui-20260810-v2" />
   </head>
   <body class="remote-body">
     <div class="remote-app-shell">
@@ -39,12 +39,24 @@
         </div>
       </aside>
 
-      <main id="remoteMain" class="remote-main" tabindex="-1">
+      <main id="remoteMain" class="remote-main">
         <div class="remote-loading" role="status" aria-live="polite">読み込んでいます…</div>
       </main>
     </div>
     <input id="remoteFileInput" type="file" hidden />
     <div id="remoteToast" class="remote-toast" role="status" aria-live="polite" aria-atomic="true"></div>
-    <script src="/remote/static/remote.js?v=remote-ui-20260810-v1"></script>
+    <dialog id="remoteClipActionDialog" class="remote-action-dialog" aria-labelledby="remoteClipActionTitle">
+      <form method="dialog" class="remote-action-dialog-form">
+        <p class="remote-page-kicker">CLIP ACTIONS</p>
+        <h2 id="remoteClipActionTitle">クリップの操作</h2>
+        <p id="remoteClipActionSummary" class="remote-action-dialog-summary"></p>
+        <div class="remote-action-dialog-actions">
+          <button id="remoteClipFavoriteAction" class="remote-secondary-button" type="button">お気に入り</button>
+          <button id="remoteClipDeleteAction" class="remote-danger-button" type="button">削除</button>
+        </div>
+        <button class="remote-quiet-button remote-action-dialog-cancel" value="cancel" type="submit">キャンセル</button>
+      </form>
+    </dialog>
+    <script src="/remote/static/remote.js?v=remote-ui-20260810-v2"></script>
   </body>
 </html>

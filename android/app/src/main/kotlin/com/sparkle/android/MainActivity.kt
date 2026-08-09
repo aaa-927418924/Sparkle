@@ -14,6 +14,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -388,6 +393,7 @@ private fun HomeScreen(
     val visibleClips = viewModel.visibleClips()
     val gridState = rememberLazyStaggeredGridState()
     val isScrolling = gridState.isScrollInProgress
+    var homeChromeCollapsed by remember { mutableStateOf(false) }
     var thumbnailsReady by remember { mutableStateOf(false) }
     var clipActionTarget by remember { mutableStateOf<Clip?>(null) }
     var clipDeleteTarget by remember { mutableStateOf<Clip?>(null) }
@@ -397,6 +403,11 @@ private fun HomeScreen(
     }
     LaunchedEffect(isScrolling) {
         viewModel.setHomeScrolling(isScrolling)
+    }
+    LaunchedEffect(isScrolling, gridState.lastScrolledForward) {
+        if (isScrolling) {
+            homeChromeCollapsed = gridState.lastScrolledForward
+        }
     }
     DisposableEffect(viewModel) {
         onDispose { viewModel.setHomeScrolling(false) }
@@ -429,10 +440,18 @@ private fun HomeScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            ConnectionBanner(viewModel.connectionState, viewModel::refresh, onOpenSettings)
+            AnimatedVisibility(
+                visible = !homeChromeCollapsed,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+            ) {
+                Column {
+                    ConnectionBanner(viewModel.connectionState, viewModel::refresh, onOpenSettings)
+                    viewModel.errorMessage?.let { ErrorBanner(it, viewModel::clearError) }
+                    CategoryFilterRow(viewModel)
+                }
+            }
             NetworkPolicyBanner(networkPolicy)
-            viewModel.errorMessage?.let { ErrorBanner(it, viewModel::clearError) }
-            CategoryFilterRow(viewModel)
             OutlinedTextField(
                 value = viewModel.query,
                 onValueChange = { viewModel.query = it },
@@ -442,8 +461,16 @@ private fun HomeScreen(
                 shape = RoundedCornerShape(28.dp),
                 singleLine = true,
             )
-            HomeClipControls(viewModel)
-            ActiveTagFilters(viewModel)
+            AnimatedVisibility(
+                visible = !homeChromeCollapsed,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+            ) {
+                Column {
+                    HomeClipControls(viewModel)
+                    ActiveTagFilters(viewModel)
+                }
+            }
             when {
                 viewModel.isBusy && viewModel.clips.isEmpty() -> LoadingState()
                 viewModel.baseUrl.isBlank() -> UnconfiguredState(onOpenSettings)

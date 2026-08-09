@@ -43,6 +43,17 @@ if not exist "%PYINSTALLER%" (
   exit /b 1
 )
 
+set "SPARKLE_EXE=%~dp0dist\Sparkle.exe"
+echo.
+echo Closing the running Sparkle app from "%SPARKLE_EXE%" if necessary...
+powershell -NoProfile -Command "$target = [System.IO.Path]::GetFullPath($env:SPARKLE_EXE); $matches = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -ieq 'Sparkle.exe' -and $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $target) }); foreach ($match in $matches) { $process = Get-Process -Id $match.ProcessId -ErrorAction SilentlyContinue; if ($process) { $null = $process.CloseMainWindow(); if (-not $process.WaitForExit(5000)) { Stop-Process -Id $match.ProcessId -Force -ErrorAction Stop } } }"
+if errorlevel 1 (
+  echo.
+  echo Could not close the running Sparkle app safely.
+  pause
+  exit /b 1
+)
+
 echo.
 echo Building exe from a clean PyInstaller cache...
 "%PYINSTALLER%" --clean --noconfirm Sparkle.spec

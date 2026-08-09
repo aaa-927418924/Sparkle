@@ -122,6 +122,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -167,11 +168,14 @@ import com.sparkle.android.ui.SparkleVideoPreview
 import com.sparkle.android.ui.SparkleViewModel
 import com.sparkle.android.ui.rememberNetworkPolicy
 import com.sparkle.android.ui.preloadCachedThumbnail
+import com.sparkle.android.ui.pinThumbnail
+import com.sparkle.android.ui.unpinThumbnail
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
@@ -491,25 +495,37 @@ private fun HomeScreen(
                         (cardWidth.toPx() * 2f).roundToInt().coerceIn(360, 720)
                     }
                     val thumbnailContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
-                    LaunchedEffect(isScrolling, visibleClips.map { it.id }, thumbnailMaxDimensionPx) {
-                        if (isScrolling) return@LaunchedEffect
-                        withFrameNanos { }
-                        val visibleItems = gridState.layoutInfo.visibleItemsInfo
-                        val lastVisibleIndex = visibleItems.maxOfOrNull { it.index }
-                            ?: return@LaunchedEffect
-                        val preloadStart = lastVisibleIndex + 1
-                        val preloadEnd = (lastVisibleIndex + columns * 2)
-                            .coerceAtMost(visibleClips.lastIndex)
-                        if (preloadStart > preloadEnd) return@LaunchedEffect
-                        coroutineScope {
-                            (preloadStart..preloadEnd).mapNotNull { index ->
-                                val thumbnailUrl = viewModel.thumbnailUrl(visibleClips[index].thumbnailUrl)
-                                thumbnailUrl?.let { url ->
-                                    launch {
-                                        preloadCachedThumbnail(thumbnailContext, url, thumbnailMaxDimensionPx)
+                    LaunchedEffect(gridState, visibleClips.map { it.id }, thumbnailMaxDimensionPx, columns) {
+                        snapshotFlow {
+                            val visibleItems = gridState.layoutInfo.visibleItemsInfo
+                            Triple(
+                                visibleItems.minOfOrNull { it.index },
+                                visibleItems.maxOfOrNull { it.index },
+                                gridState.lastScrolledForward,
+                            )
+                        }.collectLatest { (firstVisibleIndex, lastVisibleIndex, scrollingForward) ->
+                            if (firstVisibleIndex == null || lastVisibleIndex == null) return@collectLatest
+                            withFrameNanos { }
+                            val prefetchIndices = if (scrollingForward || firstVisibleIndex == 0) {
+                                val start = lastVisibleIndex + 1
+                                val end = (lastVisibleIndex + columns * 2).coerceAtMost(visibleClips.lastIndex)
+                                if (start <= end) (start..end).toList() else emptyList()
+                            } else {
+                                val start = (firstVisibleIndex - columns * 2).coerceAtLeast(0)
+                                val end = firstVisibleIndex - 1
+                                if (start <= end) (start..end).toList() else emptyList()
+                            }
+                            if (prefetchIndices.isEmpty()) return@collectLatest
+                            coroutineScope {
+                                prefetchIndices.mapNotNull { index ->
+                                    val thumbnailUrl = viewModel.thumbnailUrl(visibleClips[index].thumbnailUrl)
+                                    thumbnailUrl?.let { url ->
+                                        launch {
+                                            preloadCachedThumbnail(thumbnailContext, url, thumbnailMaxDimensionPx)
+                                        }
                                     }
-                                }
-                            }.joinAll()
+                                }.joinAll()
+                            }
                         }
                     }
                     LazyVerticalStaggeredGrid(
@@ -764,6 +780,12 @@ private fun ClipCard(
     thumbnailMaxDimensionPx: Int? = null,
     manualLoadEnabled: Boolean = false,
 ) {
+    DisposableEffect(thumbnailUrl, thumbnailMaxDimensionPx) {
+        thumbnailUrl?.let { pinThumbnail(it, thumbnailMaxDimensionPx) }
+        onDispose {
+            thumbnailUrl?.let { unpinThumbnail(it, thumbnailMaxDimensionPx) }
+        }
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()

@@ -1,5 +1,6 @@
 package com.sparkle.android.ui
 
+import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -41,6 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import java.io.File
 import java.io.FileOutputStream
@@ -66,6 +68,7 @@ fun SparkleThumbnail(
     showManualLabel: Boolean = true,
 ) {
     val context = LocalContext.current.applicationContext
+    ThumbnailRepository.configure(context)
     var manualLoadRequested by remember(url) { mutableStateOf(false) }
     val shouldLoad = allowUncachedLoad || manualLoadRequested
     var bitmap by remember(url, decodeMaxDimensionPx) {
@@ -166,6 +169,14 @@ suspend fun preloadCachedThumbnail(
     ThumbnailRepository.loadCached(context, url, decodeMaxDimensionPx)
 }
 
+fun pinThumbnail(url: String, decodeMaxDimensionPx: Int?) {
+    ThumbnailRepository.pin(url, decodeMaxDimensionPx)
+}
+
+fun unpinThumbnail(url: String, decodeMaxDimensionPx: Int?) {
+    ThumbnailRepository.unpin(url, decodeMaxDimensionPx)
+}
+
 private object ThumbnailRepository {
     private const val MAX_CONCURRENT_LOADS = 3
     private const val MAX_CONCURRENT_CACHE_READS = 2
@@ -185,7 +196,20 @@ private object ThumbnailRepository {
     fun memory(rawUrl: String, maxDimensionPx: Int?): Bitmap? =
         ThumbnailCache.memory(rawUrl, maxDimensionPx)
 
+    fun configure(context: Context) {
+        ThumbnailCache.configure(context)
+    }
+
+    fun pin(rawUrl: String, maxDimensionPx: Int?) {
+        ThumbnailCache.pin(rawUrl, maxDimensionPx)
+    }
+
+    fun unpin(rawUrl: String, maxDimensionPx: Int?) {
+        ThumbnailCache.unpin(rawUrl, maxDimensionPx)
+    }
+
     suspend fun loadCached(context: Context, rawUrl: String, maxDimensionPx: Int?): Bitmap? {
+        configure(context)
         memory(rawUrl, maxDimensionPx)?.let { return it }
         val key = ThumbnailCache.bitmapCacheKey(rawUrl, maxDimensionPx)
         val request = cachedInFlight.compute(key) { _, existing ->
@@ -208,6 +232,7 @@ private object ThumbnailRepository {
     }
 
     suspend fun load(context: Context, rawUrl: String, maxDimensionPx: Int?): Bitmap? {
+        configure(context)
         memory(rawUrl, maxDimensionPx)?.let { return it }
         val key = ThumbnailCache.bitmapCacheKey(rawUrl, maxDimensionPx)
         val request = inFlight.compute(key) { _, existing ->
@@ -243,25 +268,90 @@ private object ThumbnailRepository {
 }
 
 private object ThumbnailCache {
-    private const val MEMORY_CACHE_BYTES = 16 * 1024 * 1024
-    private const val HOT_CACHE_BYTES = 8 * 1024 * 1024
+    private const val BYTES_PER_MIB = 1024 * 1024
+    private const val DEFAULT_MEMORY_CACHE_BYTES = 16 * BYTES_PER_MIB
+    private const val DEFAULT_HOT_CACHE_BYTES = 8 * BYTES_PER_MIB
+    private const val DEFAULT_PINNED_CACHE_BYTES = 8 * BYTES_PER_MIB
     private const val DISK_CACHE_BYTES = 64L * 1024 * 1024
     private const val MAX_ENTRY_BYTES = 8L * 1024 * 1024
     private const val MAX_BITMAP_DIMENSION = 1280
     private const val MIN_BITMAP_DIMENSION = 240
 
     private val cacheLock = Any()
-    private val memoryCache = object : LruCache<String, Bitmap>(MEMORY_CACHE_BYTES) {
+    private val memoryCache = object : LruCache<String, Bitmap>(DEFAULT_MEMORY_CACHE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
     }
-    private val hotCache = object : LruCache<String, Bitmap>(HOT_CACHE_BYTES) {
+    private val hotCache = object : LruCache<String, Bitmap>(DEFAULT_HOT_CACHE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
+    }
+    private val pinnedCache = object : LruCache<String, Bitmap>(DEFAULT_PINNED_CACHE_BYTES) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
+    }
+    private val pinnedReferences = mutableMapOf<String, Int>()
+    private val resizedWriteScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO.limitedParallelism(1),
+    )
+    private val resizedWrites = mutableSetOf<String>()
+    private var configuredMemoryClassMb: Int? = null
+
+    fun configure(context: Context) {
+        val activityManager = context.getSystemService(ActivityManager::class.java)
+        val memoryClassMb = activityManager?.memoryClass ?: 128
+        val isLowRamDevice = activityManager?.isLowRamDevice == true
+        synchronized(cacheLock) {
+            if (configuredMemoryClassMb == memoryClassMb) return
+            configuredMemoryClassMb = memoryClassMb
+
+            val totalBudgetMiB = when {
+                isLowRamDevice -> 32
+                memoryClassMb < 192 -> 48
+                memoryClassMb < 256 -> 64
+                memoryClassMb < 512 -> 96
+                else -> 128
+            }
+            val pinnedBudgetMiB = totalBudgetMiB / 2
+            val recentBudgetMiB = totalBudgetMiB / 4
+            val generalBudgetMiB = totalBudgetMiB - pinnedBudgetMiB - recentBudgetMiB
+            memoryCache.resize(generalBudgetMiB * BYTES_PER_MIB)
+            hotCache.resize(recentBudgetMiB * BYTES_PER_MIB)
+            pinnedCache.resize(pinnedBudgetMiB * BYTES_PER_MIB)
+        }
     }
 
     fun memory(rawUrl: String, maxDimensionPx: Int?): Bitmap? = synchronized(cacheLock) {
         val key = bitmapCacheKey(rawUrl, maxDimensionPx)
+        pinnedCache.get(key)?.let { return@synchronized it }
         hotCache.get(key)?.let { return@synchronized it }
         memoryCache.get(key)?.also { hotCache.put(key, it) }
+    }
+
+    fun pin(rawUrl: String, maxDimensionPx: Int?) = synchronized(cacheLock) {
+        val key = bitmapCacheKey(rawUrl, maxDimensionPx)
+        val references = (pinnedReferences[key] ?: 0) + 1
+        pinnedReferences[key] = references
+        if (references > 1) return@synchronized
+
+        val bitmap = pinnedCache.get(key) ?: hotCache.get(key) ?: memoryCache.get(key)
+        if (bitmap != null) {
+            pinnedCache.put(key, bitmap)
+            hotCache.remove(key)
+            memoryCache.remove(key)
+        }
+    }
+
+    fun unpin(rawUrl: String, maxDimensionPx: Int?) = synchronized(cacheLock) {
+        val key = bitmapCacheKey(rawUrl, maxDimensionPx)
+        val references = pinnedReferences[key] ?: return@synchronized
+        if (references > 1) {
+            pinnedReferences[key] = references - 1
+            return@synchronized
+        }
+        pinnedReferences.remove(key)
+        val bitmap = pinnedCache.remove(key)
+        if (bitmap != null) {
+            memoryCache.put(key, bitmap)
+            hotCache.put(key, bitmap)
+        }
     }
 
     fun load(context: Context, rawUrl: String, maxDimensionPx: Int?): Bitmap? {
@@ -273,6 +363,7 @@ private object ThumbnailCache {
 
         val cacheDirectory = File(context.cacheDir, "sparkle-thumbnails").apply { mkdirs() }
         val cacheFile = File(cacheDirectory, sourceKey)
+        val resizedFile = resizedCacheFile(cacheDirectory, sourceKey, decodeMaxDimension)
 
         val temporaryFile = File(cacheDirectory, "$sourceKey.${UUID.randomUUID()}.tmp")
         return try {
@@ -282,10 +373,11 @@ private object ThumbnailCache {
                 if (!temporaryFile.renameTo(cacheFile)) {
                     temporaryFile.delete()
                 }
-                trimDiskCache(cacheDirectory)
             } else {
                 temporaryFile.delete()
             }
+            scheduleResizedCache(cacheDirectory, resizedFile, bitmap)
+            trimDiskCache(cacheDirectory)
             putMemory(bitmapKey, bitmap)
             bitmap
         } finally {
@@ -299,7 +391,19 @@ private object ThumbnailCache {
         memory(rawUrl, maxDimensionPx)?.let { return it }
 
         val cacheDirectory = File(context.cacheDir, "sparkle-thumbnails").apply { mkdirs() }
-        val cacheFile = File(cacheDirectory, sourceCacheKey(rawUrl))
+        val sourceKey = sourceCacheKey(rawUrl)
+        val cacheFile = File(cacheDirectory, sourceKey)
+        val resizedFile = resizedCacheFile(cacheDirectory, sourceKey, decodeMaxDimension)
+
+        if (resizedFile.isFile) {
+            val resized = decodeBitmap(resizedFile, decodeMaxDimension)
+            if (resized != null) {
+                resizedFile.setLastModified(System.currentTimeMillis())
+                putMemory(bitmapKey, resized)
+                return resized
+            }
+            resizedFile.delete()
+        }
         if (!cacheFile.isFile) return null
 
         val cached = decodeBitmap(cacheFile, decodeMaxDimension)
@@ -309,13 +413,53 @@ private object ThumbnailCache {
         }
         cacheFile.setLastModified(System.currentTimeMillis())
         putMemory(bitmapKey, cached)
+        scheduleResizedCache(cacheDirectory, resizedFile, cached)
         return cached
     }
 
     private fun putMemory(key: String, bitmap: Bitmap) {
         synchronized(cacheLock) {
-            memoryCache.put(key, bitmap)
-            hotCache.put(key, bitmap)
+            if (pinnedReferences.containsKey(key)) {
+                pinnedCache.put(key, bitmap)
+                hotCache.remove(key)
+                memoryCache.remove(key)
+            } else {
+                memoryCache.put(key, bitmap)
+                hotCache.put(key, bitmap)
+            }
+        }
+    }
+
+    private fun resizedCacheFile(directory: File, sourceKey: String, maxDimension: Int): File =
+        File(directory, "$sourceKey-$maxDimension.webp")
+
+    private fun scheduleResizedCache(directory: File, target: File, bitmap: Bitmap) {
+        val targetKey = target.absolutePath
+        synchronized(cacheLock) {
+            if (!resizedWrites.add(targetKey)) return
+        }
+        resizedWriteScope.launch {
+            try {
+                writeResizedCache(directory, target, bitmap)
+            } finally {
+                synchronized(cacheLock) { resizedWrites.remove(targetKey) }
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun writeResizedCache(directory: File, target: File, bitmap: Bitmap) {
+        val temporaryFile = File(directory, "${target.name}.${UUID.randomUUID()}.tmp")
+        try {
+            val compressed = FileOutputStream(temporaryFile).use { output ->
+                bitmap.compress(Bitmap.CompressFormat.WEBP, 88, output)
+            }
+            if (!compressed || temporaryFile.length() <= 0L || temporaryFile.length() > MAX_ENTRY_BYTES) return
+            if (target.isFile) target.delete()
+            if (!temporaryFile.renameTo(target)) return
+            trimDiskCache(directory)
+        } finally {
+            temporaryFile.delete()
         }
     }
 

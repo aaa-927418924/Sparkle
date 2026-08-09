@@ -21,9 +21,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -60,6 +60,7 @@ fun SparkleThumbnail(
     preserveImageAspectRatio: Boolean = false,
     contentDescription: String? = null,
     allowUncachedLoad: Boolean = true,
+    allowCachedLoad: Boolean = true,
     decodeMaxDimensionPx: Int? = null,
     manualLoadEnabled: Boolean = false,
     showManualLabel: Boolean = true,
@@ -67,12 +68,22 @@ fun SparkleThumbnail(
     val context = LocalContext.current.applicationContext
     var manualLoadRequested by remember(url) { mutableStateOf(false) }
     val shouldLoad = allowUncachedLoad || manualLoadRequested
-    val bitmap by produceState<Bitmap?>(null, url, shouldLoad, decodeMaxDimensionPx) {
-        if (url != null) {
-            value = ThumbnailRepository.memory(url, decodeMaxDimensionPx)
-            if (value == null && shouldLoad) {
-                value = ThumbnailRepository.load(context, url, decodeMaxDimensionPx)
-            }
+    var bitmap by remember(url, decodeMaxDimensionPx) {
+        mutableStateOf(url?.let { ThumbnailRepository.memory(it, decodeMaxDimensionPx) })
+    }
+    LaunchedEffect(url, shouldLoad, allowCachedLoad, decodeMaxDimensionPx) {
+        if (url == null) {
+            bitmap = null
+            return@LaunchedEffect
+        }
+        if (bitmap == null) {
+            bitmap = ThumbnailRepository.memory(url, decodeMaxDimensionPx)
+        }
+        if (bitmap == null && allowCachedLoad) {
+            bitmap = ThumbnailRepository.loadCached(context, url, decodeMaxDimensionPx)
+        }
+        if (bitmap == null && shouldLoad) {
+            bitmap = ThumbnailRepository.load(context, url, decodeMaxDimensionPx)
         }
     }
     val shape = MaterialTheme.shapes.medium
@@ -161,6 +172,11 @@ private object ThumbnailRepository {
     fun memory(rawUrl: String, maxDimensionPx: Int?): Bitmap? =
         ThumbnailCache.memory(rawUrl, maxDimensionPx)
 
+    suspend fun loadCached(context: Context, rawUrl: String, maxDimensionPx: Int?): Bitmap? =
+        runInterruptible {
+            ThumbnailCache.loadCached(context, rawUrl, maxDimensionPx)
+        }
+
     suspend fun load(context: Context, rawUrl: String, maxDimensionPx: Int?): Bitmap? {
         memory(rawUrl, maxDimensionPx)?.let { return it }
         val key = ThumbnailCache.bitmapCacheKey(rawUrl, maxDimensionPx)
@@ -208,22 +224,14 @@ private object ThumbnailCache {
     }
 
     fun load(context: Context, rawUrl: String, maxDimensionPx: Int?): Bitmap? {
+        loadCached(context, rawUrl, maxDimensionPx)?.let { return it }
+
         val bitmapKey = bitmapCacheKey(rawUrl, maxDimensionPx)
         val sourceKey = sourceCacheKey(rawUrl)
         val decodeMaxDimension = normalizedMaxDimension(maxDimensionPx)
-        memory(rawUrl, maxDimensionPx)?.let { return it }
 
         val cacheDirectory = File(context.cacheDir, "sparkle-thumbnails").apply { mkdirs() }
         val cacheFile = File(cacheDirectory, sourceKey)
-        if (cacheFile.isFile) {
-            val cached = decodeBitmap(cacheFile, decodeMaxDimension)
-            if (cached != null) {
-                cacheFile.setLastModified(System.currentTimeMillis())
-                putMemory(bitmapKey, cached)
-                return cached
-            }
-            cacheFile.delete()
-        }
 
         val temporaryFile = File(cacheDirectory, "$sourceKey.${UUID.randomUUID()}.tmp")
         return try {
@@ -242,6 +250,25 @@ private object ThumbnailCache {
         } finally {
             temporaryFile.delete()
         }
+    }
+
+    fun loadCached(context: Context, rawUrl: String, maxDimensionPx: Int?): Bitmap? {
+        val bitmapKey = bitmapCacheKey(rawUrl, maxDimensionPx)
+        val decodeMaxDimension = normalizedMaxDimension(maxDimensionPx)
+        memory(rawUrl, maxDimensionPx)?.let { return it }
+
+        val cacheDirectory = File(context.cacheDir, "sparkle-thumbnails").apply { mkdirs() }
+        val cacheFile = File(cacheDirectory, sourceCacheKey(rawUrl))
+        if (!cacheFile.isFile) return null
+
+        val cached = decodeBitmap(cacheFile, decodeMaxDimension)
+        if (cached == null) {
+            cacheFile.delete()
+            return null
+        }
+        cacheFile.setLastModified(System.currentTimeMillis())
+        putMemory(bitmapKey, cached)
+        return cached
     }
 
     private fun putMemory(key: String, bitmap: Bitmap) {

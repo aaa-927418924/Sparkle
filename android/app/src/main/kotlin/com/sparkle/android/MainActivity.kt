@@ -475,6 +475,7 @@ private fun HomeScreen(
                                 onClick = { viewModel.openDetail(clip.id) },
                                 onLongClick = { clipActionTarget = clip },
                                 allowUncachedLoad = thumbnailsReady && !isScrolling && !networkPolicy.restrictThumbnails,
+                                allowCachedLoad = !isScrolling,
                                 thumbnailMaxDimensionPx = thumbnailMaxDimensionPx,
                                 manualLoadEnabled = networkPolicy.restrictThumbnails,
                             )
@@ -701,6 +702,7 @@ private fun ClipCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     allowUncachedLoad: Boolean = true,
+    allowCachedLoad: Boolean = true,
     thumbnailMaxDimensionPx: Int? = null,
     manualLoadEnabled: Boolean = false,
 ) {
@@ -725,6 +727,7 @@ private fun ClipCard(
                     modifier = Modifier.fillMaxWidth(),
                     preserveImageAspectRatio = true,
                     allowUncachedLoad = allowUncachedLoad,
+                    allowCachedLoad = allowCachedLoad,
                     decodeMaxDimensionPx = thumbnailMaxDimensionPx,
                     manualLoadEnabled = manualLoadEnabled,
                     contentDescription = "${clip.displayTitle}のサムネイル",

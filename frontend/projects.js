@@ -1,5 +1,14 @@
 const API = window.location.origin;
 const TASK_PROJECT_ONLY_KEY = "taskProjectOnly";
+const PROJECT_AUTO_API_KEY = "auto_create_note_on_project";
+const PROJECT_AUTO_STORAGE_KEY = "autoCreateNoteOnProject";
+
+async function projectAutoCreateNoteEnabled() {
+  if (typeof window.sparkleSettings?.getBoolean === "function") {
+    return window.sparkleSettings.getBoolean(PROJECT_AUTO_API_KEY, PROJECT_AUTO_STORAGE_KEY);
+  }
+  return localStorage.getItem(PROJECT_AUTO_STORAGE_KEY) === "true";
+}
 
 const state = {
   projects: [],
@@ -17,6 +26,8 @@ const state = {
   routeRequestId: 0,
 };
 let projectListHasRendered = false;
+let projectsLoadInFlight = null;
+let projectsDataSignature = "";
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -125,20 +136,51 @@ function projectAlbumHtml(projectId) {
   return '<div class="project-card-album count-' + countClass + '" aria-label="紐づいたクリップのサムネイル">' + cells + more + '</div>';
 }
 
-async function loadAll() {
-  const doneParam = state.doneFilter !== "" ? `?done=${state.doneFilter}` : "";
-  const [projects, clips, tasks, notes, categories, tags] = await Promise.all([
-    api(`/projects${doneParam}`), api("/clips"), api("/tasks"), api("/notes"),
-    api("/categories"), api("/tags"),
-  ]);
-  state.projects = projects;
-  state.clips = clips;
-  state.tasks = tasks;
-  state.notes = notes;
-  state.categories = categories;
-  state.tags = tags;
-  state.catMap = new Map(categories.map((c) => [c.id, c.name]));
-  renderProjectList();
+function loadAll({ silent = false } = {}) {
+  if (projectsLoadInFlight) return projectsLoadInFlight;
+  projectsLoadInFlight = (async () => {
+    const doneParam = state.doneFilter !== "" ? `?done=${state.doneFilter}` : "";
+    const [projects, clips, tasks, notes, categories, tags] = await Promise.all([
+      api(`/projects${doneParam}`), api("/clips"), api("/tasks"), api("/notes"),
+      api("/categories"), api("/tags"),
+    ]);
+    const nextSignature = JSON.stringify({
+      doneFilter: state.doneFilter,
+      projects,
+      clips,
+      tasks,
+      notes,
+      categories,
+      tags,
+    });
+    const changed = nextSignature !== projectsDataSignature;
+    state.projects = projects;
+    state.clips = clips;
+    state.tasks = tasks;
+    state.notes = notes;
+    state.categories = categories;
+    state.tags = tags;
+    state.catMap = new Map(categories.map((c) => [c.id, c.name]));
+    if (!silent || changed) {
+      renderProjectList();
+      if (state.currentProjectId != null) {
+        const project = projects.find((item) => item.id === state.currentProjectId);
+        if (project) {
+          els.detailTitle.textContent = project.name;
+          els.detailDesc.textContent = project.description || "";
+          els.detailDesc.hidden = !project.description;
+          $("detailDoneCb").checked = project.is_done;
+          await reloadDetail();
+        } else {
+          await showProjectList({ syncUrl: true, reload: false });
+        }
+      }
+    }
+    projectsDataSignature = nextSignature;
+  })().finally(() => {
+    projectsLoadInFlight = null;
+  });
+  return projectsLoadInFlight;
 }
 
 // ==================== Project List ====================
@@ -500,7 +542,7 @@ async function saveProject() {
     savedProject = await api(`/projects/${editingId}`, { method: "PUT", body: JSON.stringify(body) });
   } else {
     savedProject = await api("/projects", { method: "POST", body: JSON.stringify(body) });
-    if (savedProject?.id && localStorage.getItem("autoCreateNoteOnProject") === "true") {
+    if (savedProject?.id && await projectAutoCreateNoteEnabled()) {
       try {
         await api("/notes", {
           method: "POST",
@@ -1079,6 +1121,19 @@ document.addEventListener("mouseup", (e) => {
     return;
   }
 });
+
+// AndroidやPC側で変更されたプロジェクトと紐づき情報を、リロードなしで反映する。
+// 変更がない場合は一覧・詳細を再描画しない。
+function refreshProjectsInBackground() {
+  if (document.visibilityState !== "visible") return;
+  loadAll({ silent: true }).catch(() => {});
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshProjectsInBackground();
+});
+window.addEventListener("focus", refreshProjectsInBackground);
+window.setInterval(refreshProjectsInBackground, 1000);
 
 // イベント
 els.batchDuplicateBtn.addEventListener("click", batchDuplicateSelected);

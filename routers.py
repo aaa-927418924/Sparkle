@@ -3,24 +3,31 @@
 import base64
 import binascii
 import ctypes
+import html
 import hashlib
+import ipaddress
 import io
 import json
+import mimetypes
 import os
 import re
 import shutil
 import sqlite3
+import socket
 import subprocess
 import tempfile
+import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 import zipfile
 from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 from sqlite3 import Connection
@@ -67,6 +74,7 @@ from schemas import (
     TaskCreate,
     TaskOut,
     TaskUpdate,
+    UrlMetadataOut,
 )
 
 
@@ -424,6 +432,294 @@ def thumbnail_proxy(url: str = Query(...)):
         media_type=content_type,
         headers={"Cache-Control": "public, max-age=604800"},
     )
+
+
+METADATA_MAX_BYTES = 512 * 1024
+METADATA_TIMEOUT_SECONDS = 8
+METADATA_MAX_REDIRECTS = 3
+METADATA_USER_AGENT = "Mozilla/5.0 Sparkle/metadata"
+X_HOSTS = frozenset(
+    {
+        "x.com",
+        "www.x.com",
+        "mobile.x.com",
+        "twitter.com",
+        "www.twitter.com",
+        "mobile.twitter.com",
+    }
+)
+X_STATUS_PATH_RE = re.compile(r"(?:^|/)status/(\d+)(?:/|$)", re.IGNORECASE)
+X_OEMBED_ENDPOINT = "https://publish.twitter.com/oembed"
+X_TITLE_BODY_MAX_CHARS = 240
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+METADATA_OPENER = urllib.request.build_opener(_NoRedirectHandler())
+
+
+class _PageMetadataParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.document_title_parts: List[str] = []
+        self.meta_titles: dict[str, str] = {}
+        self._title_depth = 0
+
+    def handle_starttag(self, tag: str, attrs):
+        normalized_tag = tag.lower()
+        if normalized_tag == "title":
+            self._title_depth += 1
+            return
+        if normalized_tag != "meta":
+            return
+        values = {
+            key.lower(): html.unescape(value or "")
+            for key, value in attrs
+            if key
+        }
+        key = (values.get("property") or values.get("name") or values.get("itemprop") or "").lower()
+        if not key or not values.get("content"):
+            return
+        if key in {"og:title", "twitter:title", "title"}:
+            self.meta_titles.setdefault(key, values["content"])
+
+    def handle_endtag(self, tag: str):
+        if tag.lower() == "title" and self._title_depth > 0:
+            self._title_depth -= 1
+
+    def handle_data(self, data: str):
+        if self._title_depth > 0:
+            self.document_title_parts.append(data)
+
+
+def _clean_metadata_title(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    cleaned = re.sub(r"\s+", " ", html.unescape(value)).strip()
+    return cleaned[:500] or None
+
+
+class _OEmbedTextParser(HTMLParser):
+    """Extract the post paragraph from the public X embed response."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts: List[str] = []
+        self._paragraph_depth = 0
+
+    def handle_starttag(self, tag: str, attrs):
+        normalized_tag = tag.lower()
+        if normalized_tag == "p" and self._paragraph_depth == 0:
+            self._paragraph_depth = 1
+        elif normalized_tag == "br" and self._paragraph_depth > 0:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str):
+        if tag.lower() == "p" and self._paragraph_depth > 0:
+            self._paragraph_depth = 0
+
+    def handle_data(self, data: str):
+        if self._paragraph_depth > 0:
+            self.parts.append(data)
+
+
+def _is_x_status_url(raw_url: str) -> bool:
+    parsed = urllib.parse.urlsplit(raw_url.strip())
+    host = (parsed.hostname or "").lower().rstrip(".")
+    return host in X_HOSTS and X_STATUS_PATH_RE.search(parsed.path or "") is not None
+
+
+def _normalize_x_title(value: Optional[str]) -> Optional[str]:
+    cleaned = _clean_metadata_title(value)
+    if not cleaned:
+        return None
+    cleaned = re.sub(r"\s*(?:/|\||-)\s*X\s*$", "", cleaned, flags=re.IGNORECASE).strip()
+    if cleaned.startswith("Xユーザーの") and "さん" in cleaned and "「" in cleaned:
+        return cleaned
+    return None
+
+
+def _truncate_x_body(value: str) -> str:
+    if len(value) <= X_TITLE_BODY_MAX_CHARS:
+        return value
+    return value[: X_TITLE_BODY_MAX_CHARS - 1].rstrip() + "…"
+
+
+def _format_x_title(author_name: Optional[str], post_text: Optional[str]) -> Optional[str]:
+    author = _clean_metadata_title(author_name)
+    body = _clean_metadata_title(post_text)
+    if not author or not body:
+        return None
+    author = author.lstrip("@")
+    if not author:
+        return None
+    return f"Xユーザーの{author}さん: 「{_truncate_x_body(body)}」"
+
+
+def _extract_oembed_post_text(fragment: Optional[str]) -> Optional[str]:
+    if not fragment:
+        return None
+    parser = _OEmbedTextParser()
+    try:
+        parser.feed(fragment)
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+    return _clean_metadata_title("".join(parser.parts))
+
+
+def _extract_x_page_title(page: str) -> Optional[str]:
+    parser = _PageMetadataParser()
+    try:
+        parser.feed(page)
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+
+    # X's document title is the same browser-visible value that the Chrome
+    # extension reads. Prefer it over generic og:title values such as
+    # "Post by ... on X" and remove only the site suffix.
+    candidates = [
+        _clean_metadata_title("".join(parser.document_title_parts)),
+        _clean_metadata_title(parser.meta_titles.get("og:title")),
+        _clean_metadata_title(parser.meta_titles.get("twitter:title")),
+        _clean_metadata_title(parser.meta_titles.get("title")),
+    ]
+    for candidate in candidates:
+        normalized = _normalize_x_title(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
+def _fetch_x_oembed_title(url: str) -> Optional[str]:
+    endpoint = f"{X_OEMBED_ENDPOINT}?{urllib.parse.urlencode({'url': url, 'omit_script': '1'})}"
+    try:
+        response = _fetch_metadata_page(endpoint)
+        if response is None:
+            return None
+        payload = json.loads(response[0])
+        if not isinstance(payload, dict):
+            return None
+        return _format_x_title(
+            payload.get("author_name"),
+            _extract_oembed_post_text(payload.get("html")),
+        )
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
+def _validate_metadata_url(raw_url: str) -> str:
+    parsed = urllib.parse.urlparse(raw_url.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("unsupported url scheme")
+    if parsed.username or parsed.password:
+        raise ValueError("userinfo is not allowed")
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError as error:
+        raise ValueError("invalid port") from error
+
+    host = parsed.hostname
+    try:
+        addresses = {str(ipaddress.ip_address(host))}
+    except ValueError:
+        try:
+            addresses = {
+                str(ipaddress.ip_address(info[4][0].split("%", 1)[0]))
+                for info in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+            }
+        except (OSError, ValueError) as error:
+            raise ValueError("host could not be resolved") from error
+    if not addresses or any(not ipaddress.ip_address(address).is_global for address in addresses):
+        raise ValueError("private or non-global host is not allowed")
+    return parsed._replace(fragment="").geturl()
+
+
+def _fetch_metadata_page(url: str) -> Optional[tuple[str, str]]:
+    current_url = url
+    for _ in range(METADATA_MAX_REDIRECTS + 1):
+        current_url = _validate_metadata_url(current_url)
+        request = urllib.request.Request(
+            current_url,
+            headers={
+                "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
+                "Accept-Encoding": "identity",
+                "User-Agent": METADATA_USER_AGENT,
+            },
+        )
+        try:
+            with METADATA_OPENER.open(request, timeout=METADATA_TIMEOUT_SECONDS) as response:
+                status = response.getcode()
+                if 300 <= status < 400:
+                    location = response.headers.get("Location")
+                    if not location:
+                        return None
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    continue
+                if status < 200 or status >= 300:
+                    return None
+                raw = response.read(METADATA_MAX_BYTES + 1)
+                if len(raw) > METADATA_MAX_BYTES:
+                    raw = raw[:METADATA_MAX_BYTES]
+                charset = response.headers.get_content_charset() or "utf-8"
+                try:
+                    page = raw.decode(charset, errors="replace")
+                except LookupError:
+                    page = raw.decode("utf-8", errors="replace")
+                return page, response.geturl() or current_url
+        except urllib.error.HTTPError as error:
+            if 300 <= error.code < 400:
+                location = error.headers.get("Location")
+                if not location:
+                    return None
+                current_url = urllib.parse.urljoin(current_url, location)
+                continue
+            return None
+        except (OSError, ValueError):
+            return None
+    return None
+
+
+def _extract_page_title(page: str) -> Optional[str]:
+    parser = _PageMetadataParser()
+    try:
+        parser.feed(page)
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+    for key in ("og:title", "twitter:title", "title"):
+        title = _clean_metadata_title(parser.meta_titles.get(key))
+        if title:
+            return title
+    return _clean_metadata_title("".join(parser.document_title_parts))
+
+
+@router.get("/url-metadata", response_model=UrlMetadataOut)
+def get_url_metadata(url: str = Query(..., min_length=1, max_length=4096)):
+    try:
+        validated_url = _validate_metadata_url(url)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    is_x_status = _is_x_status_url(validated_url)
+    page = _fetch_metadata_page(validated_url)
+    if page is None:
+        if is_x_status:
+            x_title = _fetch_x_oembed_title(validated_url)
+            if x_title:
+                return UrlMetadataOut(url=validated_url, title=x_title)
+        raise HTTPException(status_code=502, detail="failed to fetch page metadata")
+    page_html, final_url = page
+    if is_x_status or _is_x_status_url(final_url):
+        title = _extract_x_page_title(page_html) or _fetch_x_oembed_title(final_url)
+        if title is None:
+            title = _extract_page_title(page_html)
+    else:
+        title = _extract_page_title(page_html)
+    return UrlMetadataOut(url=final_url, title=title)
 
 
 @router.get("/categories", response_model=List[CategoryOut])
@@ -1216,9 +1512,11 @@ def get_note(note_id: int, db: Connection = Depends(get_db)):
 
 @router.put("/notes/{note_id}", response_model=NoteOut)
 def update_note(note_id: int, payload: NoteUpdate, db: Connection = Depends(get_db)):
-    row = db.execute("SELECT id FROM notes WHERE id = ?", (note_id,)).fetchone()
+    row = db.execute("SELECT id, updated_at FROM notes WHERE id = ?", (note_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Note not found")
+    if payload.expected_updated_at is not None and payload.expected_updated_at != row["updated_at"]:
+        raise HTTPException(status_code=409, detail="Note was updated elsewhere")
 
     if payload.title is not None:
         db.execute("UPDATE notes SET title = ? WHERE id = ?", (payload.title, note_id))
@@ -1246,7 +1544,10 @@ def update_note(note_id: int, payload: NoteUpdate, db: Connection = Depends(get_
             note_id,
             [payload.project_id] if payload.project_id is not None else [],
         )
-    db.execute("UPDATE notes SET updated_at = datetime('now') WHERE id = ?", (note_id,))
+    db.execute(
+        "UPDATE notes SET updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?",
+        (note_id,),
+    )
     db.commit()
     row = db.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
     return _row_to_note(db, row)
@@ -1282,7 +1583,15 @@ def get_setting(key: str, db: Connection = Depends(get_db)):
 @router.put("/settings/{key}", response_model=SettingValue)
 def put_setting(key: str, payload: SettingValue, db: Connection = Depends(get_db)):
     value = payload.value
-    if key == "ai_export_enabled":
+    if key in {"auto_create_note_on_task", "auto_create_note_on_project"}:
+        value = payload.value.strip().lower()
+        if value not in {"true", "false"}:
+            raise HTTPException(status_code=422, detail="自動メモ作成の設定値が不正です。")
+    elif key == "task_auto_delete":
+        value = payload.value.strip().lower()
+        if value not in {"3d", "1w", "1m", "never"}:
+            raise HTTPException(status_code=422, detail="タスク自動削除の設定値が不正です。")
+    elif key == "ai_export_enabled":
         value = payload.value.strip().lower()
         if value not in {"true", "false"}:
             raise HTTPException(status_code=422, detail="AI向けエクスポートの設定値が不正です。")
@@ -2508,7 +2817,11 @@ def get_local_file_path(clip_id: int, db: Connection = Depends(get_db)):
 
 
 @router.get("/clips/{clip_id}/file")
-def get_local_file(clip_id: int, db: Connection = Depends(get_db)):
+def get_local_file(
+    clip_id: int,
+    request: Request,
+    db: Connection = Depends(get_db),
+):
     """Serve a local clip's file. Returns FileResponse for local clips."""
     row = db.execute(
         "SELECT url, clip_type FROM clips WHERE id = ?", (clip_id,)
@@ -2534,7 +2847,76 @@ def get_local_file(clip_id: int, db: Connection = Depends(get_db)):
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
-    return FileResponse(str(file_path), filename=file_path.name)
+    total_size = file_path.stat().st_size
+    range_header = request.headers.get("range")
+    if not range_header:
+        return FileResponse(
+            str(file_path),
+            filename=file_path.name,
+            headers={"Accept-Ranges": "bytes"},
+        )
+
+    byte_range = _parse_single_byte_range(range_header, total_size)
+    if byte_range is None:
+        return Response(
+            status_code=416,
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Range": f"bytes */{total_size}",
+            },
+        )
+
+    start, end = byte_range
+    media_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    length = end - start + 1
+    return StreamingResponse(
+        _iter_file_range(file_path, start, length),
+        status_code=206,
+        media_type=media_type,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(length),
+            "Content-Range": f"bytes {start}-{end}/{total_size}",
+        },
+    )
+
+
+def _parse_single_byte_range(value: str, total_size: int) -> Optional[tuple[int, int]]:
+    """Parse one RFC 7233 byte range and return inclusive start/end offsets."""
+    if total_size <= 0 or not value.lower().startswith("bytes="):
+        return None
+    raw_range = value[6:].strip()
+    if not raw_range or "," in raw_range or "-" not in raw_range:
+        return None
+    raw_start, raw_end = (part.strip() for part in raw_range.split("-", 1))
+    try:
+        if not raw_start:
+            suffix_length = int(raw_end)
+            if suffix_length <= 0:
+                return None
+            return max(total_size - suffix_length, 0), total_size - 1
+
+        start = int(raw_start)
+        if start < 0 or start >= total_size:
+            return None
+        end = total_size - 1 if not raw_end else int(raw_end)
+        if end < start:
+            return None
+        return start, min(end, total_size - 1)
+    except ValueError:
+        return None
+
+
+def _iter_file_range(path: Path, start: int, length: int):
+    with path.open("rb") as source:
+        source.seek(start)
+        remaining = length
+        while remaining > 0:
+            chunk = source.read(min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            yield chunk
+            remaining -= len(chunk)
 
 
 @router.post("/clips/{clip_id}/open")

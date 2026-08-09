@@ -584,13 +584,65 @@ window.addEventListener("storage", (e) => {
 
 // ---- Shared Settings ----
 
-function loadSettingsValues() {
+const SHARED_BOOLEAN_SETTINGS = Object.freeze({
+  taskAutoCreateNote: { apiKey: "auto_create_note_on_task", storageKey: "autoCreateNoteOnTask" },
+  projectAutoCreateNote: { apiKey: "auto_create_note_on_project", storageKey: "autoCreateNoteOnProject" },
+});
+
+async function getSharedBooleanSetting(apiKey, storageKey) {
+  const localValue = localStorage.getItem(storageKey);
+  try {
+    const response = await fetch(`${API_ROOT}/settings/${apiKey}`, { headers: { Accept: "application/json" } });
+    if (response.ok) {
+      const data = await response.json();
+      const value = String(data.value).toLowerCase() === "true";
+      localStorage.setItem(storageKey, value ? "true" : "false");
+      return value;
+    }
+    if (response.status !== 404) throw new Error(`HTTP ${response.status}`);
+
+    // Existing installs used localStorage. Migrate that value the first time
+    // the shared PC setting is requested, without changing the old default.
+    const migrated = localValue === "true";
+    await setSharedBooleanSetting(apiKey, storageKey, migrated);
+    return migrated;
+  } catch (error) {
+    return localValue === "true";
+  }
+}
+
+async function setSharedBooleanSetting(apiKey, storageKey, value) {
+  const normalized = value ? "true" : "false";
+  try {
+    const response = await fetch(`${API_ROOT}/settings/${apiKey}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ value: normalized }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    localStorage.setItem(storageKey, normalized);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+window.sparkleSettings = Object.freeze({
+  getBoolean: getSharedBooleanSetting,
+  setBoolean: setSharedBooleanSetting,
+});
+
+async function loadSettingsValues(force = false) {
   const acn = document.getElementById("autoCreateNote");
-  if (acn) acn.checked = localStorage.getItem("autoCreateNoteOnTask") === "true";
   const acnp = document.getElementById("autoCreateNoteOnProject");
-  if (acnp) acnp.checked = localStorage.getItem("autoCreateNoteOnProject") === "true";
+  const [taskAutoCreate, projectAutoCreate] = await Promise.all([
+    getSharedBooleanSetting(SHARED_BOOLEAN_SETTINGS.taskAutoCreateNote.apiKey, SHARED_BOOLEAN_SETTINGS.taskAutoCreateNote.storageKey),
+    getSharedBooleanSetting(SHARED_BOOLEAN_SETTINGS.projectAutoCreateNote.apiKey, SHARED_BOOLEAN_SETTINGS.projectAutoCreateNote.storageKey),
+  ]);
+  if (acn) acn.checked = taskAutoCreate;
+  if (acnp) acnp.checked = projectAutoCreate;
   const tad = document.getElementById("taskAutoDelete");
-  if (tad && !tad.dataset.loaded) {
+  if (tad && (!tad.dataset.loaded || force)) {
     tad.dataset.loaded = "1";
     fetch(`${API_ROOT}/settings/task_auto_delete`)
       .then((r) => r.ok ? r.json() : { value: "1w" })
@@ -923,13 +975,29 @@ function initSettings() {
   if (getSettingsOperationLock()) installSettingsOperationGuard();
   // autoCreateNote
   const acn = document.getElementById("autoCreateNote");
-  if (acn) acn.addEventListener("change", () => {
-    localStorage.setItem("autoCreateNoteOnTask", acn.checked ? "true" : "false");
+  if (acn) acn.addEventListener("change", async () => {
+    const nextValue = acn.checked;
+    acn.disabled = true;
+    const saved = await setSharedBooleanSetting(
+      SHARED_BOOLEAN_SETTINGS.taskAutoCreateNote.apiKey,
+      SHARED_BOOLEAN_SETTINGS.taskAutoCreateNote.storageKey,
+      nextValue,
+    );
+    if (!saved) acn.checked = !nextValue;
+    acn.disabled = false;
   });
   // autoCreateNoteOnProject
   const acnp = document.getElementById("autoCreateNoteOnProject");
-  if (acnp) acnp.addEventListener("change", () => {
-    localStorage.setItem("autoCreateNoteOnProject", acnp.checked ? "true" : "false");
+  if (acnp) acnp.addEventListener("change", async () => {
+    const nextValue = acnp.checked;
+    acnp.disabled = true;
+    const saved = await setSharedBooleanSetting(
+      SHARED_BOOLEAN_SETTINGS.projectAutoCreateNote.apiKey,
+      SHARED_BOOLEAN_SETTINGS.projectAutoCreateNote.storageKey,
+      nextValue,
+    );
+    if (!saved) acnp.checked = !nextValue;
+    acnp.disabled = false;
   });
   // taskAutoDelete
   const tad = document.getElementById("taskAutoDelete");
@@ -965,6 +1033,10 @@ function initSettings() {
     syncNativeTitlebar(mode);
   });
   // app update
+  const setupTutorialBtn = document.getElementById("setupTutorialBtn");
+  if (setupTutorialBtn) setupTutorialBtn.addEventListener("click", () => {
+    window.location.href = "/Tutorial?source=settings";
+  });
   const updateCheckBtn = document.getElementById("updateCheckBtn");
   const updateApplyBtn = document.getElementById("updateApplyBtn");
   if (updateCheckBtn) updateCheckBtn.addEventListener("click", async () => {
@@ -975,7 +1047,10 @@ function initSettings() {
       setUpdateStatus("更新を確認できませんでした。", false, "ネットワークに接続してください。");
       return;
     }
-    loadUpdateStatus();
+    await loadUpdateStatus();
+    if (typeof window.sparkleUpdateNotice?.check === "function") {
+      void window.sparkleUpdateNotice.check();
+    }
   });
   if (updateApplyBtn) updateApplyBtn.addEventListener("click", async () => {
     const message = "最新版に更新して再起動します。よろしいですか？";
@@ -1119,6 +1194,16 @@ function initSettings() {
     // localStorage settings
     localStorage.setItem("autoCreateNoteOnTask", "false");
     localStorage.setItem("autoCreateNoteOnProject", "false");
+    void setSharedBooleanSetting(
+      SHARED_BOOLEAN_SETTINGS.taskAutoCreateNote.apiKey,
+      SHARED_BOOLEAN_SETTINGS.taskAutoCreateNote.storageKey,
+      false,
+    );
+    void setSharedBooleanSetting(
+      SHARED_BOOLEAN_SETTINGS.projectAutoCreateNote.apiKey,
+      SHARED_BOOLEAN_SETTINGS.projectAutoCreateNote.storageKey,
+      false,
+    );
     localStorage.removeItem("hideAutoCheatsheet");
     // UI update
     const acn = document.getElementById("autoCreateNote");
@@ -1326,7 +1411,12 @@ async function initPinSettings() {
   initSettings();
   initProfileSidebar();
   loadTitlebarMode();
-  if (document.body?.classList.contains("settings-page")) loadSettingsValues();
+  if (document.body?.classList.contains("settings-page")) {
+    loadSettingsValues();
+    window.setInterval(() => {
+      if (!document.hidden) loadSettingsValues(true);
+    }, 2000);
+  }
 }
 
 function initProfileSidebar() {

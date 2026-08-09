@@ -1,14 +1,25 @@
 const API = window.location.origin;
 const AUTO_KEY = "autoCreateNoteOnTask";
+const AUTO_API_KEY = "auto_create_note_on_task";
+
+async function taskAutoCreateNoteEnabled() {
+  if (typeof window.sparkleSettings?.getBoolean === "function") {
+    return window.sparkleSettings.getBoolean(AUTO_API_KEY, AUTO_KEY);
+  }
+  return localStorage.getItem(AUTO_KEY) === "true";
+}
 
 const state = {
   tasks: [],
   notes: [],
+  projects: [],
   status: "active", // "all" | "active" | "done"
   selected: new Map(), // Map<id, "note"> (タスクは選択対象外)
   dragOccurred: false,
 };
 let notesHaveRendered = false;
+let notesLoadInFlight = null;
+let notesDataSignature = "";
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -169,13 +180,29 @@ function noteMatchesStatus(n) {
 }
 
 // --- 繝・・繧ｿ隱ｭ縺ｿ霎ｼ縺ｿ ---
-async function loadAll() {
-  const [tasks, notes] = await Promise.all([api("/tasks"), api("/notes")]);
-  state.tasks = tasks;
-  state.notes = notes;
-  renderStatusTabs();
-  renderTasks();
-  renderNotes();
+function loadAll({ silent = false } = {}) {
+  if (notesLoadInFlight) return notesLoadInFlight;
+  notesLoadInFlight = (async () => {
+    const [tasks, notes, projects] = await Promise.all([
+      api("/tasks"),
+      api("/notes"),
+      api("/projects"),
+    ]);
+    const nextSignature = JSON.stringify({ tasks, notes, projects });
+    const changed = nextSignature !== notesDataSignature;
+    state.tasks = tasks;
+    state.notes = notes;
+    state.projects = projects;
+    if (!silent || changed) {
+      renderStatusTabs();
+      renderTasks();
+      renderNotes();
+    }
+    notesDataSignature = nextSignature;
+  })().finally(() => {
+    notesLoadInFlight = null;
+  });
+  return notesLoadInFlight;
 }
 
 // --- 繧ｿ繧ｹ繧ｯ ---
@@ -204,6 +231,10 @@ function renderTasks() {
             `<div class="task-note" data-note="${n.id}" title="メモを開く"><img class="icon icon-inline" src="icons/memo.svg" alt="" /> ${escapeHtml(n.title)}</div>`
         )
         .join("");
+      const project = state.projects.find((item) => item.id === t.project_id);
+      const projectLink = project?.name
+        ? `<div class="task-project" title="プロジェクト: ${escapeAttr(project.name)}"><img class="icon icon-inline" src="icons/project.svg" alt="" /> ${escapeHtml(project.name)}</div>`
+        : "";
       const prio =
         t.priority != null
           ? `<div class="task-priority" title="優先度 ${t.priority}">${priorityStars(t.priority)}</div>`
@@ -224,7 +255,7 @@ function renderTasks() {
             ${prio}
             ${due}
             ${clip}
-            ${linked ? `<div class="task-notes">${linked}</div>` : ""}
+            ${linked || projectLink ? `<div class="task-relations">${linked ? `<div class="task-notes">${linked}</div>` : ""}${projectLink}</div>` : ""}
           </div>
           <div class="task-actions">
             <button class="task-link" data-link="${t.id}" title="メモを紐付け"><img class="icon icon-btn" src="icons/clip.svg" alt="紐付け" /></button>
@@ -397,7 +428,7 @@ els.taskAdd.addEventListener("submit", async (e) => {
     els.taskInput.value = "";
 
     // 險ｭ螳唹N縺ｪ繧牙酔蜷阪・遨ｺ繝｡繝｢繧定・蜍穂ｽ懈・縺励※邏蝉ｻ倥￠
-    if (localStorage.getItem(AUTO_KEY) === "true") {
+    if (await taskAutoCreateNoteEnabled()) {
       try {
         const note = await api("/notes", {
           method: "POST",
@@ -809,6 +840,19 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// PC側やAndroid側で変更されたタスク・メモを、リロードなしで反映する。
+// 変更がない場合はDOMを再描画せず、編集中の表示を揺らさない。
+function refreshNotesInBackground() {
+  if (document.visibilityState !== "visible") return;
+  loadAll({ silent: true }).catch(() => {});
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshNotesInBackground();
+});
+window.addEventListener("focus", refreshNotesInBackground);
+window.setInterval(refreshNotesInBackground, 1000);
+
 // Events
 els.batchDuplicateBtn.addEventListener("click", batchDuplicateSelected);
 els.batchDelBtn.addEventListener("click", batchDeleteSelected);
@@ -819,4 +863,3 @@ loadAll().catch((e) => {
   els.memoEmpty.querySelector(".empty-sub").textContent =
     `サーバー (${API}) を起動してください。`;
 });
-

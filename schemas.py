@@ -59,6 +59,11 @@ class ClipCreate(BaseModel):
     project_id: Optional[int] = None
 
 
+class UrlMetadataOut(BaseModel):
+    url: str
+    title: Optional[str] = None
+
+
 class ClipUpdate(BaseModel):
     title: Optional[str] = None
     comment: Optional[str] = None
@@ -155,6 +160,7 @@ class NoteCreate(BaseModel):
 class NoteUpdate(BaseModel):
     title: Optional[str] = None
     body: Optional[str] = None
+    expected_updated_at: Optional[str] = None
     clip_ids: Optional[List[int]] = None
     task_id: Optional[int] = None
     task_ids: Optional[List[int]] = None

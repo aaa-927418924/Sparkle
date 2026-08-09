@@ -18,11 +18,15 @@ from ffmpeg_bootstrap import ensure_ffmpeg_async
 from migration import get_migration_status, run_migration
 from setup import (
     advance_post_migration_onboarding,
+    begin_setup_tutorial,
     begin_post_migration_onboarding,
     complete_post_migration_onboarding,
+    complete_setup_tutorial,
     get_post_migration_onboarding_status,
     get_setup_status,
+    get_setup_tutorial_status,
     mark_setup_complete,
+    start_setup_tutorial,
 )
 
 UPLOADS_DIR = get_uploads_dir()
@@ -127,6 +131,8 @@ def setup_complete(payload: InitialSetupPayload):
     mark_setup_complete(payload.model_dump(exclude={"flow"}))
     if payload.flow == "migration":
         advance_post_migration_onboarding("extension")
+    else:
+        begin_setup_tutorial()
     return {"ok": True, "status": get_setup_status()}
 
 
@@ -139,6 +145,23 @@ def complete_post_migration_setup():
         raise HTTPException(status_code=409, detail="先に移行後の設定確認を完了してください。")
     complete_post_migration_onboarding()
     return {"ok": True}
+
+
+@app.get("/setup/tutorial/status", include_in_schema=False)
+def setup_tutorial_status():
+    return get_setup_tutorial_status()
+
+
+@app.post("/setup/tutorial/start", include_in_schema=False)
+def setup_tutorial_start():
+    start_setup_tutorial()
+    return {"ok": True, "status": get_setup_tutorial_status()}
+
+
+@app.post("/setup/tutorial/complete", include_in_schema=False)
+def setup_tutorial_complete():
+    complete_setup_tutorial()
+    return {"ok": True, "status": get_setup_tutorial_status()}
 
 
 @app.get("/health")
@@ -186,6 +209,11 @@ def migration_page():
 @app.get("/Setup", include_in_schema=False)
 def setup_page():
     return _frontend_page("setup.html")
+
+
+@app.get("/Tutorial", include_in_schema=False)
+def tutorial_page():
+    return _frontend_page("tutorial.html")
 
 
 @app.get("/ExtensionGuide", include_in_schema=False)

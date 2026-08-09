@@ -113,12 +113,12 @@
       status.textContent = migrationMode
         ? "確認が完了しました。Chrome拡張の更新案内を表示します…"
         : "設定が完了しました。Chrome拡張の案内を表示します…";
-      const guideQuery = debugMode
-        ? "?source=setup&debug=extension"
-        : migrationMode
-          ? "?source=migration"
-          : "?source=setup";
-      window.location.replace(`/ExtensionGuide${guideQuery}`);
+      if (migrationMode) {
+        window.location.replace("/ExtensionGuide?source=migration");
+        return;
+      }
+      const extensionQuery = debugMode ? "?source=setup&debug=extension" : "?source=setup";
+      window.location.replace(`/ExtensionGuide${extensionQuery}`);
     } catch (error) {
       setBusy(false);
       status.textContent = error.message || "初期設定に失敗しました。設定はまだ完了していません。";

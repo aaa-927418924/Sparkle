@@ -278,11 +278,21 @@ class RemoteAccessManager:
         if current.get("available") and current.get("active"):
             if current.get("target") == "remote":
                 return {"ok": True, "status": current}
-            return {
-                "ok": False,
-                "status": current,
-                "error": "別のTailscale Funnel設定がすでに有効です。先にその設定を解除してください。",
-            }
+            if current.get("target") == "main":
+                ok, stdout, stderr = self._run_cli(["funnel", "reset"])
+                if not ok:
+                    return {
+                        "ok": False,
+                        "status": current,
+                        "error": self._cli_error(stderr or stdout),
+                    }
+                self._funnel_cache = None
+            else:
+                return {
+                    "ok": False,
+                    "status": current,
+                    "error": "別のTailscale Funnel設定がすでに有効です。先にその設定を解除してください。",
+                }
         if not current.get("available"):
             return {"ok": False, "status": current, "error": current.get("error")}
 

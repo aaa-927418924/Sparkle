@@ -52,6 +52,37 @@ class RemoteAuthStoreTests(unittest.TestCase):
         self.assertEqual(result["target"], "main")
         self.assertIsNone(result["public_url"])
 
+    def test_enable_replaces_sparkles_existing_desktop_funnel(self):
+        current = {
+            "available": True,
+            "active": True,
+            "target": "main",
+            "public_url": "https://sparkle.example.ts.net",
+        }
+        remote = {
+            "available": True,
+            "active": True,
+            "target": "remote",
+            "public_url": "https://sparkle.example.ts.net",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            manager = RemoteAccessManager(
+                auth_store=AuthStore(Path(directory) / "remote-auth.json")
+            )
+            with (
+                patch.object(manager, "funnel_status", side_effect=[current, remote]),
+                patch.object(manager, "_prepare_serve_switch", return_value=(True, None)),
+                patch.object(manager, "_run_cli", return_value=(True, "", "")) as run_cli,
+            ):
+                result = manager._start_funnel_route()
+        self.assertTrue(result["ok"])
+        self.assertEqual(run_cli.call_count, 2)
+        self.assertEqual(run_cli.call_args_list[0].args[0], ["funnel", "reset"])
+        self.assertEqual(
+            run_cli.call_args_list[1].args[0],
+            ["funnel", "--bg", "--https=443", "--yes", "http://127.0.0.1:8001"],
+        )
+
     def test_trusted_session_survives_store_reload_without_plaintext(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "remote-auth.json"

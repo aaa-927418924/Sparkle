@@ -438,6 +438,19 @@ METADATA_MAX_BYTES = 512 * 1024
 METADATA_TIMEOUT_SECONDS = 8
 METADATA_MAX_REDIRECTS = 3
 METADATA_USER_AGENT = "Mozilla/5.0 Sparkle/metadata"
+X_HOSTS = frozenset(
+    {
+        "x.com",
+        "www.x.com",
+        "mobile.x.com",
+        "twitter.com",
+        "www.twitter.com",
+        "mobile.twitter.com",
+    }
+)
+X_STATUS_PATH_RE = re.compile(r"(?:^|/)status/(\d+)(?:/|$)", re.IGNORECASE)
+X_OEMBED_ENDPOINT = "https://publish.twitter.com/oembed"
+X_TITLE_BODY_MAX_CHARS = 240
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -468,7 +481,9 @@ class _PageMetadataParser(HTMLParser):
             if key
         }
         key = (values.get("property") or values.get("name") or values.get("itemprop") or "").lower()
-        if key in {"og:title", "twitter:title", "title"} and values.get("content"):
+        if not key or not values.get("content"):
+            return
+        if key in {"og:title", "twitter:title", "title"}:
             self.meta_titles.setdefault(key, values["content"])
 
     def handle_endtag(self, tag: str):
@@ -485,6 +500,116 @@ def _clean_metadata_title(value: Optional[str]) -> Optional[str]:
         return None
     cleaned = re.sub(r"\s+", " ", html.unescape(value)).strip()
     return cleaned[:500] or None
+
+
+class _OEmbedTextParser(HTMLParser):
+    """Extract the post paragraph from the public X embed response."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts: List[str] = []
+        self._paragraph_depth = 0
+
+    def handle_starttag(self, tag: str, attrs):
+        normalized_tag = tag.lower()
+        if normalized_tag == "p" and self._paragraph_depth == 0:
+            self._paragraph_depth = 1
+        elif normalized_tag == "br" and self._paragraph_depth > 0:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str):
+        if tag.lower() == "p" and self._paragraph_depth > 0:
+            self._paragraph_depth = 0
+
+    def handle_data(self, data: str):
+        if self._paragraph_depth > 0:
+            self.parts.append(data)
+
+
+def _is_x_status_url(raw_url: str) -> bool:
+    parsed = urllib.parse.urlsplit(raw_url.strip())
+    host = (parsed.hostname or "").lower().rstrip(".")
+    return host in X_HOSTS and X_STATUS_PATH_RE.search(parsed.path or "") is not None
+
+
+def _normalize_x_title(value: Optional[str]) -> Optional[str]:
+    cleaned = _clean_metadata_title(value)
+    if not cleaned:
+        return None
+    cleaned = re.sub(r"\s*(?:/|\||-)\s*X\s*$", "", cleaned, flags=re.IGNORECASE).strip()
+    if cleaned.startswith("Xユーザーの") and "さん" in cleaned and "「" in cleaned:
+        return cleaned
+    return None
+
+
+def _truncate_x_body(value: str) -> str:
+    if len(value) <= X_TITLE_BODY_MAX_CHARS:
+        return value
+    return value[: X_TITLE_BODY_MAX_CHARS - 1].rstrip() + "…"
+
+
+def _format_x_title(author_name: Optional[str], post_text: Optional[str]) -> Optional[str]:
+    author = _clean_metadata_title(author_name)
+    body = _clean_metadata_title(post_text)
+    if not author or not body:
+        return None
+    author = author.lstrip("@")
+    if not author:
+        return None
+    return f"Xユーザーの{author}さん: 「{_truncate_x_body(body)}」"
+
+
+def _extract_oembed_post_text(fragment: Optional[str]) -> Optional[str]:
+    if not fragment:
+        return None
+    parser = _OEmbedTextParser()
+    try:
+        parser.feed(fragment)
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+    return _clean_metadata_title("".join(parser.parts))
+
+
+def _extract_x_page_title(page: str) -> Optional[str]:
+    parser = _PageMetadataParser()
+    try:
+        parser.feed(page)
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+
+    # X's document title is the same browser-visible value that the Chrome
+    # extension reads. Prefer it over generic og:title values such as
+    # "Post by ... on X" and remove only the site suffix.
+    candidates = [
+        _clean_metadata_title("".join(parser.document_title_parts)),
+        _clean_metadata_title(parser.meta_titles.get("og:title")),
+        _clean_metadata_title(parser.meta_titles.get("twitter:title")),
+        _clean_metadata_title(parser.meta_titles.get("title")),
+    ]
+    for candidate in candidates:
+        normalized = _normalize_x_title(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
+def _fetch_x_oembed_title(url: str) -> Optional[str]:
+    endpoint = f"{X_OEMBED_ENDPOINT}?{urllib.parse.urlencode({'url': url, 'omit_script': '1'})}"
+    try:
+        response = _fetch_metadata_page(endpoint)
+        if response is None:
+            return None
+        payload = json.loads(response[0])
+        if not isinstance(payload, dict):
+            return None
+        return _format_x_title(
+            payload.get("author_name"),
+            _extract_oembed_post_text(payload.get("html")),
+        )
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None
 
 
 def _validate_metadata_url(raw_url: str) -> str:
@@ -579,11 +704,22 @@ def get_url_metadata(url: str = Query(..., min_length=1, max_length=4096)):
         validated_url = _validate_metadata_url(url)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    is_x_status = _is_x_status_url(validated_url)
     page = _fetch_metadata_page(validated_url)
     if page is None:
+        if is_x_status:
+            x_title = _fetch_x_oembed_title(validated_url)
+            if x_title:
+                return UrlMetadataOut(url=validated_url, title=x_title)
         raise HTTPException(status_code=502, detail="failed to fetch page metadata")
     page_html, final_url = page
-    return UrlMetadataOut(url=final_url, title=_extract_page_title(page_html))
+    if is_x_status or _is_x_status_url(final_url):
+        title = _extract_x_page_title(page_html) or _fetch_x_oembed_title(final_url)
+        if title is None:
+            title = _extract_page_title(page_html)
+    else:
+        title = _extract_page_title(page_html)
+    return UrlMetadataOut(url=final_url, title=title)
 
 
 @router.get("/categories", response_model=List[CategoryOut])

@@ -18,6 +18,8 @@ endpoints. URL clips use `POST /clips` and `PUT /clips/{id}`; phone file
 selection and Android Sharesheet files use the existing multipart
 `POST /clips/local` endpoint. Remote thumbnails use the existing
 `/thumbnail-proxy` endpoint when needed.
+When the PC API source changes, restart a desktop build that contains those
+changes; updating the Android APK alone cannot update the PC server endpoints.
 
 ## Android behavior
 
@@ -40,7 +42,9 @@ selection and Android Sharesheet files use the existing multipart
   sharing app provides them. If the title is missing, the editor requests the
   read-only `/url-metadata` endpoint from the PC and fills the title after the
   page metadata is resolved. A loading/failure message is shown, manual title
-  edits are never overwritten, and the PC does not persist this lookup.
+  edits are never overwritten, and the PC does not persist this lookup. X
+  status URLs use the browser-style X title when available and fall back to a
+  generated `Xユーザーの名前さん: 「投稿本文」` title from public embed metadata.
 - Tasks and notes are loaded from the PC. Each tab has All/In-progress/
   Completed filters; the add button opens a PC-backed form, tapping edits an
   item, long-pressing deletes it, and task/note forms can manage their links.

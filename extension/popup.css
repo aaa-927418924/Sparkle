@@ -15,7 +15,8 @@ body {
 }
 
 .popup {
-  width: 320px;
+  width: 304px;
+  margin-inline: auto;
   padding: 14px;
 }
 
@@ -102,6 +103,8 @@ textarea {
 
 .tag-box {
   display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   gap: 6px;
   max-height: 56px;

@@ -5,15 +5,21 @@ package com.sparkle.android.ui
 import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,7 +55,13 @@ private const val VIDEO_CACHE_BYTES = 128L * 1024 * 1024
 fun SparkleVideoPreview(
     fileUrl: String,
     mimeType: String?,
+    autoLoad: Boolean = true,
 ) {
+    var manualLoadRequested by remember(fileUrl, mimeType) { mutableStateOf(false) }
+    if (!autoLoad && !manualLoadRequested) {
+        VideoLoadPrompt(onLoad = { manualLoadRequested = true })
+        return
+    }
     val context = androidx.compose.ui.platform.LocalContext.current
     val player = remember(fileUrl, mimeType) {
         ExoPlayer.Builder(context)
@@ -135,6 +147,48 @@ fun SparkleVideoPreview(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VideoLoadPrompt(onLoad: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(220.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                Icons.Default.PlayArrow,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                "動画を読み込む",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(
+                "モバイル回線では自動読み込みしません。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+            )
+            Button(
+                onClick = onLoad,
+                modifier = Modifier.semantics { contentDescription = "動画を読み込む" },
+            ) {
+                Text("読み込む")
             }
         }
     }

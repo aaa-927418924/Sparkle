@@ -155,10 +155,12 @@ import com.sparkle.android.data.SharedTitleResolution
 import com.sparkle.android.data.Task
 import com.sparkle.android.data.TaskAutoDeleteOption
 import com.sparkle.android.data.UploadSelection
+import com.sparkle.android.ui.NetworkPolicy
 import com.sparkle.android.ui.SparkleTheme
 import com.sparkle.android.ui.SparkleThumbnail
 import com.sparkle.android.ui.SparkleVideoPreview
 import com.sparkle.android.ui.SparkleViewModel
+import com.sparkle.android.ui.rememberNetworkPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -205,6 +207,7 @@ private fun SparkleRoot(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val closeDrawer = { scope.launch { drawerState.close() } }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val networkPolicy = rememberNetworkPolicy()
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         viewModel.beginCreate(ClipCreationSource(upload = selectionForUri(context, uri)))
@@ -268,6 +271,7 @@ private fun SparkleRoot(
                 onOpenMenu = { scope.launch { drawerState.open() } },
                 onOpenSettings = viewModel::openSettings,
                 onPickFile = openFilePicker,
+                networkPolicy = networkPolicy,
             )
             Screen.TasksNotes -> TasksNotesScreen(
                 viewModel = viewModel,
@@ -276,12 +280,13 @@ private fun SparkleRoot(
             Screen.Projects -> ProjectsScreen(
                 viewModel = viewModel,
                 onOpenMenu = { scope.launch { drawerState.open() } },
+                networkPolicy = networkPolicy,
             )
-            is Screen.ProjectDetail -> ProjectDetailScreen(viewModel, currentScreen.projectId)
+            is Screen.ProjectDetail -> ProjectDetailScreen(viewModel, networkPolicy, currentScreen.projectId)
             is Screen.ProjectEditor -> ProjectEditorScreen(viewModel, currentScreen.projectId)
             is Screen.TaskEditor -> TaskEditorScreen(viewModel, currentScreen.taskId)
             is Screen.NoteEditor -> NoteEditorScreen(viewModel, currentScreen.noteId)
-            is Screen.Detail -> DetailScreen(viewModel, currentScreen.clipId)
+            is Screen.Detail -> DetailScreen(viewModel, networkPolicy, currentScreen.clipId)
             is Screen.Editor -> EditorScreen(
                 viewModel = viewModel,
                 clipId = currentScreen.clipId,
@@ -375,6 +380,7 @@ private fun HomeScreen(
     onOpenMenu: () -> Unit,
     onOpenSettings: () -> Unit,
     onPickFile: () -> Unit,
+    networkPolicy: NetworkPolicy,
 ) {
     val visibleClips = viewModel.visibleClips()
     val gridState = rememberLazyStaggeredGridState()
@@ -421,6 +427,7 @@ private fun HomeScreen(
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             ConnectionBanner(viewModel.connectionState, viewModel::refresh, onOpenSettings)
+            NetworkPolicyBanner(networkPolicy)
             viewModel.errorMessage?.let { ErrorBanner(it, viewModel::clearError) }
             CategoryFilterRow(viewModel)
             OutlinedTextField(
@@ -467,8 +474,9 @@ private fun HomeScreen(
                                 onToggleTag = viewModel::toggleTag,
                                 onClick = { viewModel.openDetail(clip.id) },
                                 onLongClick = { clipActionTarget = clip },
-                                allowUncachedLoad = thumbnailsReady && !isScrolling,
+                                allowUncachedLoad = thumbnailsReady && !isScrolling && !networkPolicy.restrictThumbnails,
                                 thumbnailMaxDimensionPx = thumbnailMaxDimensionPx,
+                                manualLoadEnabled = networkPolicy.restrictThumbnails,
                             )
                         }
                     }
@@ -501,6 +509,24 @@ private fun HomeScreen(
                 clipDeleteTarget = null
                 viewModel.deleteClip(clip.id)
             },
+        )
+    }
+}
+
+@Composable
+private fun NetworkPolicyBanner(policy: NetworkPolicy) {
+    if (!policy.restrictThumbnails) return
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Text(
+            "データ節約中（${policy.restrictionLabel}）。未取得のサムネイルはタップで表示します。動画はWi-Fi接続時に自動読み込みします。",
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            style = MaterialTheme.typography.bodySmall,
         )
     }
 }
@@ -676,6 +702,7 @@ private fun ClipCard(
     onLongClick: () -> Unit,
     allowUncachedLoad: Boolean = true,
     thumbnailMaxDimensionPx: Int? = null,
+    manualLoadEnabled: Boolean = false,
 ) {
     Card(
         modifier = Modifier
@@ -699,6 +726,7 @@ private fun ClipCard(
                     preserveImageAspectRatio = true,
                     allowUncachedLoad = allowUncachedLoad,
                     decodeMaxDimensionPx = thumbnailMaxDimensionPx,
+                    manualLoadEnabled = manualLoadEnabled,
                     contentDescription = "${clip.displayTitle}のサムネイル",
                 )
                 if (clip.isFavorite) {
@@ -994,7 +1022,11 @@ private fun NoteCard(note: Note, onClick: () -> Unit, onLongClick: () -> Unit = 
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-private fun ProjectsScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) {
+private fun ProjectsScreen(
+    viewModel: SparkleViewModel,
+    onOpenMenu: () -> Unit,
+    networkPolicy: NetworkPolicy,
+) {
     var deleteTarget by remember { mutableStateOf<Project?>(null) }
     val visibleProjects = viewModel.visibleProjects()
     Scaffold(
@@ -1031,6 +1063,7 @@ private fun ProjectsScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Unit) 
                             clipThumbnails = viewModel.projectClips(project.id)
                                 .mapNotNull { viewModel.thumbnailUrl(it.thumbnailUrl) }
                                 .take(3),
+                            networkPolicy = networkPolicy,
                             onClick = { viewModel.openProject(project.id) },
                             onEdit = { viewModel.openProjectEditor(project.id) },
                             onToggle = { viewModel.toggleProject(project.id) },
@@ -1064,6 +1097,7 @@ private fun ProjectCard(
     taskCount: Int,
     noteCount: Int,
     clipThumbnails: List<String>,
+    networkPolicy: NetworkPolicy,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onToggle: () -> Unit,
@@ -1083,7 +1117,7 @@ private fun ProjectCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Checkbox(checked = project.isDone, onCheckedChange = { onToggle() })
-                ProjectPreviewIcon(clipThumbnails)
+                ProjectPreviewIcon(clipThumbnails, networkPolicy)
                 Text(project.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 if (project.isDone) Text("完了", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 IconButton(onClick = onEdit, modifier = Modifier.semantics { contentDescription = "${project.name}を編集" }) {
@@ -1097,7 +1131,7 @@ private fun ProjectCard(
 }
 
 @Composable
-private fun ProjectPreviewIcon(clipThumbnails: List<String>) {
+private fun ProjectPreviewIcon(clipThumbnails: List<String>, networkPolicy: NetworkPolicy) {
     Box(modifier = Modifier.size(width = 56.dp, height = 46.dp)) {
         Icon(
             Icons.Default.Folder,
@@ -1113,6 +1147,9 @@ private fun ProjectPreviewIcon(clipThumbnails: List<String>) {
                     .align(Alignment.TopStart)
                     .offset(x = (16 + index * 8).dp, y = (index * 3).dp),
                 contentDescription = null,
+                allowUncachedLoad = !networkPolicy.restrictThumbnails,
+                manualLoadEnabled = networkPolicy.restrictThumbnails,
+                showManualLabel = false,
             )
         }
     }
@@ -1139,7 +1176,11 @@ private fun ProjectLinkButton(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
+private fun ProjectDetailScreen(
+    viewModel: SparkleViewModel,
+    networkPolicy: NetworkPolicy,
+    projectId: Int,
+) {
     val project = viewModel.project(projectId)
     var linkMode by remember(projectId) { mutableStateOf<ProjectLinkMode?>(null) }
     Scaffold(
@@ -1182,7 +1223,12 @@ private fun ProjectDetailScreen(viewModel: SparkleViewModel, projectId: Int) {
             val projectClips = viewModel.projectClips(projectId)
             if (projectClips.isEmpty()) item { Text("関連するクリップはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             else items(projectClips, key = { "clip-${it.id}" }) { clip ->
-                ProjectClipRow(clip, viewModel.thumbnailUrl(clip.thumbnailUrl), onClick = { viewModel.openDetail(clip.id) })
+                ProjectClipRow(
+                    clip = clip,
+                    thumbnailUrl = viewModel.thumbnailUrl(clip.thumbnailUrl),
+                    networkPolicy = networkPolicy,
+                    onClick = { viewModel.openDetail(clip.id) },
+                )
             }
             item { SectionHeading("タスク") }
             val projectTasks = viewModel.projectTasks(projectId)
@@ -1591,10 +1637,21 @@ private fun SectionHeading(title: String) {
 }
 
 @Composable
-private fun ProjectClipRow(clip: Clip, thumbnailUrl: String?, onClick: () -> Unit) {
+private fun ProjectClipRow(
+    clip: Clip,
+    thumbnailUrl: String?,
+    networkPolicy: NetworkPolicy,
+    onClick: () -> Unit,
+) {
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SparkleThumbnail(url = thumbnailUrl, modifier = Modifier.size(width = 84.dp, height = 64.dp), contentDescription = "${clip.displayTitle}のサムネイル")
+            SparkleThumbnail(
+                url = thumbnailUrl,
+                modifier = Modifier.size(width = 84.dp, height = 64.dp),
+                contentDescription = "${clip.displayTitle}のサムネイル",
+                allowUncachedLoad = !networkPolicy.restrictThumbnails,
+                manualLoadEnabled = networkPolicy.restrictThumbnails,
+            )
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(clip.displayTitle, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(clip.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1605,7 +1662,11 @@ private fun ProjectClipRow(clip: Clip, thumbnailUrl: String?, onClick: () -> Uni
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DetailScreen(viewModel: SparkleViewModel, clipId: Int) {
+private fun DetailScreen(
+    viewModel: SparkleViewModel,
+    networkPolicy: NetworkPolicy,
+    clipId: Int,
+) {
     val clip = viewModel.clip(clipId)
     val context = androidx.compose.ui.platform.LocalContext.current
     Scaffold(
@@ -1636,9 +1697,15 @@ private fun DetailScreen(viewModel: SparkleViewModel, clipId: Int) {
             viewModel.errorMessage?.let { ErrorBanner(it, viewModel::clearError) }
             viewModel.fileActionMessage?.let { FileActionBanner(it, viewModel::clearFileActionMessage) }
             if (clip.clipType == "local") {
-                LocalFileDetail(viewModel, clip, context)
+                LocalFileDetail(viewModel, clip, context, networkPolicy)
             } else {
-                SparkleThumbnail(url = viewModel.thumbnailUrl(clip.thumbnailUrl), modifier = Modifier.fillMaxWidth().height(210.dp), contentDescription = "${clip.displayTitle}のサムネイル")
+                SparkleThumbnail(
+                    url = viewModel.thumbnailUrl(clip.thumbnailUrl),
+                    modifier = Modifier.fillMaxWidth().height(210.dp),
+                    contentDescription = "${clip.displayTitle}のサムネイル",
+                    allowUncachedLoad = !networkPolicy.restrictThumbnails,
+                    manualLoadEnabled = networkPolicy.restrictThumbnails,
+                )
             }
             Text(clip.displayTitle, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             if (clip.clipType == "local") {
@@ -1671,6 +1738,7 @@ private fun LocalFileDetail(
     viewModel: SparkleViewModel,
     clip: Clip,
     context: Context,
+    networkPolicy: NetworkPolicy,
 ) {
     val fileName = localFileName(clip)
     val mimeType = localFileMimeType(clip)
@@ -1698,7 +1766,11 @@ private fun LocalFileDetail(
                 contentDescription = "${clip.displayTitle}のファイルプレビュー",
             )
             localFileKind(clip) == LocalFileKind.Text -> LocalTextPreview(viewModel, clip.id)
-            localFileKind(clip) == LocalFileKind.Video && fileUrl != null -> SparkleVideoPreview(fileUrl, mimeType)
+            localFileKind(clip) == LocalFileKind.Video && fileUrl != null -> SparkleVideoPreview(
+                fileUrl,
+                mimeType,
+                autoLoad = networkPolicy.allowVideoAutoLoad,
+            )
             else -> Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 modifier = Modifier.fillMaxWidth(),

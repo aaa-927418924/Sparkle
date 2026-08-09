@@ -1,6 +1,9 @@
 package com.sparkle.android.ui
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -13,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 
 data class NetworkPolicy(
     val isConnected: Boolean,
@@ -38,8 +42,14 @@ data class NetworkPolicy(
 }
 
 private class NetworkPolicyMonitor(context: Context) {
+    private val applicationContext = context.applicationContext
     private val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    class Registration(
+        val networkCallback: ConnectivityManager.NetworkCallback,
+        val dataSaverReceiver: BroadcastReceiver,
+    )
 
     fun current(): NetworkPolicy {
         val capabilities = connectivityManager.activeNetwork
@@ -57,7 +67,7 @@ private class NetworkPolicyMonitor(context: Context) {
         )
     }
 
-    fun register(listener: (NetworkPolicy) -> Unit): ConnectivityManager.NetworkCallback {
+    fun register(listener: (NetworkPolicy) -> Unit): Registration {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) = dispatch(listener)
 
@@ -66,13 +76,27 @@ private class NetworkPolicyMonitor(context: Context) {
 
             override fun onLost(network: Network) = dispatch(listener)
         }
+        val dataSaverReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == ConnectivityManager.ACTION_RESTRICT_BACKGROUND_CHANGED) {
+                    dispatch(listener)
+                }
+            }
+        }
         connectivityManager.registerDefaultNetworkCallback(callback)
+        ContextCompat.registerReceiver(
+            applicationContext,
+            dataSaverReceiver,
+            IntentFilter(ConnectivityManager.ACTION_RESTRICT_BACKGROUND_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         dispatch(listener)
-        return callback
+        return Registration(callback, dataSaverReceiver)
     }
 
-    fun unregister(callback: ConnectivityManager.NetworkCallback) {
-        runCatching { connectivityManager.unregisterNetworkCallback(callback) }
+    fun unregister(registration: Registration) {
+        runCatching { connectivityManager.unregisterNetworkCallback(registration.networkCallback) }
+        runCatching { applicationContext.unregisterReceiver(registration.dataSaverReceiver) }
     }
 
     private fun dispatch(listener: (NetworkPolicy) -> Unit) {
@@ -87,8 +111,8 @@ fun rememberNetworkPolicy(): NetworkPolicy {
     val monitor = remember(context) { NetworkPolicyMonitor(context) }
     var policy by remember(monitor) { mutableStateOf(monitor.current()) }
     DisposableEffect(monitor) {
-        val callback = monitor.register { policy = it }
-        onDispose { monitor.unregister(callback) }
+        val registration = monitor.register { policy = it }
+        onDispose { monitor.unregister(registration) }
     }
     return policy
 }

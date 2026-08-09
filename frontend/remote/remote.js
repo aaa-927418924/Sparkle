@@ -10,14 +10,31 @@
   const clipActionSummary = document.getElementById("remoteClipActionSummary");
   const clipFavoriteAction = document.getElementById("remoteClipFavoriteAction");
   const clipDeleteAction = document.getElementById("remoteClipDeleteAction");
+  const itemActionDialog = document.getElementById("remoteItemActionDialog");
+  const itemActionKicker = document.getElementById("remoteItemActionKicker");
+  const itemActionTitle = document.getElementById("remoteItemActionTitle");
+  const itemActionSummary = document.getElementById("remoteItemActionSummary");
+  const itemEditAction = document.getElementById("remoteItemEditAction");
+  const itemDeleteAction = document.getElementById("remoteItemDeleteAction");
+  const projectAttachDialog = document.getElementById("remoteProjectAttachDialog");
+  const projectAttachTitle = document.getElementById("remoteProjectAttachTitle");
+  const projectAttachSummary = document.getElementById("remoteProjectAttachSummary");
+  const projectAttachLabel = document.getElementById("remoteProjectAttachLabel");
+  const projectAttachSelect = document.getElementById("remoteProjectAttachSelect");
+  const projectAttachSubmit = document.getElementById("remoteProjectAttachSubmit");
   if (
     !main || !fileInput || !toast || !drawer || !backdrop || !menuButton || !drawerClose ||
-    !clipActionDialog || !clipActionSummary || !clipFavoriteAction || !clipDeleteAction
+    !clipActionDialog || !clipActionSummary || !clipFavoriteAction || !clipDeleteAction ||
+    !itemActionDialog || !itemActionKicker || !itemActionTitle || !itemActionSummary ||
+    !itemEditAction || !itemDeleteAction || !projectAttachDialog || !projectAttachTitle ||
+    !projectAttachSummary || !projectAttachLabel || !projectAttachSelect || !projectAttachSubmit
   ) return;
 
   const state = {
     screen: "home",
     workspaceTab: "tasks",
+    workspaceStatus: "active",
+    projectStatus: "active",
     clips: [],
     categories: [],
     tags: [],
@@ -34,11 +51,16 @@
     editingTask: null,
     editingNote: null,
     editingProject: null,
+    projectDetailId: null,
     loading: false,
   };
   let toastTimer = null;
   let clipActionTarget = null;
   let clipActionTrigger = null;
+  let itemActionTarget = null;
+  let itemActionTrigger = null;
+  let projectAttachTarget = null;
+  let settingsRenderToken = 0;
 
   function escapeHtml(value) {
     return String(value == null ? "" : value)
@@ -116,6 +138,89 @@
   function projectName(projectId) {
     const project = state.projects.find((item) => Number(item.id) === Number(projectId));
     return project ? project.name : "";
+  }
+
+  function linkedToProject(item, projectId) {
+    const ids = Array.isArray(item?.project_ids)
+      ? item.project_ids
+      : (item?.project_id == null ? [] : [item.project_id]);
+    return ids.some((id) => Number(id) === Number(projectId));
+  }
+
+  function noteIsDone(note) {
+    if (note?.is_done === true) return true;
+    const taskIds = Array.isArray(note?.task_ids)
+      ? note.task_ids
+      : (note?.task_id == null ? [] : [note.task_id]);
+    return taskIds.some((id) => state.tasks.some((task) => Number(task.id) === Number(id) && task.is_done));
+  }
+
+  function statusMatches(item, filter, kind) {
+    if (filter === "all") return true;
+    const done = kind === "note" ? noteIsDone(item) : Boolean(item?.is_done);
+    return filter === "done" ? done : !done;
+  }
+
+  function renderStatusFilters(filter, scope) {
+    return '<div class="remote-status-filter" aria-label="状態で絞り込む">' +
+      [
+        ["all", "すべて"],
+        ["active", "進行中"],
+        ["done", "完了済み"],
+      ].map(([value, label]) =>
+        '<button class="remote-status-button ' + (filter === value ? "active" : "") + '" type="button" data-status-scope="' + scope + '" data-status-filter="' + value + '" aria-pressed="' + (filter === value ? "true" : "false") + '">' + label + "</button>"
+      ).join("") +
+      "</div>";
+  }
+
+  function bindLongPress(element, { onTap, onLongPress }) {
+    let pressTimer = null;
+    let pressStart = null;
+    let longPressed = false;
+    const cancel = (resetLongPress = true) => {
+      if (pressTimer !== null) window.clearTimeout(pressTimer);
+      pressTimer = null;
+      pressStart = null;
+      if (resetLongPress) longPressed = false;
+    };
+    element.addEventListener("pointerdown", (event) => {
+      if (event.target.closest("button, input, a, select, textarea")) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      cancel();
+      pressStart = { x: event.clientX, y: event.clientY };
+      pressTimer = window.setTimeout(() => {
+        longPressed = true;
+        cancel(false);
+        onLongPress(event);
+      }, 550);
+    });
+    element.addEventListener("pointermove", (event) => {
+      if (!pressStart) return;
+      if (Math.hypot(event.clientX - pressStart.x, event.clientY - pressStart.y) > 10) cancel();
+    });
+    element.addEventListener("pointerup", () => cancel(false));
+    element.addEventListener("pointercancel", () => cancel());
+    element.addEventListener("pointerleave", (event) => {
+      if (event.pointerType === "mouse") cancel();
+    });
+    element.addEventListener("contextmenu", (event) => {
+      if (longPressed) event.preventDefault();
+    });
+    element.addEventListener("click", (event) => {
+      if (event.target.closest("button, input, a, select, textarea")) return;
+      if (longPressed) {
+        longPressed = false;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      onTap(event);
+    });
+    element.addEventListener("keydown", (event) => {
+      if (event.target !== element || !["Enter", " "].includes(event.key)) return;
+      event.preventDefault();
+      onTap(event);
+    });
   }
 
   function categoryName(categoryId) {
@@ -417,6 +522,97 @@
     await deleteClip(clip.id);
   });
 
+  function itemActionInfo(kind, id) {
+    if (kind === "project") {
+      const item = state.projects.find((project) => Number(project.id) === Number(id));
+      return item ? { item, label: "プロジェクト", summary: item.name } : null;
+    }
+    if (kind === "task") {
+      const item = state.tasks.find((task) => Number(task.id) === Number(id));
+      return item ? { item, label: "タスク", summary: item.title } : null;
+    }
+    const item = state.notes.find((note) => Number(note.id) === Number(id));
+    return item ? { item, label: "メモ", summary: item.title } : null;
+  }
+
+  function closeItemActionDialog() {
+    itemActionTarget = null;
+    if (itemActionDialog.open) itemActionDialog.close();
+    else itemActionDialog.removeAttribute("open");
+  }
+
+  function openItemActionDialog(kind, id, trigger) {
+    const info = itemActionInfo(kind, id);
+    if (!info) return;
+    itemActionTarget = { kind, id: Number(id) };
+    itemActionTrigger = trigger || null;
+    itemActionKicker.textContent = info.label.toUpperCase() + " ACTIONS";
+    itemActionTitle.textContent = info.label + "の操作";
+    itemActionSummary.textContent = info.summary;
+    if (typeof itemActionDialog.showModal === "function") itemActionDialog.showModal();
+    else itemActionDialog.setAttribute("open", "");
+    itemEditAction.focus();
+  }
+
+  itemActionDialog.addEventListener("click", (event) => {
+    if (event.target === itemActionDialog) closeItemActionDialog();
+  });
+  itemActionDialog.addEventListener("close", () => {
+    itemActionTarget = null;
+    const trigger = itemActionTrigger;
+    itemActionTrigger = null;
+    if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+  });
+  itemEditAction.addEventListener("click", () => {
+    const target = itemActionTarget;
+    closeItemActionDialog();
+    if (!target) return;
+    if (target.kind === "project") renderProjectEditor(target.id);
+    else if (target.kind === "task") renderTaskEditor(target.id);
+    else renderNoteEditor(target.id);
+  });
+  itemDeleteAction.addEventListener("click", async () => {
+    const target = itemActionTarget;
+    closeItemActionDialog();
+    if (!target) return;
+    if (target.kind === "project") await deleteProject(target.id);
+    else if (target.kind === "task") await deleteTask(target.id);
+    else await deleteNote(target.id);
+  });
+
+  projectAttachDialog.addEventListener("click", (event) => {
+    if (event.target === projectAttachDialog) projectAttachDialog.close();
+  });
+  projectAttachDialog.addEventListener("close", () => {
+    projectAttachTarget = null;
+  });
+  projectAttachSelect.addEventListener("change", () => {
+    projectAttachSubmit.disabled = !projectAttachSelect.value;
+  });
+  projectAttachSubmit.addEventListener("click", async () => {
+    const target = projectAttachTarget;
+    const itemId = Number(projectAttachSelect.value);
+    if (!target || !itemId) return;
+    projectAttachSubmit.disabled = true;
+    try {
+      if (target.kind === "clip") {
+        await api("/projects/" + target.projectId + "/clips/" + itemId, { method: "POST" });
+      } else if (target.kind === "task") {
+        await api("/tasks/" + itemId, { method: "PUT", body: JSON.stringify({ project_id: target.projectId }) });
+      } else {
+        await api("/projects/" + target.projectId + "/notes/" + itemId, { method: "POST" });
+      }
+      projectAttachDialog.close();
+      await loadData(false);
+      renderProjectDetail(target.projectId);
+      showToast("プロジェクトに添付しました。");
+    } catch (error) {
+      showToast(error.message, true);
+    } finally {
+      projectAttachSubmit.disabled = false;
+    }
+  });
+
   async function toggleFavorite(id) {
     try {
       const result = await api("/clips/" + id + "/favorite", { method: "PATCH" });
@@ -493,12 +689,6 @@
     }
   }
 
-  function projectOptions(selected) {
-    return '<option value="">プロジェクトなし</option>' + state.projects.map((project) =>
-      '<option value="' + Number(project.id) + '"' + (Number(selected) === Number(project.id) ? " selected" : "") + ">" + escapeHtml(project.name) + "</option>"
-    ).join("");
-  }
-
   function categoryOptions(selected) {
     return '<option value="">カテゴリなし</option>' + state.categories.map((category) =>
       '<option value="' + Number(category.id) + '"' + (Number(selected) === Number(category.id) ? " selected" : "") + ">" + escapeHtml(category.name) + "</option>"
@@ -512,6 +702,8 @@
     const isEdit = Boolean(clip);
     const tags = Array.isArray(clip?.tags) ? clip.tags.map((tag) => tag.name || tag).join(", ") : "";
     let metadataThumbnailUrl = String(clip?.thumbnail_url || "");
+    let metadataTimer = null;
+    let metadataRequestId = 0;
     main.innerHTML =
       '<div class="remote-panel">' +
         '<div class="remote-panel-heading"><div><p class="remote-page-kicker">' + (isEdit ? "CLIP EDITOR" : "NEW CLIP") + "</p><h1 class=\"remote-page-title\">" + (isEdit ? "クリップを編集" : "クリップを追加") + "</h1></div></div>" +
@@ -519,9 +711,9 @@
           (isEdit || isUpload
             ? '<div class="remote-field full"><span>保存対象</span><div class="remote-inline-input">' + escapeHtml(isUpload ? uploadFile.name : (clip.url || "PC内のファイル")) + "</div></div>"
             : '<label class="remote-field full"><span>URL</span><input name="url" type="url" required placeholder="https://example.com/..." value="" /></label>') +
-          '<label class="remote-field"><span>タイトル</span><input name="title" type="text" maxlength="500" autocomplete="off" value="' + escapeHtml(isUpload ? uploadFile.name : (clip?.title || "")) + '" /></label>' +
+          '<label class="remote-field"><span>タイトル</span><input name="title" type="text" maxlength="500" autocomplete="off" value="' + escapeHtml(isUpload ? uploadFile.name : (clip?.title || "")) + '"' + (!isEdit && !isUpload ? ' readonly aria-readonly="true" placeholder="URLから自動取得"' : "") + ' /></label>' +
+          (!isEdit && !isUpload ? '<p id="remoteClipMetadataStatus" class="remote-field-help full" role="status" aria-live="polite">URLを入力するとタイトルを自動取得します。</p>' : "") +
           '<label class="remote-field"><span>カテゴリ</span><select name="category">' + categoryOptions(clip?.category_id) + "</select></label>" +
-          '<label class="remote-field"><span>プロジェクト</span><select name="project_id">' + projectOptions(clip?.project_id) + "</select></label>" +
           '<label class="remote-field"><span>タグ（カンマ区切り）</span><input name="tags" type="text" autocomplete="off" value="' + escapeHtml(tags) + '" placeholder="例：読書,あとで見る" /></label>' +
           '<label class="remote-field full"><span>コメント</span><textarea name="comment" rows="5" maxlength="10000" placeholder="メモを残す">' + escapeHtml(clip?.comment || "") + "</textarea></label>" +
           '<div class="remote-form-actions full"><button id="remoteClipCancel" class="remote-secondary-button" type="button">キャンセル</button><button class="remote-primary-button" type="submit">' + (isEdit ? "保存する" : "追加する") + "</button></div>" +
@@ -541,19 +733,41 @@
     document.getElementById("remoteClipForm").addEventListener("submit", submitClipForm);
     const urlInput = main.querySelector("[name=url]");
     const titleInput = main.querySelector("[name=title]");
-    urlInput?.addEventListener("input", () => {
-      metadataThumbnailUrl = "";
-    });
-    urlInput?.addEventListener("blur", async () => {
+    const metadataStatus = main.querySelector("#remoteClipMetadataStatus");
+    const requestMetadata = async () => {
       const url = String(urlInput.value || "").trim();
-      if (!safeHref(url)) return;
+      const requestId = ++metadataRequestId;
+      if (!safeHref(url)) {
+        metadataThumbnailUrl = "";
+        titleInput.value = "";
+        if (metadataStatus) metadataStatus.textContent = "URLを入力するとタイトルを自動取得します。";
+        return;
+      }
+      if (metadataStatus) metadataStatus.textContent = "タイトルを取得しています…";
       try {
         const metadata = await api("/url-metadata?url=" + encodeURIComponent(url));
-        if (metadata?.title && !titleInput.value.trim()) titleInput.value = metadata.title;
+        if (requestId !== metadataRequestId || String(urlInput.value || "").trim() !== url) return;
+        titleInput.value = metadata?.title || "";
         if (metadata?.thumbnail_url) metadataThumbnailUrl = metadata.thumbnail_url;
+        if (metadataStatus) metadataStatus.textContent = metadata?.title
+          ? "タイトルを更新しました。内容を確認してから「追加する」を押してください。"
+          : "このURLからタイトルを取得できませんでした。保存時に再試行します。";
       } catch {
-        // Metadata lookup is a convenience; saving the URL must still work.
+        if (requestId !== metadataRequestId) return;
+        if (metadataStatus) metadataStatus.textContent = "タイトルを取得できませんでした。保存時に再試行します。";
       }
+    };
+    urlInput?.addEventListener("input", () => {
+      if (metadataTimer !== null) window.clearTimeout(metadataTimer);
+      metadataThumbnailUrl = "";
+      titleInput.value = "";
+      if (metadataStatus) metadataStatus.textContent = "タイトルを取得しています…";
+      metadataTimer = window.setTimeout(requestMetadata, 320);
+    });
+    urlInput?.addEventListener("blur", () => {
+      if (metadataTimer !== null) window.clearTimeout(metadataTimer);
+      metadataTimer = null;
+      requestMetadata();
     });
   }
 
@@ -569,8 +783,6 @@
       const comment = String(formData.get("comment") || "").trim();
       const category = String(formData.get("category") || "").trim();
       const tags = parseTags(formData.get("tags"));
-      const projectValue = String(formData.get("project_id") || "");
-      const projectId = projectValue ? Number(projectValue) : null;
       let result;
       if (state.uploadFile) {
         const upload = new FormData();
@@ -583,7 +795,7 @@
       } else if (state.editingClip) {
         result = await api("/clips/" + Number(state.editingClip.id), {
           method: "PUT",
-          body: JSON.stringify({ title, comment, category: category || null, tags, project_id: projectId }),
+          body: JSON.stringify({ title, comment, category: category || null, tags }),
         });
     } else {
       const url = String(formData.get("url") || "").trim();
@@ -598,14 +810,7 @@
             category: category || null,
             tags,
             clip_type: "url",
-            project_id: projectId,
           }),
-        });
-      }
-      if (state.uploadFile && result?.id && projectId) {
-        result = await api("/clips/" + Number(result.id), {
-          method: "PUT",
-          body: JSON.stringify({ project_id: projectId }),
         });
       }
       await loadData(false);
@@ -623,11 +828,14 @@
 
   function renderWorkspace() {
     const tasksActive = state.workspaceTab === "tasks";
+    const visibleTasks = state.tasks.filter((task) => statusMatches(task, state.workspaceStatus, "task"));
+    const visibleNotes = state.notes.filter((note) => statusMatches(note, state.workspaceStatus, "note"));
     main.innerHTML =
       renderPageHeader("WORKSPACE", "タスク・メモ", "Android版と同じPC上のタスクとメモをWebから確認します。") +
       '<section class="remote-panel">' +
         '<div class="remote-tab-row"><button class="remote-tab ' + (tasksActive ? "active" : "") + '" data-workspace-tab="tasks" type="button">タスク ' + state.tasks.length + '</button><button class="remote-tab ' + (!tasksActive ? "active" : "") + '" data-workspace-tab="notes" type="button">メモ ' + state.notes.length + "</button></div>" +
-        (tasksActive ? renderTaskList() : renderNoteList()) +
+        renderStatusFilters(state.workspaceStatus, "workspace") +
+        (tasksActive ? renderTaskList(visibleTasks) : renderNoteList(visibleNotes)) +
       "</section>";
     main.querySelectorAll("[data-workspace-tab]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -635,33 +843,49 @@
         renderWorkspace();
       });
     });
+    main.querySelectorAll('[data-status-scope="workspace"]').forEach((button) => {
+      button.addEventListener("click", () => {
+        state.workspaceStatus = button.dataset.statusFilter || "active";
+        renderWorkspace();
+      });
+    });
     if (tasksActive) {
       document.getElementById("remoteNewTask")?.addEventListener("click", () => renderTaskEditor(null));
-      main.querySelectorAll("[data-task-toggle]").forEach((button) => button.addEventListener("click", () => toggleTask(Number(button.dataset.taskToggle))));
-      main.querySelectorAll("[data-task-edit]").forEach((button) => button.addEventListener("click", () => renderTaskEditor(Number(button.dataset.taskEdit))));
-      main.querySelectorAll("[data-task-delete]").forEach((button) => button.addEventListener("click", () => deleteTask(Number(button.dataset.taskDelete))));
+      main.querySelectorAll("[data-task-toggle]").forEach((input) => {
+        input.addEventListener("click", (event) => event.stopPropagation());
+        input.addEventListener("change", () => toggleTask(Number(input.dataset.taskToggle)));
+      });
+      main.querySelectorAll("[data-task-row]").forEach((row) => {
+        bindLongPress(row, {
+          onTap: () => renderTaskEditor(Number(row.dataset.taskRow)),
+          onLongPress: () => openItemActionDialog("task", Number(row.dataset.taskRow), row),
+        });
+      });
     } else {
       document.getElementById("remoteNewNote")?.addEventListener("click", () => renderNoteEditor(null));
-      main.querySelectorAll("[data-note-edit]").forEach((button) => button.addEventListener("click", () => renderNoteEditor(Number(button.dataset.noteEdit))));
-      main.querySelectorAll("[data-note-delete]").forEach((button) => button.addEventListener("click", () => deleteNote(Number(button.dataset.noteDelete))));
+      main.querySelectorAll("[data-note-row]").forEach((row) => {
+        bindLongPress(row, {
+          onTap: () => renderNoteEditor(Number(row.dataset.noteRow)),
+          onLongPress: () => openItemActionDialog("note", Number(row.dataset.noteRow), row),
+        });
+      });
     }
   }
 
-  function renderTaskList() {
+  function renderTaskList(tasks) {
     return '<div class="remote-panel-heading"><h2>タスク</h2><button id="remoteNewTask" class="remote-primary-button" type="button">＋ タスク追加</button></div>' +
-      (state.tasks.length ? '<div class="remote-task-list">' + state.tasks.map((task) =>
-        '<div class="remote-list-row"><button class="remote-check-button ' + (task.is_done ? "done" : "") + '" type="button" data-task-toggle="' + Number(task.id) + '" aria-label="' + (task.is_done ? "未完了に戻す" : "完了にする") + '">' + (task.is_done ? "✓" : "○") + "</button>" +
-        '<div class="remote-list-main"><p class="remote-list-title ' + (task.is_done ? "done" : "") + '">' + escapeHtml(task.title) + "</p><p class=\"remote-list-subtitle\">" + (task.due_date ? "期限 " + escapeHtml(task.due_date) : "期限なし") + (task.project_id ? " · " + escapeHtml(projectName(task.project_id)) : "") + "</p></div>" +
-        '<div class="remote-list-actions"><button type="button" data-task-edit="' + Number(task.id) + '" aria-label="タスクを編集">編集</button><button type="button" data-task-delete="' + Number(task.id) + '" aria-label="タスクを削除">削除</button></div></div>'
-      ).join("") + "</div>" : '<div class="remote-empty">タスクはありません。</div>');
+      (tasks.length ? '<div class="remote-task-list">' + tasks.map((task) =>
+        '<div class="remote-list-row remote-interactive-row" data-task-row="' + Number(task.id) + '" tabindex="0" role="button" aria-label="タスク「' + escapeHtml(task.title) + '」を編集">' +
+        '<label class="remote-list-checkbox"><input type="checkbox" data-task-toggle="' + Number(task.id) + '" aria-label="' + (task.is_done ? "未完了に戻す" : "完了にする") + '"' + (task.is_done ? " checked" : "") + ' /></label>' +
+        '<div class="remote-list-main"><p class="remote-list-title ' + (task.is_done ? "done" : "") + '">' + escapeHtml(task.title) + "</p><p class=\"remote-list-subtitle\">" + (task.due_date ? "期限 " + escapeHtml(task.due_date) : "期限なし") + (task.project_id ? " · " + escapeHtml(projectName(task.project_id)) : "") + "</p></div></div>"
+      ).join("") + "</div>" : '<div class="remote-empty">この状態のタスクはありません。</div>');
   }
 
-  function renderNoteList() {
+  function renderNoteList(notes) {
     return '<div class="remote-panel-heading"><h2>メモ</h2><button id="remoteNewNote" class="remote-primary-button" type="button">＋ メモ追加</button></div>' +
-      (state.notes.length ? '<div class="remote-note-list">' + state.notes.map((note) =>
-        '<div class="remote-list-row"><div class="remote-list-main"><p class="remote-list-title">' + escapeHtml(note.title) + "</p><p class=\"remote-list-subtitle\">" + escapeHtml((note.body || "").slice(0, 180) || "本文なし") + "</p></div>" +
-        '<div class="remote-list-actions"><button type="button" data-note-edit="' + Number(note.id) + '" aria-label="メモを編集">編集</button><button type="button" data-note-delete="' + Number(note.id) + '" aria-label="メモを削除">削除</button></div></div>'
-      ).join("") + "</div>" : '<div class="remote-empty">メモはありません。</div>');
+      (notes.length ? '<div class="remote-note-list">' + notes.map((note) =>
+        '<div class="remote-list-row remote-interactive-row" data-note-row="' + Number(note.id) + '" tabindex="0" role="button" aria-label="メモ「' + escapeHtml(note.title) + '」を編集"><div class="remote-list-main"><p class="remote-list-title ' + (noteIsDone(note) ? "done" : "") + '">' + escapeHtml(note.title) + "</p><p class=\"remote-list-subtitle\">" + escapeHtml((note.body || "").slice(0, 180) || "本文なし") + (noteIsDone(note) ? " · 完了済み" : "") + "</p></div></div>"
+      ).join("") + "</div>" : '<div class="remote-empty">この状態のメモはありません。</div>');
   }
 
   function renderTaskEditor(id) {
@@ -673,7 +897,6 @@
       '<label class="remote-field full"><span>タイトル</span><input name="title" required maxlength="500" value="' + escapeHtml(task?.title || "") + '" /></label>' +
       '<label class="remote-field"><span>期限</span><input name="due_date" type="date" value="' + escapeHtml(task?.due_date || "") + '" /></label>' +
       '<label class="remote-field"><span>優先度</span><select name="priority"><option value="">標準</option><option value="1">高</option><option value="2">中</option><option value="3">低</option></select></label>' +
-      '<label class="remote-field full"><span>プロジェクト</span><select name="project_id">' + projectOptions(task?.project_id) + "</select></label>" +
       '<div class="remote-form-actions full"><button id="remoteTaskCancel" class="remote-secondary-button" type="button">キャンセル</button><button class="remote-primary-button" type="submit">保存する</button></div><p id="remoteTaskError" class="remote-form-error full" role="alert"></p></form></div>';
     const priority = main.querySelector("[name=priority]");
     priority.value = task?.priority == null ? "" : String(task.priority);
@@ -690,12 +913,10 @@
     const form = event.currentTarget;
     const errorEl = document.getElementById("remoteTaskError");
     const data = new FormData(form);
-    const projectId = String(data.get("project_id") || "");
     const payload = {
       title: String(data.get("title") || "").trim(),
       due_date: String(data.get("due_date") || "") || null,
       priority: String(data.get("priority") || "") ? Number(data.get("priority")) : null,
-      project_id: projectId ? Number(projectId) : null,
     };
     try {
       if (!payload.title) throw new Error("タイトルを入力してください。");
@@ -789,17 +1010,117 @@
   }
 
   function renderProjects() {
+    state.projectDetailId = null;
+    const projects = state.projects.filter((project) => statusMatches(project, state.projectStatus, "project"));
     main.innerHTML =
       renderPageHeader("PROJECTS", "プロジェクト", "クリップ・タスク・メモをまとめるPC側のプロジェクトです.", '<button id="remoteNewProject" class="remote-primary-button" type="button">＋ プロジェクト追加</button>') +
       '<section class="remote-panel">' +
-      (state.projects.length ? '<div class="remote-project-list">' + state.projects.map((project) =>
-        '<div class="remote-list-row"><div class="remote-list-main"><p class="remote-list-title ' + (project.is_done ? "done" : "") + '">' + escapeHtml(project.name) + "</p><p class=\"remote-list-subtitle\">" + escapeHtml(project.description || "説明なし") + "</p></div><div class=\"remote-list-actions\"><button type=\"button\" data-project-toggle=\"" + Number(project.id) + '">' + (project.is_done ? "戻す" : "完了") + '</button><button type="button" data-project-edit="' + Number(project.id) + '">編集</button><button type="button" data-project-delete="' + Number(project.id) + '">削除</button></div></div>'
-      ).join("") + "</div>" : '<div class="remote-empty">プロジェクトはありません。</div>') +
+      renderStatusFilters(state.projectStatus, "projects") +
+      (projects.length ? '<div class="remote-project-list">' + projects.map((project) =>
+        '<div class="remote-list-row remote-interactive-row" data-project-row="' + Number(project.id) + '" tabindex="0" role="button" aria-label="プロジェクト「' + escapeHtml(project.name) + '」を開く">' +
+        '<label class="remote-list-checkbox"><input type="checkbox" data-project-toggle="' + Number(project.id) + '" aria-label="' + escapeHtml(project.name) + 'の完了状態を切り替え"' + (project.is_done ? " checked" : "") + ' /></label>' +
+        '<div class="remote-list-main"><p class="remote-list-title ' + (project.is_done ? "done" : "") + '">' + escapeHtml(project.name) + "</p><p class=\"remote-list-subtitle\">" + escapeHtml(project.description || "説明なし") + "</p></div></div>"
+      ).join("") + "</div>" : '<div class="remote-empty">この状態のプロジェクトはありません。</div>') +
       "</section>";
     document.getElementById("remoteNewProject").addEventListener("click", () => renderProjectEditor(null));
-    main.querySelectorAll("[data-project-toggle]").forEach((button) => button.addEventListener("click", () => toggleProject(Number(button.dataset.projectToggle))));
-    main.querySelectorAll("[data-project-edit]").forEach((button) => button.addEventListener("click", () => renderProjectEditor(Number(button.dataset.projectEdit))));
-    main.querySelectorAll("[data-project-delete]").forEach((button) => button.addEventListener("click", () => deleteProject(Number(button.dataset.projectDelete))));
+    main.querySelectorAll('[data-status-scope="projects"]').forEach((button) => {
+      button.addEventListener("click", () => {
+        state.projectStatus = button.dataset.statusFilter || "active";
+        renderProjects();
+      });
+    });
+    main.querySelectorAll("[data-project-toggle]").forEach((input) => {
+      input.addEventListener("click", (event) => event.stopPropagation());
+      input.addEventListener("change", () => toggleProject(Number(input.dataset.projectToggle)));
+    });
+    main.querySelectorAll("[data-project-row]").forEach((row) => {
+      bindLongPress(row, {
+        onTap: () => renderProjectDetail(Number(row.dataset.projectRow)),
+        onLongPress: () => openItemActionDialog("project", Number(row.dataset.projectRow), row),
+      });
+    });
+  }
+
+  function projectLinkSection(title, kind, items, projectId, emptyText) {
+    const rows = items.length
+      ? '<div class="remote-project-link-list">' + items.map((item) => {
+        const done = kind === "task" ? Boolean(item.is_done) : kind === "note" ? noteIsDone(item) : false;
+        const subtitle = kind === "clip"
+          ? (item.url || "PC内のファイル")
+          : kind === "task"
+            ? (item.due_date ? "期限 " + item.due_date : "期限なし")
+            : ((item.body || "").slice(0, 160) || "本文なし");
+        const label = kind === "clip" ? clipTitle(item) : item.title;
+        return '<div class="remote-project-link-row"><div class="remote-list-main"><p class="remote-list-title ' + (done ? "done" : "") + '">' + escapeHtml(label) + "</p><p class=\"remote-list-subtitle\">" + escapeHtml(subtitle) + "</p></div><button class=\"remote-list-unlink\" type=\"button\" data-project-unlink-kind=\"" + kind + "\" data-project-unlink-id=\"" + Number(item.id) + '" aria-label="' + escapeHtml(title) + '「' + escapeHtml(label) + '」の添付を解除">解除</button></div>';
+      }).join("") + "</div>"
+      : '<div class="remote-empty remote-project-link-empty">' + escapeHtml(emptyText) + "</div>";
+    return '<section class="remote-project-links remote-panel"><div class="remote-panel-heading"><h2>' + title + "</h2><button class=\"remote-secondary-button\" type=\"button\" data-project-attach=\"" + kind + "\">＋ 添付</button></div>" + rows + "</section>";
+  }
+
+  function renderProjectDetail(id) {
+    const project = state.projects.find((item) => Number(item.id) === Number(id));
+    if (!project) {
+      renderProjects();
+      return;
+    }
+    state.projectDetailId = Number(id);
+    const clips = state.clips.filter((clip) => linkedToProject(clip, id));
+    const tasks = state.tasks.filter((task) => Number(task.project_id) === Number(id));
+    const notes = state.notes.filter((note) => linkedToProject(note, id));
+    main.innerHTML =
+      '<div class="remote-project-detail-header remote-panel"><div class="remote-panel-heading"><button id="remoteProjectDetailBack" class="remote-quiet-button" type="button">← プロジェクト一覧</button><label class="remote-detail-check"><input id="remoteProjectDetailDone" type="checkbox"' + (project.is_done ? " checked" : "") + ' />完了</label></div><p class="remote-page-kicker">PROJECT</p><h1 class="remote-page-title">' + escapeHtml(project.name) + "</h1>" + (project.description ? '<p class="remote-page-description">' + escapeHtml(project.description) + "</p>" : "") + "</div>" +
+      projectLinkSection("クリップ", "clip", clips, id, "このプロジェクトにクリップはありません。") +
+      projectLinkSection("タスク", "task", tasks, id, "このプロジェクトにタスクはありません。") +
+      projectLinkSection("メモ", "note", notes, id, "このプロジェクトにメモはありません。");
+    document.getElementById("remoteProjectDetailBack").addEventListener("click", renderProjects);
+    document.getElementById("remoteProjectDetailDone").addEventListener("change", () => toggleProject(Number(id), true));
+    main.querySelectorAll("[data-project-attach]").forEach((button) => {
+      button.addEventListener("click", () => openProjectAttachDialog(Number(id), button.dataset.projectAttach));
+    });
+    main.querySelectorAll("[data-project-unlink-kind]").forEach((button) => {
+      button.addEventListener("click", () => unlinkProjectItem(Number(id), button.dataset.projectUnlinkKind, Number(button.dataset.projectUnlinkId)));
+    });
+  }
+
+  function projectAttachItems(kind, projectId) {
+    if (kind === "clip") return state.clips.filter((item) => !linkedToProject(item, projectId));
+    if (kind === "task") return state.tasks.filter((item) => Number(item.project_id) !== Number(projectId));
+    return state.notes.filter((item) => !linkedToProject(item, projectId));
+  }
+
+  function openProjectAttachDialog(projectId, kind) {
+    const labels = { clip: "クリップ", task: "タスク", note: "メモ" };
+    const label = labels[kind] || "項目";
+    const items = projectAttachItems(kind, projectId);
+    projectAttachTarget = { projectId: Number(projectId), kind };
+    projectAttachTitle.textContent = label + "を添付";
+    projectAttachSummary.textContent = projectName(projectId) + "に追加する" + label + "を選択してください。";
+    projectAttachLabel.textContent = "添付する" + label;
+    projectAttachSelect.innerHTML = items.length
+      ? '<option value="">選択してください…</option>' + items.map((item) => '<option value="' + Number(item.id) + '">' + escapeHtml(kind === "clip" ? clipTitle(item) : item.title) + "</option>").join("")
+      : '<option value="">添付できる' + label + "がありません。</option>";
+    projectAttachSelect.disabled = items.length === 0;
+    projectAttachSubmit.disabled = true;
+    if (typeof projectAttachDialog.showModal === "function") projectAttachDialog.showModal();
+    else projectAttachDialog.setAttribute("open", "");
+    projectAttachSelect.focus();
+  }
+
+  async function unlinkProjectItem(projectId, kind, itemId) {
+    try {
+      if (kind === "clip") {
+        await api("/projects/" + projectId + "/clips/" + itemId, { method: "DELETE" });
+      } else if (kind === "task") {
+        await api("/tasks/" + itemId, { method: "PUT", body: JSON.stringify({ project_id: null }) });
+      } else {
+        await api("/projects/" + projectId + "/notes/" + itemId, { method: "DELETE" });
+      }
+      await loadData(false);
+      renderProjectDetail(projectId);
+      showToast("プロジェクトから解除しました。");
+    } catch (error) {
+      showToast(error.message, true);
+    }
   }
 
   function renderProjectEditor(id) {
@@ -838,11 +1159,12 @@
     }
   }
 
-  async function toggleProject(id) {
+  async function toggleProject(id, keepDetail = false) {
     try {
       await api("/projects/" + id + "/toggle", { method: "PATCH" });
       await loadData(false);
-      renderProjects();
+      if (keepDetail) renderProjectDetail(id);
+      else renderProjects();
     } catch (error) {
       showToast(error.message, true);
     }
@@ -882,29 +1204,44 @@
   }
 
   async function renderSettings() {
+    const renderToken = ++settingsRenderToken;
     main.innerHTML =
       renderPageHeader("APP SETTINGS", "アプリ設定", "PC側に保存される設定です。Web入口の認証設定はPCの設定画面から管理します。") +
       '<section class="remote-panel"><div id="remoteSettingsLoading" class="remote-loading">設定を読み込んでいます…</div><div id="remoteSettingsForm" hidden>' +
       '<label class="remote-setting-row"><span class="remote-setting-copy"><strong>タスク作成時に同名の空メモを作成</strong><small>タスクとメモを一緒に管理します。</small></span><input id="remoteSettingTaskNote" type="checkbox" /></label>' +
       '<label class="remote-setting-row"><span class="remote-setting-copy"><strong>プロジェクト作成時に同名の空メモを作成</strong><small>プロジェクトの概要メモを自動で用意します。</small></span><input id="remoteSettingProjectNote" type="checkbox" /></label>' +
       '<label class="remote-setting-row"><span class="remote-setting-copy"><strong>完了タスクの自動削除</strong><small>PC側のメンテナンス設定です。</small></span><select id="remoteSettingTaskDelete"><option value="3d">3日後</option><option value="1w">1週間後</option><option value="1m">1か月後</option><option value="never">自動削除しない</option></select></label>' +
-      '</div></section>';
+      '</div><p id="remoteSettingsError" class="remote-form-error" role="alert" hidden></p></section>';
+    const loadingEl = document.getElementById("remoteSettingsLoading");
+    const formEl = document.getElementById("remoteSettingsForm");
+    const errorEl = document.getElementById("remoteSettingsError");
     try {
       const values = await Promise.all([
         readSetting("auto_create_note_on_task", "false"),
         readSetting("auto_create_note_on_project", "false"),
         readSetting("task_auto_delete", "1w"),
       ]);
-      document.getElementById("remoteSettingTaskNote").checked = values[0] === "true";
-      document.getElementById("remoteSettingProjectNote").checked = values[1] === "true";
-      document.getElementById("remoteSettingTaskDelete").value = values[2];
-      document.getElementById("remoteSettingsLoading").hidden = true;
-      document.getElementById("remoteSettingsForm").hidden = false;
-      document.getElementById("remoteSettingTaskNote").addEventListener("change", (event) => saveSetting("auto_create_note_on_task", event.target.checked));
-      document.getElementById("remoteSettingProjectNote").addEventListener("change", (event) => saveSetting("auto_create_note_on_project", event.target.checked));
-      document.getElementById("remoteSettingTaskDelete").addEventListener("change", (event) => saveSetting("task_auto_delete", event.target.value));
+      if (renderToken !== settingsRenderToken || !loadingEl?.isConnected) return;
+      const taskNoteEl = document.getElementById("remoteSettingTaskNote");
+      const projectNoteEl = document.getElementById("remoteSettingProjectNote");
+      const taskDeleteEl = document.getElementById("remoteSettingTaskDelete");
+      taskNoteEl.checked = values[0] === "true";
+      projectNoteEl.checked = values[1] === "true";
+      taskDeleteEl.value = values[2];
+      taskNoteEl.addEventListener("change", (event) => saveSetting("auto_create_note_on_task", event.target.checked));
+      projectNoteEl.addEventListener("change", (event) => saveSetting("auto_create_note_on_project", event.target.checked));
+      taskDeleteEl.addEventListener("change", (event) => saveSetting("task_auto_delete", event.target.value));
     } catch (error) {
-      document.getElementById("remoteSettingsLoading").textContent = error.message;
+      if (renderToken !== settingsRenderToken || !loadingEl?.isConnected) return;
+      if (errorEl) {
+        errorEl.textContent = error.message || "設定を読み込めませんでした。";
+        errorEl.hidden = false;
+      }
+    } finally {
+      if (renderToken === settingsRenderToken && loadingEl?.isConnected) {
+        loadingEl.hidden = true;
+        if (formEl) formEl.hidden = false;
+      }
     }
   }
 

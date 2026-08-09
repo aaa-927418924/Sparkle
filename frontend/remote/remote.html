@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
     <title>Sparkle — Web</title>
-    <link rel="stylesheet" href="/remote/static/remote.css?v=remote-ui-20260810-v2" />
+    <link rel="stylesheet" href="/remote/static/remote.css?v=remote-ui-20260810-v3" />
   </head>
   <body class="remote-body">
     <div class="remote-app-shell">
@@ -57,6 +57,33 @@
         <button class="remote-quiet-button remote-action-dialog-cancel" value="cancel" type="submit">キャンセル</button>
       </form>
     </dialog>
-    <script src="/remote/static/remote.js?v=remote-ui-20260810-v2"></script>
+    <dialog id="remoteItemActionDialog" class="remote-action-dialog" aria-labelledby="remoteItemActionTitle">
+      <form method="dialog" class="remote-action-dialog-form">
+        <p id="remoteItemActionKicker" class="remote-page-kicker">ITEM ACTIONS</p>
+        <h2 id="remoteItemActionTitle">項目の操作</h2>
+        <p id="remoteItemActionSummary" class="remote-action-dialog-summary"></p>
+        <div class="remote-action-dialog-actions">
+          <button id="remoteItemEditAction" class="remote-secondary-button" type="button">編集</button>
+          <button id="remoteItemDeleteAction" class="remote-danger-button" type="button">削除</button>
+        </div>
+        <button class="remote-quiet-button remote-action-dialog-cancel" value="cancel" type="submit">キャンセル</button>
+      </form>
+    </dialog>
+    <dialog id="remoteProjectAttachDialog" class="remote-action-dialog" aria-labelledby="remoteProjectAttachTitle">
+      <form id="remoteProjectAttachForm" method="dialog" class="remote-action-dialog-form">
+        <p class="remote-page-kicker">PROJECT LINKS</p>
+        <h2 id="remoteProjectAttachTitle">項目を添付</h2>
+        <p id="remoteProjectAttachSummary" class="remote-action-dialog-summary"></p>
+        <label class="remote-field">
+          <span id="remoteProjectAttachLabel">添付する項目</span>
+          <select id="remoteProjectAttachSelect"></select>
+        </label>
+        <div class="remote-action-dialog-actions">
+          <button id="remoteProjectAttachSubmit" class="remote-primary-button" type="button">添付する</button>
+          <button class="remote-secondary-button" value="cancel" type="submit">キャンセル</button>
+        </div>
+      </form>
+    </dialog>
+    <script src="/remote/static/remote.js?v=remote-ui-20260810-v3"></script>
   </body>
 </html>

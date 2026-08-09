@@ -614,6 +614,42 @@ a {
   background: color-mix(in srgb, var(--remote-surface-raised) 70%, var(--remote-surface));
 }
 
+.remote-interactive-row {
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 140ms ease-out, border-color 140ms ease-out, background 140ms ease-out;
+}
+
+.remote-interactive-row:hover {
+  border-color: var(--remote-border-strong);
+  background: var(--remote-surface-raised);
+}
+
+.remote-interactive-row:active {
+  transform: scale(0.99);
+}
+
+.remote-interactive-row:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--remote-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+
+.remote-list-checkbox {
+  display: inline-grid;
+  width: 44px;
+  min-height: 44px;
+  flex: 0 0 auto;
+  place-items: center;
+  cursor: pointer;
+}
+
+.remote-list-checkbox input,
+.remote-detail-check input {
+  width: 21px;
+  height: 21px;
+  accent-color: var(--remote-accent);
+}
+
 .remote-list-main {
   min-width: 0;
   flex: 1;
@@ -673,6 +709,92 @@ a {
 .remote-check-button.done {
   border-color: color-mix(in srgb, var(--remote-success) 60%, var(--remote-border));
   color: var(--remote-success);
+}
+
+.remote-status-filter {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-bottom: 15px;
+  padding: 4px;
+  border-radius: 13px;
+  background: var(--remote-bg);
+}
+
+.remote-status-button {
+  min-height: 42px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--remote-muted);
+  font-weight: 750;
+}
+
+.remote-status-button.active {
+  background: var(--remote-surface-raised);
+  color: var(--remote-text);
+}
+
+.remote-project-detail-header {
+  margin-bottom: 14px;
+}
+
+.remote-project-detail-header .remote-panel-heading {
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.remote-detail-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: var(--remote-muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.remote-project-links {
+  margin-top: 14px;
+}
+
+.remote-project-link-list {
+  display: grid;
+  gap: 8px;
+}
+
+.remote-project-link-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--remote-border);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--remote-surface-raised) 60%, var(--remote-surface));
+}
+
+.remote-list-unlink {
+  min-width: 44px;
+  min-height: 40px;
+  padding: 5px 9px;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--remote-muted);
+}
+
+.remote-list-unlink:hover {
+  background: var(--remote-surface-soft);
+  color: var(--remote-danger);
+}
+
+.remote-project-link-empty {
+  padding: 12px 0 2px;
+}
+
+.remote-field input[readonly] {
+  border-color: var(--remote-border);
+  background: var(--remote-surface-soft);
+  color: var(--remote-text);
+  cursor: default;
 }
 
 .remote-inline-input {

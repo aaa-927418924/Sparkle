@@ -26,14 +26,20 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runInterruptible
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 @Composable
 fun SparkleThumbnail(
@@ -43,13 +49,15 @@ fun SparkleThumbnail(
         .height(132.dp),
     preserveImageAspectRatio: Boolean = false,
     contentDescription: String? = null,
+    allowUncachedLoad: Boolean = true,
+    decodeMaxDimensionPx: Int? = null,
 ) {
     val context = LocalContext.current.applicationContext
-    val bitmap by produceState<Bitmap?>(initialValue = null, key1 = url) {
+    val bitmap by produceState<Bitmap?>(null, url, allowUncachedLoad, decodeMaxDimensionPx) {
         if (url != null) {
-            value = ThumbnailCache.memory(url)
-            if (value == null) {
-                value = withContext(Dispatchers.IO) { ThumbnailCache.load(context, url) }
+            value = ThumbnailRepository.memory(url, decodeMaxDimensionPx)
+            if (value == null && allowUncachedLoad) {
+                value = ThumbnailRepository.load(context, url, decodeMaxDimensionPx)
             }
         }
     }
@@ -89,40 +97,88 @@ fun SparkleThumbnail(
     }
 }
 
+private object ThumbnailRepository {
+    private const val MAX_CONCURRENT_LOADS = 3
+    private val loadScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO.limitedParallelism(MAX_CONCURRENT_LOADS),
+    )
+    private val inFlight = ConcurrentHashMap<String, InFlight>()
+
+    private class InFlight(val deferred: Deferred<Bitmap?>) {
+        val consumers = AtomicInteger(1)
+    }
+
+    fun memory(rawUrl: String, maxDimensionPx: Int?): Bitmap? =
+        ThumbnailCache.memory(rawUrl, maxDimensionPx)
+
+    suspend fun load(context: Context, rawUrl: String, maxDimensionPx: Int?): Bitmap? {
+        memory(rawUrl, maxDimensionPx)?.let { return it }
+        val key = ThumbnailCache.bitmapCacheKey(rawUrl, maxDimensionPx)
+        val request = inFlight.compute(key) { _, existing ->
+            if (existing != null) {
+                existing.consumers.incrementAndGet()
+                existing
+            } else {
+                InFlight(
+                    loadScope.async {
+                        runInterruptible {
+                            ThumbnailCache.load(context, rawUrl, maxDimensionPx)
+                        }
+                    },
+                )
+            }
+        } ?: return null
+        try {
+            return request.deferred.await()
+        } finally {
+            release(key, request)
+        }
+    }
+
+    private fun release(key: String, request: InFlight) {
+        if (request.consumers.decrementAndGet() == 0 && inFlight.remove(key, request)) {
+            if (!request.deferred.isCompleted) request.deferred.cancel()
+        }
+    }
+}
+
 private object ThumbnailCache {
     private const val MEMORY_CACHE_BYTES = 12 * 1024 * 1024
     private const val DISK_CACHE_BYTES = 64L * 1024 * 1024
     private const val MAX_ENTRY_BYTES = 8L * 1024 * 1024
     private const val MAX_BITMAP_DIMENSION = 1280
+    private const val MIN_BITMAP_DIMENSION = 240
 
     private val memoryCache = object : LruCache<String, Bitmap>(MEMORY_CACHE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
     }
 
-    fun memory(rawUrl: String): Bitmap? = synchronized(memoryCache) {
-        memoryCache.get(cacheKey(rawUrl))
+    fun memory(rawUrl: String, maxDimensionPx: Int?): Bitmap? = synchronized(memoryCache) {
+        memoryCache.get(bitmapCacheKey(rawUrl, maxDimensionPx))
     }
 
-    fun load(context: Context, rawUrl: String): Bitmap? {
-        val key = cacheKey(rawUrl)
-        memory(rawUrl)?.let { return it }
+    fun load(context: Context, rawUrl: String, maxDimensionPx: Int?): Bitmap? {
+        val bitmapKey = bitmapCacheKey(rawUrl, maxDimensionPx)
+        val sourceKey = sourceCacheKey(rawUrl)
+        val decodeMaxDimension = normalizedMaxDimension(maxDimensionPx)
+        memory(rawUrl, maxDimensionPx)?.let { return it }
 
         val cacheDirectory = File(context.cacheDir, "sparkle-thumbnails").apply { mkdirs() }
-        val cacheFile = File(cacheDirectory, key)
+        val cacheFile = File(cacheDirectory, sourceKey)
         if (cacheFile.isFile) {
-            val cached = decodeBitmap(cacheFile)
+            val cached = decodeBitmap(cacheFile, decodeMaxDimension)
             if (cached != null) {
                 cacheFile.setLastModified(System.currentTimeMillis())
-                putMemory(key, cached)
+                putMemory(bitmapKey, cached)
                 return cached
             }
             cacheFile.delete()
         }
 
-        val temporaryFile = File(cacheDirectory, "$key.${UUID.randomUUID()}.tmp")
+        val temporaryFile = File(cacheDirectory, "$sourceKey.${UUID.randomUUID()}.tmp")
         return try {
             if (!downloadTo(rawUrl, temporaryFile)) return null
-            val bitmap = decodeBitmap(temporaryFile) ?: return null
+            val bitmap = decodeBitmap(temporaryFile, decodeMaxDimension) ?: return null
             if (temporaryFile.length() <= MAX_ENTRY_BYTES) {
                 if (!temporaryFile.renameTo(cacheFile)) {
                     temporaryFile.delete()
@@ -131,7 +187,7 @@ private object ThumbnailCache {
             } else {
                 temporaryFile.delete()
             }
-            putMemory(key, bitmap)
+            putMemory(bitmapKey, bitmap)
             bitmap
         } finally {
             temporaryFile.delete()
@@ -184,21 +240,21 @@ private object ThumbnailCache {
         }
     }
 
-    private fun decodeBitmap(file: File): Bitmap? {
+    private fun decodeBitmap(file: File, maxDimension: Int): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         val options = BitmapFactory.Options().apply {
-            inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight)
+            inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, maxDimension)
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
         return BitmapFactory.decodeFile(file.absolutePath, options)
     }
 
-    private fun sampleSize(width: Int, height: Int): Int {
+    private fun sampleSize(width: Int, height: Int, maxDimension: Int): Int {
         val largestDimension = maxOf(width, height)
         var sample = 1
-        while (largestDimension / (sample * 2) >= MAX_BITMAP_DIMENSION) {
+        while (largestDimension / (sample * 2) >= maxDimension) {
             sample *= 2
         }
         return sample
@@ -215,10 +271,16 @@ private object ThumbnailCache {
         }
     }
 
-    private fun cacheKey(rawUrl: String): String {
+    fun bitmapCacheKey(rawUrl: String, maxDimensionPx: Int?): String =
+        "${sourceCacheKey(rawUrl)}-${normalizedMaxDimension(maxDimensionPx)}"
+
+    private fun sourceCacheKey(rawUrl: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(rawUrl.toByteArray(Charsets.UTF_8))
         return buildString(digest.size * 2) {
             digest.forEach { byte -> append("%02x".format(byte.toInt() and 0xff)) }
         }
     }
+
+    private fun normalizedMaxDimension(maxDimensionPx: Int?): Int =
+        maxDimensionPx?.coerceIn(MIN_BITMAP_DIMENSION, MAX_BITMAP_DIMENSION) ?: MAX_BITMAP_DIMENSION
 }

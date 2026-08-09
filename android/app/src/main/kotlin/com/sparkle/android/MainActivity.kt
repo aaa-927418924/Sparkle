@@ -111,17 +111,20 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -165,6 +168,7 @@ import java.util.Locale
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     private var pendingShare by mutableStateOf<ClipCreationSource?>(null)
@@ -374,8 +378,20 @@ private fun HomeScreen(
 ) {
     val visibleClips = viewModel.visibleClips()
     val gridState = rememberLazyStaggeredGridState()
+    val isScrolling = gridState.isScrollInProgress
+    var thumbnailsReady by remember { mutableStateOf(false) }
     var clipActionTarget by remember { mutableStateOf<Clip?>(null) }
     var clipDeleteTarget by remember { mutableStateOf<Clip?>(null) }
+    LaunchedEffect(gridState) {
+        withFrameNanos { }
+        thumbnailsReady = true
+    }
+    LaunchedEffect(isScrolling) {
+        viewModel.setHomeScrolling(isScrolling)
+    }
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.setHomeScrolling(false) }
+    }
     LaunchedEffect(viewModel.clipSortMode) {
         gridState.scrollToItem(0)
     }
@@ -430,6 +446,10 @@ private fun HomeScreen(
                         maxWidth >= 600.dp -> 3
                         else -> 2
                     }
+                    val cardWidth = (maxWidth - 24.dp - (10.dp * (columns - 1))) / columns
+                    val thumbnailMaxDimensionPx = with(LocalDensity.current) {
+                        (cardWidth.toPx() * 2f).roundToInt().coerceIn(360, 720)
+                    }
                     LazyVerticalStaggeredGrid(
                         columns = StaggeredGridCells.Fixed(columns),
                         state = gridState,
@@ -447,6 +467,8 @@ private fun HomeScreen(
                                 onToggleTag = viewModel::toggleTag,
                                 onClick = { viewModel.openDetail(clip.id) },
                                 onLongClick = { clipActionTarget = clip },
+                                allowUncachedLoad = thumbnailsReady && !isScrolling,
+                                thumbnailMaxDimensionPx = thumbnailMaxDimensionPx,
                             )
                         }
                     }
@@ -652,6 +674,8 @@ private fun ClipCard(
     onToggleTag: (String) -> Unit,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    allowUncachedLoad: Boolean = true,
+    thumbnailMaxDimensionPx: Int? = null,
 ) {
     Card(
         modifier = Modifier
@@ -673,6 +697,8 @@ private fun ClipCard(
                     url = thumbnailUrl,
                     modifier = Modifier.fillMaxWidth(),
                     preserveImageAspectRatio = true,
+                    allowUncachedLoad = allowUncachedLoad,
+                    decodeMaxDimensionPx = thumbnailMaxDimensionPx,
                     contentDescription = "${clip.displayTitle}のサムネイル",
                 )
                 if (clip.isFavorite) {

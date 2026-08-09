@@ -99,6 +99,8 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
     private var sharedTitleRequestId = 0
     private val clipOpenedAt = mutableMapOf<Int, Long>()
     private val randomClipOrder = mutableMapOf<Int, Double>()
+    private var homeScrolling = false
+    private var pendingSnapshot: RemoteSnapshot? = null
 
     init {
         if (api != null) refresh()
@@ -110,6 +112,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
             connectionState = ConnectionState.Unconfigured
             return
         }
+        if (silent && homeScrolling && screen is Screen.Home) return
         if (isBusy || refreshInFlight) return
         refreshInFlight = true
         if (!silent) {
@@ -125,7 +128,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
                 val snapshot = currentApi.loadSnapshot()
                 mainHandler.post {
                     refreshInFlight = false
-                    applySnapshot(snapshot)
+                    applySnapshotWhenReady(snapshot)
                     if (!silent) isBusy = false
                     connectionState = ConnectionState.Connected
                     if (returnHomeAfterConnection) {
@@ -143,6 +146,17 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         if (api != null && !isBusy) {
             refresh(silent = true)
             if (screen is Screen.AppSettings) refreshAppSettings(silent = true)
+        }
+    }
+
+    fun setHomeScrolling(scrolling: Boolean) {
+        if (homeScrolling == scrolling) return
+        homeScrolling = scrolling
+        if (!scrolling) {
+            pendingSnapshot?.also { snapshot ->
+                pendingSnapshot = null
+                applySnapshot(snapshot)
+            }
         }
     }
 
@@ -241,7 +255,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
                 }
                 val snapshot = currentApi.loadSnapshot()
                 mainHandler.post {
-                    applySnapshot(snapshot)
+                    applySnapshotWhenReady(snapshot)
                     isBusy = false
                     connectionState = ConnectionState.Connected
                     editorSource = null
@@ -455,7 +469,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
                 }
                 val snapshot = currentApi.loadSnapshot()
                 mainHandler.post {
-                    applySnapshot(snapshot)
+                    applySnapshotWhenReady(snapshot)
                     isBusy = false
                     connectionState = ConnectionState.Connected
                     tasksNotesTab = 1
@@ -491,7 +505,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
                 }
                 val snapshot = currentApi.loadSnapshot()
                 mainHandler.post {
-                    applySnapshot(snapshot)
+                    applySnapshotWhenReady(snapshot)
                     isBusy = false
                     connectionState = ConnectionState.Connected
                     screen = Screen.ProjectDetail(savedProject.id)
@@ -785,7 +799,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
                 val changedClip = operation(currentApi)
                 val snapshot = currentApi.loadSnapshot()
                 mainHandler.post {
-                    applySnapshot(snapshot)
+                    applySnapshotWhenReady(snapshot)
                     isBusy = false
                     connectionState = ConnectionState.Connected
                     screen = Screen.Detail(changedClip.id)
@@ -824,7 +838,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
 
     private fun postSnapshot(snapshot: RemoteSnapshot, afterApplied: () -> Unit = {}) {
         mainHandler.post {
-            applySnapshot(snapshot)
+            applySnapshotWhenReady(snapshot)
             isBusy = false
             connectionState = ConnectionState.Connected
             if (returnHomeAfterConnection) {
@@ -835,16 +849,24 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private fun applySnapshotWhenReady(snapshot: RemoteSnapshot) {
+        if (homeScrolling && screen is Screen.Home) {
+            pendingSnapshot = snapshot
+        } else {
+            applySnapshot(snapshot)
+        }
+    }
+
     private fun applySnapshot(snapshot: RemoteSnapshot) {
-        clips = snapshot.clips
-        categories = snapshot.categories
-        if (selectedCategory != null && categories.none { it.name == selectedCategory }) {
+        if (clips != snapshot.clips) clips = snapshot.clips
+        if (categories != snapshot.categories) categories = snapshot.categories
+        if (selectedCategory != null && snapshot.categories.none { it.name == selectedCategory }) {
             selectedCategory = null
         }
-        tags = snapshot.tags
-        tasks = snapshot.tasks
-        notes = snapshot.notes
-        projects = snapshot.projects
+        if (tags != snapshot.tags) tags = snapshot.tags
+        if (tasks != snapshot.tasks) tasks = snapshot.tasks
+        if (notes != snapshot.notes) notes = snapshot.notes
+        if (projects != snapshot.projects) projects = snapshot.projects
     }
 
     private fun postFailure(error: Throwable, silent: Boolean = false) {

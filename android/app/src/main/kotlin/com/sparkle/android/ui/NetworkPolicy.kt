@@ -25,21 +25,28 @@ data class NetworkPolicy(
     val isConnected: Boolean,
     val isCellular: Boolean,
     val isMetered: Boolean,
-    val isDataSaverEnabled: Boolean,
+    val isBackgroundDataRestricted: Boolean,
 ) {
-    val restrictThumbnails: Boolean
-        get() = isCellular || isDataSaverEnabled
+    /**
+     * getRestrictBackgroundStatus() is app-scoped, so only apply it when the
+     * active network is metered. On unmetered Wi-Fi, a per-app restriction
+     * must not be shown as the device-wide Data Saver state.
+     */
+    val isMeteredNetworkRestricted: Boolean
+        get() = isMetered && isBackgroundDataRestricted
 
-    /** Videos auto-load only on connected Wi-Fi while Data Saver is off. */
+    val restrictThumbnails: Boolean
+        get() = isCellular || isMeteredNetworkRestricted
+
+    /** Videos auto-load on connected Wi-Fi unless the metered network is restricted. */
     val allowVideoAutoLoad: Boolean
-        get() = isConnected && !isCellular && !isDataSaverEnabled
+        get() = isConnected && !isCellular && !isMeteredNetworkRestricted
 
     val restrictionLabel: String
         get() = when {
             !isConnected -> "ネットワーク未接続"
             isCellular -> "モバイルデータ使用中"
-            isDataSaverEnabled -> "データセーバーが有効"
-            isMetered -> "従量制ネットワーク使用中"
+            isMeteredNetworkRestricted -> "従量制通信の制限が適用中"
             else -> "通信制限なし"
         }
 }
@@ -60,13 +67,13 @@ private class NetworkPolicyMonitor(context: Context) {
         val isConnected = capabilities != null
         val isCellular = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
         val isMetered = isConnected && connectivityManager.isActiveNetworkMetered
-        val isDataSaverEnabled = connectivityManager.restrictBackgroundStatus !=
+        val isBackgroundDataRestricted = connectivityManager.restrictBackgroundStatus !=
             ConnectivityManager.RESTRICT_BACKGROUND_STATUS_DISABLED
         return NetworkPolicy(
             isConnected = isConnected,
             isCellular = isCellular,
             isMetered = isMetered,
-            isDataSaverEnabled = isDataSaverEnabled,
+            isBackgroundDataRestricted = isBackgroundDataRestricted,
         )
     }
 

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja" class="tutorial-document" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sparkleのセットアップガイド</title>
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260810-update-notice-v3" />
+    <link rel="stylesheet" href="migration.css?v=migration-ui-20260802-v2" />
+    <link rel="stylesheet" href="tutorial.css?v=tutorial-ui-20260810-v1" />
+    <script>
+      try {
+        document.documentElement.classList.toggle(
+          "native-titlebar",
+          localStorage.getItem("sparkle.titlebarMode") === "native",
+        );
+      } catch (e) {}
+    </script>
+  </head>
+  <body class="migration-page tutorial-page">
+    <main class="migration-window tutorial-window">
+      <header class="migration-titlebar window-drag-region">
+        <div class="migration-brand">
+          <img src="/icon.png" alt="" aria-hidden="true" />
+          <strong>Sparkle</strong>
+        </div>
+        <div class="window-controls" aria-label="ウィンドウ操作">
+          <button class="window-control" type="button" title="最小化" aria-label="最小化" data-window-action="minimize_window">
+            <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
+          </button>
+          <button class="window-control" type="button" title="最大化" aria-label="最大化" data-window-action="toggle_maximize_window">
+            <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z" /></svg>
+          </button>
+          <button class="window-control window-control-close" type="button" title="閉じる" aria-label="閉じる" data-window-action="close_window">
+            <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="migration-card tutorial-card" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle" aria-describedby="tutorialDescription">
+        <p class="migration-eyebrow">セットアップガイド</p>
+        <p id="tutorialDebugNote" class="tutorial-debug-note" hidden>デバッグ用にセットアップガイドを表示しています。</p>
+        <h1 id="tutorialTitle">PCとスマホをつなぎましょう</h1>
+        <p id="tutorialDescription" class="migration-description">
+          SparkleはPCをデータの保管場所として使います。3つの手順で、PC・Tailscale・Androidをつなぎます。
+        </p>
+
+        <nav class="tutorial-progress-nav" aria-label="セットアップの進行状況">
+          <ol id="tutorialProgress" class="tutorial-progress">
+            <li class="tutorial-progress-item is-active" data-progress-step="0">
+              <span class="tutorial-progress-number" aria-hidden="true">1</span>
+              <span class="tutorial-progress-label">PC</span>
+            </li>
+            <li class="tutorial-progress-item" data-progress-step="1">
+              <span class="tutorial-progress-number" aria-hidden="true">2</span>
+              <span class="tutorial-progress-label">Tailscale</span>
+            </li>
+            <li class="tutorial-progress-item" data-progress-step="2">
+              <span class="tutorial-progress-number" aria-hidden="true">3</span>
+              <span class="tutorial-progress-label">Android</span>
+            </li>
+          </ol>
+        </nav>
+
+        <div id="tutorialSteps" class="tutorial-steps">
+          <article class="tutorial-step" data-tutorial-step="0" aria-labelledby="tutorialStepTitle0">
+            <div class="tutorial-step-number" aria-hidden="true">01</div>
+            <div>
+              <h2 id="tutorialStepTitle0">PCでSparkleを起動する</h2>
+              <p>SparkleのデータベースはPCに保存されます。Androidを使うときも、PC版Sparkleを起動したままにしてください。</p>
+              <ul class="tutorial-check-list">
+                <li>PC版Sparkleのホーム画面が表示されている</li>
+                <li>PCがスリープやシャットダウンになっていない</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="tutorial-step" data-tutorial-step="1" aria-labelledby="tutorialStepTitle1" hidden>
+            <div class="tutorial-step-number" aria-hidden="true">02</div>
+            <div>
+              <h2 id="tutorialStepTitle1">Tailscaleで安全に接続する</h2>
+              <p>PCとスマホの両方を同じTailscaleネットワークに接続します。PCのAPIはインターネット全体には公開せず、tailnet内だけで使います。</p>
+              <div class="tutorial-callout">
+                <strong>PCで確認すること</strong>
+                <p>管理者PowerShellで <code>tailscale serve status</code> を実行し、PCのHTTPS/MagicDNS URLと、転送先が <code>127.0.0.1:8000</code> であることを確認します。</p>
+              </div>
+              <p class="tutorial-note">Tailscaleの設定変更はこの画面から自動では行いません。現在のServe設定を確認してから次へ進んでください。</p>
+            </div>
+          </article>
+
+          <article class="tutorial-step" data-tutorial-step="2" aria-labelledby="tutorialStepTitle2" hidden>
+            <div class="tutorial-step-number" aria-hidden="true">03</div>
+            <div>
+              <h2 id="tutorialStepTitle2">AndroidをPCへ接続する</h2>
+              <p>Android版Sparkleのサイドバーから「PC接続設定」を開き、TailscaleのHTTPS/MagicDNS URLを入力します。</p>
+              <ol class="tutorial-ordered-list">
+                <li>Android版Sparkleで「PC接続設定」を開く</li>
+                <li>PCのHTTPS/MagicDNS URLを入力する</li>
+                <li>「保存して接続確認」を押す</li>
+              </ol>
+              <p class="tutorial-note">接続後もクリップのデータベースはPCだけに残ります。Android側にPCのデータベースを複製することはありません。</p>
+            </div>
+          </article>
+
+        </div>
+
+        <p id="tutorialStatus" class="migration-status" role="status" aria-live="polite" aria-atomic="true"></p>
+        <div class="migration-actions tutorial-actions">
+          <button id="tutorialBack" class="migration-secondary" type="button">戻る</button>
+          <button id="tutorialSkip" class="migration-secondary" type="button">あとで設定</button>
+          <button id="tutorialNext" class="migration-primary" type="button">次へ</button>
+        </div>
+      </section>
+    </main>
+    <script src="codex-shell.js?v=codex-shell-20260810-update-notice-v3"></script>
+    <script src="tutorial.js?v=tutorial-ui-20260810-tutorial-order-v1"></script>
+  </body>
+</html>

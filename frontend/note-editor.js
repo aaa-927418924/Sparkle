@@ -10,6 +10,9 @@ const state = {
   autoSaveInFlight: false,
   autoSaveVersion: 0,
   dirty: false,
+  serverUpdatedAt: "",
+  saveBlockedByConflict: false,
+  conflictAlertShown: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -27,7 +30,11 @@ async function api(path, options = {}) {
     ...options,
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const error = new Error(`HTTP ${res.status}`);
+    error.status = res.status;
+    throw error;
+  }
   return res.status === 204 ? null : res.json();
 }
 
@@ -63,6 +70,7 @@ function readNoteDraft() {
       body: String(draft.body || ""),
       clipIds: Array.isArray(draft.clipIds) ? draft.clipIds.map(Number).filter(Number.isFinite) : null,
       clips: Array.isArray(draft.clips) ? draft.clips : [],
+      serverUpdatedAt: typeof draft.serverUpdatedAt === "string" ? draft.serverUpdatedAt : "",
     };
   } catch {
     return null;
@@ -91,6 +99,7 @@ function saveNoteDraft() {
       clipIds: clips.map((c) => c.id),
       clips,
       updatedAt: Date.now(),
+      serverUpdatedAt: state.serverUpdatedAt,
     }));
   } catch {
     // localStorage may be unavailable in a restricted browser context.
@@ -104,6 +113,12 @@ function clearNoteDraft() {
 function restoreNoteDraft() {
   const draft = readNoteDraft();
   if (!draft) return false;
+  // Existing-note drafts are safe to restore only when they were created from
+  // the same server revision. Legacy drafts without a revision are ignored so
+  // an Android/PC edit cannot be rolled back by an old localStorage value.
+  if (state.noteId != null && (
+    !state.serverUpdatedAt || !draft.serverUpdatedAt || draft.serverUpdatedAt !== state.serverUpdatedAt
+  )) return false;
   const currentClipIds = state.pickedClips.map((c) => c.id).sort((a, b) => a - b);
   const draftClipIds = draft.clipIds ? draft.clipIds.slice().sort((a, b) => a - b) : null;
   const clipsDiffer = draftClipIds !== null && JSON.stringify(draftClipIds) !== JSON.stringify(currentClipIds);
@@ -136,7 +151,7 @@ function scheduleNoteAutoSave() {
 }
 
 async function autoSaveNote() {
-  if (!state.dirty || state.autoSaveInFlight) return;
+  if (!state.dirty || state.autoSaveInFlight || state.saveBlockedByConflict) return;
   const payload = notePayload();
   // A new note needs a title before it can become a database record.
   // Until then, the local draft still preserves its body and clip choices.
@@ -150,10 +165,15 @@ async function autoSaveNote() {
     if (state.noteId == null) {
       const saved = await api("/notes", { method: "POST", body: JSON.stringify(payload) });
       state.noteId = Number(saved.id);
+      state.serverUpdatedAt = String(saved.updated_at || "");
       savedNoteId = state.noteId;
       history.replaceState(null, "", "?id=" + state.noteId);
     } else {
-      await api(`/notes/${state.noteId}`, { method: "PUT", body: JSON.stringify(payload) });
+      const saved = await api(`/notes/${state.noteId}`, {
+        method: "PUT",
+        body: JSON.stringify({ ...payload, expected_updated_at: state.serverUpdatedAt }),
+      });
+      state.serverUpdatedAt = String(saved?.updated_at || state.serverUpdatedAt);
     }
     await window.refreshPinnedData?.("note", savedNoteId);
     await window.refreshAllPinnedProjects?.();
@@ -164,6 +184,13 @@ async function autoSaveNote() {
       initialSnapshot = snapshot();
     }
   } catch (e) {
+    if (e?.status === 409) {
+      state.saveBlockedByConflict = true;
+      if (!state.conflictAlertShown) {
+        state.conflictAlertShown = true;
+        alert("このメモは別の端末で先に更新されています。PC側の編集は保存していません。最新内容を確認するため、この画面を再読み込みしてから編集してください。");
+      }
+    }
     console.warn("Note auto-save failed", e);
   } finally {
     state.autoSaveInFlight = false;
@@ -280,6 +307,7 @@ async function init() {
     state.noteId = Number(id);
     try {
       const note = await api(`/notes/${id}`);
+      state.serverUpdatedAt = String(note.updated_at || "");
       els.title.value = note.title || "";
       els.bodyRaw.value = note.body || "";
       state.pickedClips = (note.clips || []).map((c) => ({
@@ -295,6 +323,7 @@ async function init() {
     }
   } else {
     state.noteId = null;
+    state.serverUpdatedAt = "";
     els.title.value = "";
     els.bodyRaw.value = "";
     state.pickedClips = [];

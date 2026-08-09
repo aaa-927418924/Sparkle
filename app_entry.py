@@ -58,11 +58,13 @@ from setup import (
     ensure_post_migration_onboarding,
     get_post_migration_onboarding_status,
     get_setup_status,
+    get_setup_tutorial_status,
 )
 from updater import apply_update, check_for_update, get_update_state
 
 HOST = "127.0.0.1"
 DEBUG_SETUP_FLAG = "--debug-setup"
+DEBUG_TUTORIAL_FLAG = "--debug-tutorial"
 DEBUG_EXTENSION_GUIDE_FLAG = "--debug-extension-guide"
 DEFAULT_WINDOW_SIZE = (1510, 820)
 DEFAULT_MIN_WINDOW_SIZE = (960, 640)
@@ -73,7 +75,7 @@ ONBOARDING_WINDOW_SIZE = (958, 885)
 ONBOARDING_MIN_WINDOW_SIZE = (720, 560)
 DEFAULT_WINDOW_PROFILE = "default"
 ONBOARDING_WINDOW_PROFILE = "onboarding"
-ONBOARDING_PAGES = {"Migration", "Setup", "ExtensionGuide"}
+ONBOARDING_PAGES = {"Migration", "Setup", "Tutorial", "ExtensionGuide"}
 WINDOW_SCREEN_MARGIN = 24
 
 
@@ -105,7 +107,13 @@ APP_REG_NAME = "Sparkle"
 server_ref = {}
 window_ref = {}
 exit_requested = threading.Event()
-window_state = {"maximized": False, "profile": DEFAULT_WINDOW_PROFILE}
+window_state = {
+    "maximized": False,
+    "profile": DEFAULT_WINDOW_PROFILE,
+    "native_resize_handle": None,
+    "native_titlebar": None,
+    "native_titlebar_handle": None,
+}
 native_drop_condition = threading.Condition()
 native_drop_paths = []
 native_drop_document = None
@@ -383,6 +391,13 @@ def _apply_window_caption(window, native_titlebar: bool) -> None:
     if handle is None:
         return
 
+    handle_key = int(handle)
+    if (
+        window_state.get("native_titlebar") is bool(native_titlebar)
+        and window_state.get("native_titlebar_handle") == handle_key
+    ):
+        return
+
     # A real caption needs more than WS_CAPTION: without SYSMENU, MIN/MAXBOX
     # and THICKFRAME, the native bar renders empty (no minimize/maximize/close
     # buttons). Custom mode drops the caption AND the sizing frame; keeping
@@ -399,6 +414,8 @@ def _apply_window_caption(window, native_titlebar: bool) -> None:
     )
     _apply_dwm_frame_margin(handle, native_titlebar)
     _apply_corner_preference(handle, native_titlebar)
+    window_state["native_titlebar"] = bool(native_titlebar)
+    window_state["native_titlebar_handle"] = handle_key
 
 
 def _apply_window_style(handle, mutate_style) -> None:
@@ -529,6 +546,10 @@ def _enable_native_resize(window) -> None:
     if handle is None:
         return
 
+    handle_key = int(handle)
+    if window_state.get("native_resize_handle") == handle_key:
+        return
+
     _apply_window_style(
         handle,
         lambda style: (style & ~0x00C00000)  # WS_CAPTION
@@ -537,6 +558,7 @@ def _enable_native_resize(window) -> None:
         | 0x00010000
         | 0x00080000,  # THICKFRAME | MIN/MAXBOX | SYSMENU
     )
+    window_state["native_resize_handle"] = handle_key
 
 
 def _resize_window_for_profile(profile: str):
@@ -925,8 +947,9 @@ def _apply_native_chrome() -> None:
     ``webview.start(func)`` runs ``func`` on a background thread before the
     WinForms window is created, so the native handle is still missing there.
     The same call is therefore repeated from the ``loaded`` event, by which
-    point the handle is available. Applying the saved titlebar mode twice is
-    idempotent (same target style), so this is safe on every page load.
+    point the handle is available. Once the style is applied, page navigation
+    does not touch the Win32 frame again; changing the setting explicitly is
+    the only operation that reapplies it.
     """
     window = window_ref.get("window")
     if window is None:
@@ -1051,7 +1074,11 @@ def main() -> None:
         setup_required = bool(get_setup_status().get("required"))
         post_migration_onboarding = get_post_migration_onboarding_status()
         post_migration_required = bool(post_migration_onboarding.get("required"))
+        tutorial_status = get_setup_tutorial_status()
+        tutorial_required = bool(tutorial_status.get("required"))
+        tutorial_stage = tutorial_status.get("stage")
         debug_setup = DEBUG_SETUP_FLAG in sys.argv[1:]
+        debug_tutorial = DEBUG_TUTORIAL_FLAG in sys.argv[1:]
         debug_extension_guide = DEBUG_EXTENSION_GUIDE_FLAG in sys.argv[1:]
         if _is_app_server_running():
             # 既に起動中(二重起動) → 既存のネイティブウィンドウを前面表示
@@ -1103,6 +1130,8 @@ def main() -> None:
         os.environ["SPARKLE_EXECUTABLE"] = _get_exe_path()
         if debug_extension_guide:
             initial_page = "ExtensionGuide?debug=extension"
+        elif debug_tutorial:
+            initial_page = "Tutorial?debug=tutorial"
         elif migration_required:
             initial_page = "Migration"
         elif debug_setup:
@@ -1112,6 +1141,8 @@ def main() -> None:
             initial_page = "ExtensionGuide?source=migration" if stage == "extension" else "Setup?source=migration"
         elif setup_required:
             initial_page = "Setup"
+        elif tutorial_required:
+            initial_page = "ExtensionGuide?source=setup" if tutorial_stage == "extension" else "Tutorial"
         else:
             initial_page = "Home"
 
@@ -1138,7 +1169,9 @@ def main() -> None:
                 and not migration_required
                 and not setup_required
                 and not post_migration_required
+                and not tutorial_required
                 and not debug_setup
+                and not debug_tutorial
                 and not debug_extension_guide
             ),
             js_api=NativeWindowApi(),

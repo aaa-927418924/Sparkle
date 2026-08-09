@@ -103,7 +103,13 @@
 
   function handleDocumentPointerDown(event) {
     if (!activeRequest || !dialog || dialog.hidden) return;
-    if (!(event.target instanceof Node) || !dialog.contains(event.target)) finish(false);
+    if (event.target instanceof Node && dialog.contains(event.target)) return;
+    if (activeRequest.dismissOnOutsideClick === false) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    finish(false);
   }
 
   function ensureDialog() {
@@ -132,13 +138,15 @@
       </div>`;
 
     dialog.addEventListener("click", (event) => {
-      if (event.target === dialog) finish(false);
+      if (event.target === dialog && activeRequest?.dismissOnOutsideClick !== false) finish(false);
     });
     dialog.querySelector("[data-confirm-cancel]").addEventListener("click", () => finish(false));
     dialog.querySelector("[data-confirm-submit]").addEventListener("click", () => finish(true));
     dialog.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
+      event.stopPropagation();
+      if (activeRequest?.dismissOnEscape === false) return;
       finish(false);
     });
     document.body.appendChild(dialog);
@@ -196,7 +204,10 @@
   window.appConfirm = (message, options = {}) => {
     if (!document.body) return Promise.resolve(window.confirm(message));
     const nextDialog = ensureDialog();
-    if (activeRequest) finish(false);
+    if (activeRequest) {
+      if (activeRequest.blockReplacement) return Promise.resolve(false);
+      finish(false);
+    }
     clearTimeout(hideTimer);
 
     nextDialog.querySelector(".app-confirm-title").textContent = options.title || "本当に削除しますか？";
@@ -207,6 +218,9 @@
     nextDialog.setAttribute("aria-hidden", "false");
     const request = {
       anchor: options.anchor,
+      dismissOnOutsideClick: options.dismissOnOutsideClick !== false,
+      dismissOnEscape: options.dismissOnEscape !== false,
+      blockReplacement: options.blockReplacement === true,
       returnFocus: document.activeElement,
       reposition: null,
       resolve: null,
@@ -480,6 +494,8 @@
     if (!tag || shownReleaseTags.has(tag) || readDismissedRelease() === tag) return;
     shownReleaseTags.add(tag);
     promptActive = true;
+    const profileAnchor = document.querySelector(".side-btn-profile .profile-avatar")
+      || document.querySelector(".side-btn-profile");
 
     try {
       const updateNow = await window.appConfirm(
@@ -488,6 +504,10 @@
           title: "Sparkleのアップデートがあります",
           cancelLabel: "閉じる",
           confirmLabel: "アップデートする",
+          anchor: profileAnchor,
+          dismissOnOutsideClick: false,
+          dismissOnEscape: false,
+          blockReplacement: true,
         },
       );
 
@@ -521,6 +541,11 @@
       await new Promise((resolve) => window.setTimeout(resolve, POLL_DELAY_MS));
     }
   }
+
+  // 設定画面の手動チェック完了後にも、同じ通知経路を再利用する。
+  window.sparkleUpdateNotice = {
+    check: checkForAvailableUpdate,
+  };
 
   function installUpdateNotice() {
     void checkForAvailableUpdate();

@@ -1033,6 +1033,10 @@ function initSettings() {
     syncNativeTitlebar(mode);
   });
   // app update
+  const setupTutorialBtn = document.getElementById("setupTutorialBtn");
+  if (setupTutorialBtn) setupTutorialBtn.addEventListener("click", () => {
+    window.location.href = "/Tutorial?source=settings";
+  });
   const updateCheckBtn = document.getElementById("updateCheckBtn");
   const updateApplyBtn = document.getElementById("updateApplyBtn");
   if (updateCheckBtn) updateCheckBtn.addEventListener("click", async () => {
@@ -1043,7 +1047,10 @@ function initSettings() {
       setUpdateStatus("更新を確認できませんでした。", false, "ネットワークに接続してください。");
       return;
     }
-    loadUpdateStatus();
+    await loadUpdateStatus();
+    if (typeof window.sparkleUpdateNotice?.check === "function") {
+      void window.sparkleUpdateNotice.check();
+    }
   });
   if (updateApplyBtn) updateApplyBtn.addEventListener("click", async () => {
     const message = "最新版に更新して再起動します。よろしいですか？";

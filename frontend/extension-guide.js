@@ -2,6 +2,7 @@
   const params = new URLSearchParams(window.location.search);
   const debugMode = params.get("debug") === "extension";
   const migrationMode = params.get("source") === "migration";
+  const setupMode = params.get("source") === "setup";
   const eyebrow = document.querySelector(".migration-eyebrow");
   const title = document.getElementById("extensionGuideTitle");
   const description = document.getElementById("extensionGuideDescription");
@@ -19,8 +20,14 @@
     }
     doneButton.textContent = "Sparkleを始める";
   }
+  if (setupMode || debugMode) doneButton.textContent = "次へ";
 
+  let busy = false;
   async function finish() {
+    if (busy) return;
+    busy = true;
+    skipButton.disabled = true;
+    doneButton.disabled = true;
     if (migrationMode) {
       try {
         await fetch("/setup/post-migration/complete", { method: "POST" });
@@ -28,6 +35,33 @@
         // Continue to the home page; the pending marker will show this guide
         // again on the next launch if the completion request did not finish.
       }
+      window.location.replace("/Home");
+      return;
+    }
+    if (setupMode && !debugMode) {
+      status.textContent = "続きの案内を準備しています…";
+      try {
+        const response = await fetch("/setup/tutorial/start", {
+          method: "POST",
+          headers: { Accept: "application/json" },
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.ok) {
+          throw new Error(result.detail || "セットアップガイドを準備できませんでした。");
+        }
+      } catch (error) {
+        busy = false;
+        skipButton.disabled = false;
+        doneButton.disabled = false;
+        status.textContent = error.message || "続きの案内を開けませんでした。もう一度お試しください。";
+        return;
+      }
+      window.location.replace("/Tutorial?source=setup");
+      return;
+    }
+    if (debugMode) {
+      window.location.replace("/Tutorial?source=setup&debug=tutorial");
+      return;
     }
     window.location.replace("/Home");
   }

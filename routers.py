@@ -1512,9 +1512,11 @@ def get_note(note_id: int, db: Connection = Depends(get_db)):
 
 @router.put("/notes/{note_id}", response_model=NoteOut)
 def update_note(note_id: int, payload: NoteUpdate, db: Connection = Depends(get_db)):
-    row = db.execute("SELECT id FROM notes WHERE id = ?", (note_id,)).fetchone()
+    row = db.execute("SELECT id, updated_at FROM notes WHERE id = ?", (note_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Note not found")
+    if payload.expected_updated_at is not None and payload.expected_updated_at != row["updated_at"]:
+        raise HTTPException(status_code=409, detail="Note was updated elsewhere")
 
     if payload.title is not None:
         db.execute("UPDATE notes SET title = ? WHERE id = ?", (payload.title, note_id))
@@ -1542,7 +1544,10 @@ def update_note(note_id: int, payload: NoteUpdate, db: Connection = Depends(get_
             note_id,
             [payload.project_id] if payload.project_id is not None else [],
         )
-    db.execute("UPDATE notes SET updated_at = datetime('now') WHERE id = ?", (note_id,))
+    db.execute(
+        "UPDATE notes SET updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?",
+        (note_id,),
+    )
     db.commit()
     row = db.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
     return _row_to_note(db, row)

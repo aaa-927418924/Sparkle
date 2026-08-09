@@ -289,7 +289,8 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
 
 .notes-page .task-due,
 .notes-page .task-clip,
-.notes-page .task-note {
+.notes-page .task-note,
+.notes-page .task-project {
   color: #fff;
 }
 

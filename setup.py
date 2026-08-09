@@ -19,6 +19,9 @@ from paths import get_app_data_dir
 
 SETUP_VERSION = 1
 SETUP_MARKER_NAME = ".initial-setup-complete.json"
+SETUP_TUTORIAL_VERSION = 1
+SETUP_TUTORIAL_MARKER_NAME = ".setup-tutorial.json"
+SETUP_TUTORIAL_STAGES = {"extension", "tutorial"}
 POST_MIGRATION_ONBOARDING_VERSION = 1
 POST_MIGRATION_ONBOARDING_MARKER_NAME = ".post-migration-onboarding.json"
 POST_MIGRATION_ONBOARDING_STAGES = {"setup", "extension"}
@@ -34,6 +37,10 @@ SETUP_DEFAULTS: dict[str, Any] = {
 
 def get_setup_marker_path() -> Path:
     return get_app_data_dir() / SETUP_MARKER_NAME
+
+
+def get_setup_tutorial_marker_path() -> Path:
+    return get_app_data_dir() / SETUP_TUTORIAL_MARKER_NAME
 
 
 def get_post_migration_onboarding_marker_path() -> Path:
@@ -86,6 +93,89 @@ def get_setup_status() -> dict[str, Any]:
         "defaults": dict(SETUP_DEFAULTS),
         "values": _load_saved_settings(),
     }
+
+
+def get_setup_tutorial_status() -> dict[str, Any]:
+    """Return the optional first-run tutorial state without changing data."""
+    if get_setup_status().get("required"):
+        return {"required": False, "completed": False, "version": SETUP_TUTORIAL_VERSION}
+
+    marker = get_setup_tutorial_marker_path()
+    if not marker.is_file():
+        # Existing installations never saw this tutorial. They can open it
+        # from Settings, but should not be interrupted on the next launch.
+        return {"required": False, "completed": False, "version": SETUP_TUTORIAL_VERSION}
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {"required": False, "completed": False, "version": SETUP_TUTORIAL_VERSION}
+
+    try:
+        version = int(payload.get("version") or 0)
+    except (TypeError, ValueError):
+        return {"required": False, "completed": False, "version": SETUP_TUTORIAL_VERSION}
+    completed = (
+        payload.get("status") == "complete"
+        and version >= SETUP_TUTORIAL_VERSION
+    )
+    stage = payload.get("stage")
+    if stage not in SETUP_TUTORIAL_STAGES:
+        # Markers created before the extension guide was moved earlier in the
+        # flow are already at the tutorial stage.
+        stage = "tutorial"
+    return {
+        "required": not completed,
+        "completed": completed,
+        "version": version or SETUP_TUTORIAL_VERSION,
+        "stage": stage,
+    }
+
+
+def begin_setup_tutorial() -> Path:
+    """Mark the tutorial as pending after a brand-new setup is saved."""
+    marker = get_setup_tutorial_marker_path()
+    status = get_setup_tutorial_status()
+    if status.get("completed") and marker.is_file():
+        return marker
+    return _write_json_marker(
+        marker,
+        {
+            "version": SETUP_TUTORIAL_VERSION,
+            "status": "pending",
+            "stage": "extension",
+            "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        },
+    )
+
+
+def start_setup_tutorial() -> Path:
+    """Advance a new setup from the extension guide to the tutorial."""
+    marker = get_setup_tutorial_marker_path()
+    status = get_setup_tutorial_status()
+    if status.get("completed") and marker.is_file():
+        return marker
+    return _write_json_marker(
+        marker,
+        {
+            "version": SETUP_TUTORIAL_VERSION,
+            "status": "pending",
+            "stage": "tutorial",
+            "started_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        },
+    )
+
+
+def complete_setup_tutorial() -> Path:
+    """Persist tutorial completion so a pending first-run flow can resume."""
+    return _write_json_marker(
+        get_setup_tutorial_marker_path(),
+        {
+            "version": SETUP_TUTORIAL_VERSION,
+            "status": "complete",
+            "stage": "tutorial",
+            "completed_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        },
+    )
 
 
 def get_post_migration_onboarding_status() -> dict[str, Any]:

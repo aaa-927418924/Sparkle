@@ -158,12 +158,25 @@ fun SparkleThumbnail(
     }
 }
 
+suspend fun preloadCachedThumbnail(
+    context: Context,
+    url: String,
+    decodeMaxDimensionPx: Int?,
+) {
+    ThumbnailRepository.loadCached(context, url, decodeMaxDimensionPx)
+}
+
 private object ThumbnailRepository {
     private const val MAX_CONCURRENT_LOADS = 3
+    private const val MAX_CONCURRENT_CACHE_READS = 2
     private val loadScope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO.limitedParallelism(MAX_CONCURRENT_LOADS),
     )
+    private val cachedLoadScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO.limitedParallelism(MAX_CONCURRENT_CACHE_READS),
+    )
     private val inFlight = ConcurrentHashMap<String, InFlight>()
+    private val cachedInFlight = ConcurrentHashMap<String, InFlight>()
 
     private class InFlight(val deferred: Deferred<Bitmap?>) {
         val consumers = AtomicInteger(1)
@@ -172,10 +185,27 @@ private object ThumbnailRepository {
     fun memory(rawUrl: String, maxDimensionPx: Int?): Bitmap? =
         ThumbnailCache.memory(rawUrl, maxDimensionPx)
 
-    suspend fun loadCached(context: Context, rawUrl: String, maxDimensionPx: Int?): Bitmap? =
-        runInterruptible {
-            ThumbnailCache.loadCached(context, rawUrl, maxDimensionPx)
+    suspend fun loadCached(context: Context, rawUrl: String, maxDimensionPx: Int?): Bitmap? {
+        memory(rawUrl, maxDimensionPx)?.let { return it }
+        val key = ThumbnailCache.bitmapCacheKey(rawUrl, maxDimensionPx)
+        val request = cachedInFlight.compute(key) { _, existing ->
+            if (existing != null) {
+                existing.consumers.incrementAndGet()
+                existing
+            } else {
+                InFlight(
+                    cachedLoadScope.async {
+                        ThumbnailCache.loadCached(context, rawUrl, maxDimensionPx)
+                    },
+                )
+            }
+        } ?: return null
+        try {
+            return request.deferred.await()
+        } finally {
+            release(cachedInFlight, key, request)
         }
+    }
 
     suspend fun load(context: Context, rawUrl: String, maxDimensionPx: Int?): Bitmap? {
         memory(rawUrl, maxDimensionPx)?.let { return it }
@@ -197,30 +227,41 @@ private object ThumbnailRepository {
         try {
             return request.deferred.await()
         } finally {
-            release(key, request)
+            release(inFlight, key, request)
         }
     }
 
-    private fun release(key: String, request: InFlight) {
-        if (request.consumers.decrementAndGet() == 0 && inFlight.remove(key, request)) {
+    private fun release(
+        requests: ConcurrentHashMap<String, InFlight>,
+        key: String,
+        request: InFlight,
+    ) {
+        if (request.consumers.decrementAndGet() == 0 && requests.remove(key, request)) {
             if (!request.deferred.isCompleted) request.deferred.cancel()
         }
     }
 }
 
 private object ThumbnailCache {
-    private const val MEMORY_CACHE_BYTES = 12 * 1024 * 1024
+    private const val MEMORY_CACHE_BYTES = 16 * 1024 * 1024
+    private const val HOT_CACHE_BYTES = 8 * 1024 * 1024
     private const val DISK_CACHE_BYTES = 64L * 1024 * 1024
     private const val MAX_ENTRY_BYTES = 8L * 1024 * 1024
     private const val MAX_BITMAP_DIMENSION = 1280
     private const val MIN_BITMAP_DIMENSION = 240
 
+    private val cacheLock = Any()
     private val memoryCache = object : LruCache<String, Bitmap>(MEMORY_CACHE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
     }
+    private val hotCache = object : LruCache<String, Bitmap>(HOT_CACHE_BYTES) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
+    }
 
-    fun memory(rawUrl: String, maxDimensionPx: Int?): Bitmap? = synchronized(memoryCache) {
-        memoryCache.get(bitmapCacheKey(rawUrl, maxDimensionPx))
+    fun memory(rawUrl: String, maxDimensionPx: Int?): Bitmap? = synchronized(cacheLock) {
+        val key = bitmapCacheKey(rawUrl, maxDimensionPx)
+        hotCache.get(key)?.let { return@synchronized it }
+        memoryCache.get(key)?.also { hotCache.put(key, it) }
     }
 
     fun load(context: Context, rawUrl: String, maxDimensionPx: Int?): Bitmap? {
@@ -272,7 +313,10 @@ private object ThumbnailCache {
     }
 
     private fun putMemory(key: String, bitmap: Bitmap) {
-        synchronized(memoryCache) { memoryCache.put(key, bitmap) }
+        synchronized(cacheLock) {
+            memoryCache.put(key, bitmap)
+            hotCache.put(key, bitmap)
+        }
     }
 
     private fun downloadTo(rawUrl: String, destination: File): Boolean {

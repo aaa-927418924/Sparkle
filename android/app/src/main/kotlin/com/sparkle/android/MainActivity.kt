@@ -161,8 +161,11 @@ import com.sparkle.android.ui.SparkleThumbnail
 import com.sparkle.android.ui.SparkleVideoPreview
 import com.sparkle.android.ui.SparkleViewModel
 import com.sparkle.android.ui.rememberNetworkPolicy
+import com.sparkle.android.ui.preloadCachedThumbnail
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -456,6 +459,28 @@ private fun HomeScreen(
                     val cardWidth = (maxWidth - 24.dp - (10.dp * (columns - 1))) / columns
                     val thumbnailMaxDimensionPx = with(LocalDensity.current) {
                         (cardWidth.toPx() * 2f).roundToInt().coerceIn(360, 720)
+                    }
+                    val thumbnailContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+                    LaunchedEffect(isScrolling, visibleClips.map { it.id }, thumbnailMaxDimensionPx) {
+                        if (isScrolling) return@LaunchedEffect
+                        withFrameNanos { }
+                        val visibleItems = gridState.layoutInfo.visibleItemsInfo
+                        val lastVisibleIndex = visibleItems.maxOfOrNull { it.index }
+                            ?: return@LaunchedEffect
+                        val preloadStart = lastVisibleIndex + 1
+                        val preloadEnd = (lastVisibleIndex + columns * 2)
+                            .coerceAtMost(visibleClips.lastIndex)
+                        if (preloadStart > preloadEnd) return@LaunchedEffect
+                        coroutineScope {
+                            (preloadStart..preloadEnd).mapNotNull { index ->
+                                val thumbnailUrl = viewModel.thumbnailUrl(visibleClips[index].thumbnailUrl)
+                                thumbnailUrl?.let { url ->
+                                    launch {
+                                        preloadCachedThumbnail(thumbnailContext, url, thumbnailMaxDimensionPx)
+                                    }
+                                }
+                            }.joinAll()
+                        }
                     }
                     LazyVerticalStaggeredGrid(
                         columns = StaggeredGridCells.Fixed(columns),

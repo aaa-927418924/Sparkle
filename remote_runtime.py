@@ -187,11 +187,12 @@ class RemoteAccessManager:
             target_name = "main"
         elif _has_any_route_config(parsed):
             target_name = "other"
+        public_url = _find_public_url(parsed) if target_name == "remote" else None
         return {
             "available": True,
             "active": target_name is not None,
             "target": target_name,
-            "public_url": _find_public_url(parsed),
+            "public_url": public_url,
         }
 
     def funnel_status(self, force: bool = False) -> dict[str, Any]:

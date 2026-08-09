@@ -3,9 +3,10 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from remote_auth import AuthStore, InvalidAccessKey
-from remote_runtime import _find_public_url
+from remote_runtime import RemoteAccessManager, _find_public_url
 
 
 class RemoteAuthStoreTests(unittest.TestCase):
@@ -25,6 +26,31 @@ class RemoteAuthStoreTests(unittest.TestCase):
             _find_public_url(status),
             "https://sparkle.example.ts.net",
         )
+
+    def test_funnel_status_hides_url_for_desktop_target(self):
+        status = {
+            "Web": {
+                "sparkle.example.ts.net:443": {
+                    "Handlers": {
+                        "/": {
+                            "Proxy": "http://127.0.0.1:8000",
+                        }
+                    }
+                }
+            }
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            manager = RemoteAccessManager(
+                auth_store=AuthStore(Path(directory) / "remote-auth.json")
+            )
+            with patch.object(
+                manager,
+                "_run_cli",
+                return_value=(True, json.dumps(status), ""),
+            ):
+                result = manager.funnel_status(force=True)
+        self.assertEqual(result["target"], "main")
+        self.assertIsNone(result["public_url"])
 
     def test_trusted_session_survives_store_reload_without_plaintext(self):
         with tempfile.TemporaryDirectory() as directory:

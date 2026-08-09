@@ -455,7 +455,10 @@ private fun HomeScreen(
             OutlinedTextField(
                 value = viewModel.query,
                 onValueChange = { viewModel.query = it },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 8.dp, bottom = if (homeChromeCollapsed) 6.dp else 0.dp),
                 placeholder = { Text("クリップを検索", modifier = Modifier.padding(start = 4.dp)) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.padding(start = 4.dp)) },
                 shape = RoundedCornerShape(28.dp),

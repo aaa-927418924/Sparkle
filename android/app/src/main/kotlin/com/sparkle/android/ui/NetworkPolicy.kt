@@ -17,6 +17,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 data class NetworkPolicy(
     val isConnected: Boolean,
@@ -25,11 +28,11 @@ data class NetworkPolicy(
     val isDataSaverEnabled: Boolean,
 ) {
     val restrictThumbnails: Boolean
-        get() = !isConnected || isCellular || isMetered || isDataSaverEnabled
+        get() = isCellular || isDataSaverEnabled
 
-    /** Videos auto-load only on a connected, unmetered non-cellular network. */
+    /** Videos auto-load only on connected Wi-Fi while Data Saver is off. */
     val allowVideoAutoLoad: Boolean
-        get() = isConnected && !isCellular && !isMetered
+        get() = isConnected && !isCellular && !isDataSaverEnabled
 
     val restrictionLabel: String
         get() = when {
@@ -57,8 +60,8 @@ private class NetworkPolicyMonitor(context: Context) {
         val isConnected = capabilities != null
         val isCellular = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
         val isMetered = isConnected && connectivityManager.isActiveNetworkMetered
-        val isDataSaverEnabled = connectivityManager.restrictBackgroundStatus ==
-            ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
+        val isDataSaverEnabled = connectivityManager.restrictBackgroundStatus !=
+            ConnectivityManager.RESTRICT_BACKGROUND_STATUS_DISABLED
         return NetworkPolicy(
             isConnected = isConnected,
             isCellular = isCellular,
@@ -88,7 +91,7 @@ private class NetworkPolicyMonitor(context: Context) {
             applicationContext,
             dataSaverReceiver,
             IntentFilter(ConnectivityManager.ACTION_RESTRICT_BACKGROUND_CHANGED),
-            ContextCompat.RECEIVER_NOT_EXPORTED,
+            ContextCompat.RECEIVER_EXPORTED,
         )
         dispatch(listener)
         return Registration(callback, dataSaverReceiver)
@@ -108,11 +111,21 @@ private class NetworkPolicyMonitor(context: Context) {
 @Composable
 fun rememberNetworkPolicy(): NetworkPolicy {
     val context = LocalContext.current.applicationContext
+    val lifecycleOwner = LocalLifecycleOwner.current
     val monitor = remember(context) { NetworkPolicyMonitor(context) }
     var policy by remember(monitor) { mutableStateOf(monitor.current()) }
-    DisposableEffect(monitor) {
+    DisposableEffect(monitor, lifecycleOwner) {
         val registration = monitor.register { policy = it }
-        onDispose { monitor.unregister(registration) }
+        val lifecycleObserver = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                policy = monitor.current()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
+            monitor.unregister(registration)
+        }
     }
     return policy
 }

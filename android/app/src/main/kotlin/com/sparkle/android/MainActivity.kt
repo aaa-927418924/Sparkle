@@ -529,8 +529,11 @@ private fun HomeScreen(
                                 onToggleTag = viewModel::toggleTag,
                                 onClick = { viewModel.openDetail(clip.id) },
                                 onLongClick = { clipActionTarget = clip },
-                                allowUncachedLoad = thumbnailsReady && !isScrolling && !networkPolicy.restrictThumbnails,
-                                allowCachedLoad = !isScrolling,
+                                // Lazy grid items are composed as they approach the viewport. Let each
+                                // composed card start its own load immediately; only the extra-row
+                                // preload below remains deferred until scrolling settles.
+                                allowUncachedLoad = thumbnailsReady && !networkPolicy.restrictThumbnails,
+                                allowCachedLoad = true,
                                 thumbnailMaxDimensionPx = thumbnailMaxDimensionPx,
                                 manualLoadEnabled = networkPolicy.restrictThumbnails,
                             )

@@ -122,7 +122,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -717,20 +719,49 @@ private fun ClipActionDialog(
             Text(clip.displayTitle, maxLines = 3, overflow = TextOverflow.Ellipsis)
         },
         confirmButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                TextButton(onClick = onToggleFavorite) {
-                    Icon(Icons.Default.Star, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (clip.isFavorite) "お気に入りから外す" else "お気に入りに追加")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = onToggleFavorite,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .semantics {
+                            contentDescription = if (clip.isFavorite) "お気に入りから外す" else "お気に入りに追加"
+                        },
+                    contentPadding = PaddingValues(horizontal = 2.dp),
+                ) {
+                    Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(2.dp))
+                    Text(if (clip.isFavorite) "解除" else "お気に入り", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                TextButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("クリップを削除")
+                TextButton(
+                    onClick = onDelete,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .semantics { contentDescription = "クリップを削除" },
+                    contentPadding = PaddingValues(horizontal = 2.dp),
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(2.dp))
+                    Text("削除", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
+                    contentPadding = PaddingValues(horizontal = 2.dp),
+                ) {
+                    Text("キャンセル", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+        dismissButton = null,
     )
 }
 
@@ -1839,6 +1870,7 @@ private fun EditorScreen(
     var validationError by remember(clipId, source) { mutableStateOf<String?>(null) }
     val upload = source?.upload
     var titleEdited by remember(clipId, source) { mutableStateOf(false) }
+    var pendingSave by remember(clipId, source) { mutableStateOf(false) }
     val sharedTitleUrl = source?.url
         ?.trim()
         ?.takeIf {
@@ -1848,6 +1880,12 @@ private fun EditorScreen(
                 it.isNotBlank()
         }
     val sharedTitleResolution = viewModel.sharedTitleResolution
+    val sharedTitleLookupComplete = sharedTitleUrl != null && when (val resolution = sharedTitleResolution) {
+        is SharedTitleResolution.Resolved -> resolution.url == sharedTitleUrl
+        is SharedTitleResolution.Unavailable -> resolution.url == sharedTitleUrl
+        else -> false
+    }
+    val sharedTitleLookupPending = sharedTitleUrl != null && !sharedTitleLookupComplete
 
     LaunchedEffect(sharedTitleUrl, viewModel.baseUrl) {
         sharedTitleUrl?.let(viewModel::resolveSharedTitle)
@@ -1867,14 +1905,18 @@ private fun EditorScreen(
     val titleSupportingText: (@Composable () -> Unit)? = when (val resolution = sharedTitleResolution) {
         is SharedTitleResolution.Loading -> if (resolution.url == sharedTitleUrl) {
             {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     CircularProgressIndicator(
                         modifier = Modifier
                             .size(16.dp)
                             .semantics { contentDescription = "タイトルを取得中" },
                         strokeWidth = 2.dp,
                     )
-                    Text("ページタイトルを取得中…")
+                    Text(if (pendingSave) "タイトル取得後に保存します…" else "ページタイトルを取得中…")
                 }
             }
         } else null
@@ -1882,6 +1924,43 @@ private fun EditorScreen(
             { Text("ページタイトルを自動取得できませんでした。必要なら入力してください。") }
         } else null
         else -> null
+    }
+
+    fun saveClipNow(resolvedTitle: String? = null) {
+        val titleToSave = if (
+            resolvedTitle != null &&
+                url.trim() == sharedTitleUrl &&
+                title.isBlank() &&
+                !titleEdited
+        ) {
+            resolvedTitle
+        } else {
+            title
+        }
+        viewModel.createClip(
+            draft = ClipDraft(
+                url = url.trim(),
+                title = titleToSave.trim().takeIf { it.isNotEmpty() },
+                comment = comment.trim().takeIf { it.isNotEmpty() },
+                category = category.trim().takeIf { it.isNotEmpty() },
+                tags = tags.split(',').map(String::trim).filter(String::isNotEmpty),
+            ),
+            upload = upload,
+        )
+    }
+
+    LaunchedEffect(sharedTitleResolution, sharedTitleUrl, pendingSave) {
+        if (!pendingSave || sharedTitleUrl == null || sharedTitleLookupPending) return@LaunchedEffect
+        val resolution = sharedTitleResolution
+        val resolvedUrl = when (resolution) {
+            is SharedTitleResolution.Resolved -> resolution.url
+            is SharedTitleResolution.Unavailable -> resolution.url
+            else -> null
+        }
+        if (resolvedUrl == sharedTitleUrl) {
+            pendingSave = false
+            saveClipNow((resolution as? SharedTitleResolution.Resolved)?.title)
+        }
     }
 
     Scaffold(
@@ -1953,17 +2032,11 @@ private fun EditorScreen(
                 onClick = {
                     if (upload == null && url.trim().isBlank()) {
                         validationError = "共有URLを入力するか、ファイルを選択してください。"
+                    } else if (sharedTitleLookupPending) {
+                        pendingSave = true
+                        sharedTitleUrl?.let(viewModel::resolveSharedTitle)
                     } else {
-                        viewModel.createClip(
-                            draft = ClipDraft(
-                                url = url.trim(),
-                                title = title.trim().takeIf { it.isNotEmpty() },
-                                comment = comment.trim().takeIf { it.isNotEmpty() },
-                                category = category.trim().takeIf { it.isNotEmpty() },
-                                tags = tags.split(',').map(String::trim).filter(String::isNotEmpty),
-                            ),
-                            upload = upload,
-                        )
+                        saveClipNow((sharedTitleResolution as? SharedTitleResolution.Resolved)?.title)
                     }
                 },
                 enabled = !viewModel.isBusy,

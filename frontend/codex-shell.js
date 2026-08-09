@@ -351,6 +351,189 @@
 })();
 
 (() => {
+  const DISMISSED_RELEASE_KEY = "sparkle.update.dismissedRelease";
+  const POLL_DELAY_MS = 800;
+  const MAX_POLL_ATTEMPTS = 24;
+  const shownReleaseTags = new Set();
+  let promptActive = false;
+
+  function isOnboardingPage() {
+    return Boolean(document.body?.classList.contains("migration-page"));
+  }
+
+  function normalizeVersion(value) {
+    return String(value || "").trim().replace(/^v/i, "");
+  }
+
+  function versionLabel(value) {
+    const version = normalizeVersion(value);
+    return version ? `v${version}` : "不明";
+  }
+
+  function readDismissedRelease() {
+    try {
+      return normalizeVersion(localStorage.getItem(DISMISSED_RELEASE_KEY));
+    } catch {
+      return "";
+    }
+  }
+
+  function dismissRelease(tag) {
+    if (!tag) return;
+    try {
+      localStorage.setItem(DISMISSED_RELEASE_KEY, tag);
+    } catch {
+      // Restricted browser storage should not prevent the update prompt.
+    }
+  }
+
+  async function fetchUpdateState() {
+    try {
+      const response = await fetch(`${window.location.origin}/update/status`, {
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) return null;
+      return await response.json();
+    } catch {
+      return null;
+    }
+  }
+
+  async function readResponse(response) {
+    try {
+      return await response.json();
+    } catch {
+      return {};
+    }
+  }
+
+  function updateLiveStatus(message) {
+    const status = document.getElementById("appStatus");
+    if (status) status.textContent = message;
+  }
+
+  async function showUpdateError(message) {
+    updateLiveStatus(message);
+    if (typeof window.appConfirm !== "function") return;
+    const openSettings = await window.appConfirm(
+      `${message}\n設定画面から、もう一度更新できます。`,
+      {
+        title: "アップデートに失敗しました",
+        cancelLabel: "閉じる",
+        confirmLabel: "設定を開く",
+      },
+    );
+    if (openSettings) window.location.href = "/Settings";
+  }
+
+  async function waitForDownloadReady(timeoutMs = 180000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const state = await fetchUpdateState();
+      if (state?.stage === "ready" || state?.stage === "installing") return state;
+      if (state?.stage === "error") return state;
+      updateLiveStatus("アップデートをダウンロードしています…");
+      await new Promise((resolve) => window.setTimeout(resolve, 800));
+    }
+    return null;
+  }
+
+  async function applyUpdate(state) {
+    const downloadResponse = await fetch(`${window.location.origin}/update/download`, {
+      method: "POST",
+      headers: { Accept: "application/json" },
+    });
+    const downloadResult = await readResponse(downloadResponse);
+    if (!downloadResponse.ok || downloadResult.ok === false) {
+      throw new Error(downloadResult.detail || "アップデートのダウンロードを開始できませんでした。");
+    }
+
+    updateLiveStatus(`アップデート ${versionLabel(state.latest)} を準備しています…`);
+    const readyState = await waitForDownloadReady();
+    if (!readyState || readyState.stage === "error") {
+      throw new Error(readyState?.error || "ダウンロードまたは検証に失敗しました。");
+    }
+
+    updateLiveStatus("アップデートを適用しています。アプリは再起動します…");
+    try {
+      const applyResponse = await fetch(`${window.location.origin}/update/apply`, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      if (!applyResponse.ok) {
+        const result = await readResponse(applyResponse);
+        throw new Error(result.detail || "アップデートの適用に失敗しました。");
+      }
+    } catch (error) {
+      // Applying the update intentionally closes the server and WebView. A
+      // fetch rejection at this point usually means the restart has started.
+      const currentState = await fetchUpdateState();
+      if (!currentState) return;
+      throw error;
+    }
+  }
+
+  async function showUpdatePrompt(state) {
+    if (promptActive || typeof window.appConfirm !== "function") return;
+
+    const tag = normalizeVersion(state.latest);
+    if (!tag || shownReleaseTags.has(tag) || readDismissedRelease() === tag) return;
+    shownReleaseTags.add(tag);
+    promptActive = true;
+
+    try {
+      const updateNow = await window.appConfirm(
+        `新しいバージョン ${versionLabel(tag)} が利用できます。\n現在のバージョン: ${versionLabel(state.current)}`,
+        {
+          title: "Sparkleのアップデートがあります",
+          cancelLabel: "閉じる",
+          confirmLabel: "アップデートする",
+        },
+      );
+
+      if (!updateNow) {
+        dismissRelease(tag);
+        updateLiveStatus(`アップデート ${versionLabel(tag)} の通知を閉じました。`);
+        return;
+      }
+
+      try {
+        await applyUpdate(state);
+      } catch (error) {
+        await showUpdateError(error instanceof Error ? error.message : "アップデートに失敗しました。");
+      }
+    } finally {
+      promptActive = false;
+    }
+  }
+
+  async function checkForAvailableUpdate() {
+    if (isOnboardingPage()) return;
+
+    for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt += 1) {
+      const state = await fetchUpdateState();
+      if (!state || state.enabled === false) return;
+      if (state.stage === "available") {
+        await showUpdatePrompt(state);
+        return;
+      }
+      if (state.stage !== "idle" && state.stage !== "checking") return;
+      await new Promise((resolve) => window.setTimeout(resolve, POLL_DELAY_MS));
+    }
+  }
+
+  function installUpdateNotice() {
+    void checkForAvailableUpdate();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", installUpdateNotice, { once: true });
+  } else {
+    installUpdateNotice();
+  }
+})();
+
+(() => {
   let activeDrag = null;
   let activeResize = null;
 

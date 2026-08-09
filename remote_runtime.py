@@ -59,6 +59,10 @@ def _find_public_url(value: Any) -> Optional[str]:
         for key, child in value.items():
             if isinstance(key, str) and key.startswith("https://"):
                 return key.rstrip(".,)")
+            if key == "Web" and isinstance(child, dict):
+                for host_port in child:
+                    if isinstance(host_port, str):
+                        return _web_host_to_url(host_port)
             found = _find_public_url(child)
             if found:
                 return found
@@ -68,6 +72,20 @@ def _find_public_url(value: Any) -> Optional[str]:
             if found:
                 return found
     return None
+
+
+def _web_host_to_url(host_port: str) -> Optional[str]:
+    """Convert Funnel's JSON Web key (host:port) to a clickable HTTPS URL."""
+    value = host_port.strip().rstrip(".,)")
+    if not value:
+        return None
+    if value.startswith("https://"):
+        return value
+    if value.startswith("http://"):
+        return "https://" + value[7:]
+    if value.endswith(":443"):
+        value = value[:-4]
+    return "https://" + value
 
 
 def _has_any_route_config(value: Any) -> bool:

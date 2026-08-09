@@ -5,9 +5,27 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from remote_auth import AuthStore, InvalidAccessKey
+from remote_runtime import _find_public_url
 
 
 class RemoteAuthStoreTests(unittest.TestCase):
+    def test_funnel_status_host_key_becomes_public_url(self):
+        status = {
+            "Web": {
+                "sparkle.example.ts.net:443": {
+                    "Handlers": {
+                        "/": {
+                            "Proxy": "http://127.0.0.1:8001",
+                        }
+                    }
+                }
+            }
+        }
+        self.assertEqual(
+            _find_public_url(status),
+            "https://sparkle.example.ts.net",
+        )
+
     def test_trusted_session_survives_store_reload_without_plaintext(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "remote-auth.json"

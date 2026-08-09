@@ -47,9 +47,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router)
-
-
 def _initialize_application_data() -> None:
     if getattr(app.state, "data_initialized", False):
         return
@@ -187,6 +184,9 @@ def remote_access_status():
         },
         "last_error": None,
     }
+
+
+app.include_router(router)
 
 
 def _require_remote_access_manager():

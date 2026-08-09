@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <title>Sparkle — Webログイン</title>
+    <link rel="stylesheet" href="/remote/static/remote.css?v=remote-ui-20260810-v1" />
+  </head>
+  <body class="remote-body remote-login-body">
+    <main class="remote-login-shell">
+      <section class="remote-login-card" aria-labelledby="remoteLoginTitle">
+        <div class="remote-brand-mark" aria-hidden="true">✦</div>
+        <p class="remote-eyebrow">SPARKLE WEB</p>
+        <h1 id="remoteLoginTitle">Sparkleにアクセス</h1>
+        <p class="remote-login-description">
+          PCで外部Webアクセスを有効にしたときに表示されたアクセスキーを入力してください。
+        </p>
+
+        <form id="remoteLoginForm" novalidate>
+          <label class="remote-field">
+            <span>アクセスキー</span>
+            <input
+              id="remoteAccessKeyInput"
+              name="access_key"
+              type="password"
+              inputmode="text"
+              autocomplete="one-time-code"
+              autocapitalize="none"
+              spellcheck="false"
+              required
+              aria-describedby="remoteLoginHelp remoteLoginError"
+            />
+          </label>
+          <p id="remoteLoginHelp" class="remote-field-help">キーはブラウザに保存されません。</p>
+
+          <label class="remote-check-row">
+            <input id="remoteTrustDevice" name="trust_device" type="checkbox" />
+            <span>
+              <strong>この端末を信頼する</strong>
+              <small>このブラウザでは、最長365日間キーなしで利用できます。</small>
+            </span>
+          </label>
+
+          <label class="remote-field remote-device-label">
+            <span>端末名（任意）</span>
+            <input
+              id="remoteDeviceLabel"
+              name="device_label"
+              type="text"
+              maxlength="80"
+              autocomplete="off"
+              placeholder="例：自分のスマホ"
+            />
+          </label>
+
+          <p id="remoteLoginError" class="remote-form-error" role="alert" aria-live="polite"></p>
+          <button class="remote-primary-button remote-submit-button" type="submit">
+            Web版を開く
+          </button>
+        </form>
+
+        <p class="remote-login-footnote">
+          アクセスキーを再発行すると、既存のブラウザはすべてログアウトされます。
+        </p>
+      </section>
+    </main>
+    <script src="/remote/static/remote-login.js?v=remote-ui-20260810-v1"></script>
+  </body>
+</html>

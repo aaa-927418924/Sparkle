@@ -107,6 +107,38 @@
               </label>
             </div>
 
+            <div class="settings-col settings-remote-col">
+              <h3 class="modal-sub">外部Webアクセス</h3>
+              <p class="file-save-desc">
+                Tailscaleアプリを入れられない端末から、Funnel経由の専用Web画面を使えるようにします。
+                Sparkleデスクトップアプリ本体にはログイン制限をかけません。
+              </p>
+              <div id="remoteAccessStatus" class="ai-export-status" role="status" aria-live="polite">
+                状態を確認しています…
+              </div>
+              <p id="remoteAccessUrl" class="remote-access-url" hidden>
+                接続URL: <a id="remoteAccessUrlLink" href="#" target="_blank" rel="noreferrer"></a>
+              </p>
+              <div id="remoteAccessKeyPanel" class="remote-access-key-panel" hidden>
+                <label class="modal-label" for="remoteAccessKey">今回のアクセスキー</label>
+                <div class="remote-access-key-row">
+                  <input id="remoteAccessKey" class="modal-input" type="text" readonly autocomplete="off" spellcheck="false" />
+                  <button id="remoteAccessCopyKey" class="modal-btn ghost" type="button">コピー</button>
+                </div>
+                <p class="file-save-desc">このキーは設定ファイルには保存されません。紛失した場合はキーを再発行してください。</p>
+              </div>
+              <div class="settings-data-actions remote-access-actions">
+                <button id="remoteAccessEnable" class="modal-btn" type="button">Funnel Webを有効にする</button>
+                <button id="remoteAccessRetry" class="modal-btn ghost" type="button" hidden>接続を再試行</button>
+                <button id="remoteAccessRotate" class="modal-btn ghost" type="button" hidden>アクセスキーを再発行</button>
+                <button id="remoteAccessRevokeAll" class="modal-btn ghost" type="button" hidden>信頼端末をすべて解除</button>
+                <button id="remoteAccessDisable" class="modal-btn ghost" type="button" hidden>Funnel Webを無効にする</button>
+              </div>
+              <p class="file-save-desc">
+                「この端末を信頼する」を選んだブラウザだけが、以後キーなしで利用できます。ブラウザのCookieを削除した場合やログアウトした場合は再入力が必要です。
+              </p>
+            </div>
+
             <div class="settings-col settings-data-col">
               <h3 class="modal-sub">データ移行</h3>
               <div class="setting-row column">
@@ -184,5 +216,6 @@
 
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260810-update-notice-v3"></script>
+    <script src="remote-access.js?v=remote-access-20260810-v1"></script>
   </body>
 </html>

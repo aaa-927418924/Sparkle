@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <title>Sparkle — Web</title>
+    <link rel="stylesheet" href="/remote/static/remote.css?v=remote-ui-20260810-v1" />
+  </head>
+  <body class="remote-body">
+    <div class="remote-app-shell">
+      <header class="remote-topbar">
+        <button id="remoteMenuButton" class="remote-icon-button" type="button" aria-label="メニューを開く" aria-expanded="false" aria-controls="remoteDrawer">☰</button>
+        <a class="remote-wordmark" href="/" aria-label="Sparkleホーム">
+          <span class="remote-wordmark-mark" aria-hidden="true">✦</span>
+          <span>Sparkle</span>
+        </a>
+        <button id="remoteRefreshButton" class="remote-icon-button" type="button" aria-label="再読み込み">↻</button>
+      </header>
+
+      <div id="remoteDrawerBackdrop" class="remote-drawer-backdrop" hidden></div>
+      <aside id="remoteDrawer" class="remote-drawer" aria-label="Web版メニュー" aria-hidden="true">
+        <div class="remote-drawer-header">
+          <div>
+            <p class="remote-eyebrow">SPARKLE WEB</p>
+            <strong>メニュー</strong>
+          </div>
+          <button id="remoteDrawerClose" class="remote-icon-button" type="button" aria-label="メニューを閉じる">×</button>
+        </div>
+        <nav class="remote-drawer-nav">
+          <button class="remote-nav-button active" type="button" data-screen="home"><span aria-hidden="true">⌂</span>ホーム</button>
+          <button class="remote-nav-button" type="button" data-screen="workspace"><span aria-hidden="true">☷</span>タスク・メモ</button>
+          <button class="remote-nav-button" type="button" data-screen="projects"><span aria-hidden="true">□</span>プロジェクト</button>
+          <button class="remote-nav-button" type="button" data-screen="settings"><span aria-hidden="true">⚙</span>アプリ設定</button>
+        </nav>
+        <div class="remote-drawer-footer">
+          <span class="remote-trust-note">認証済みのWeb入口</span>
+          <button id="remoteLogoutButton" class="remote-nav-button remote-logout-button" type="button"><span aria-hidden="true">↪</span>ログアウト</button>
+        </div>
+      </aside>
+
+      <main id="remoteMain" class="remote-main" tabindex="-1">
+        <div class="remote-loading" role="status" aria-live="polite">読み込んでいます…</div>
+      </main>
+    </div>
+    <input id="remoteFileInput" type="file" hidden />
+    <div id="remoteToast" class="remote-toast" role="status" aria-live="polite" aria-atomic="true"></div>
+    <script src="/remote/static/remote.js?v=remote-ui-20260810-v1"></script>
+  </body>
+</html>

@@ -74,6 +74,29 @@ If `dist\Sparkle.exe` exists, the executable version will be launched. Otherwise
 
 ---
 
+### Optional Funnel Web Access
+
+The default remote connection remains the existing Tailscale tailnet mode. From
+Sparkle's desktop Settings, you can enable Funnel Web for browsers and phones
+that cannot install the Tailscale app.
+
+* Funnel Web runs on a separate local gateway and does not add a login screen
+  to the Sparkle desktop application.
+* The first activation shows an access key once. Share it only with intended
+  users.
+* On the Web login screen, Trust this device stores an opaque browser session
+  token for up to 365 days. The access key itself is not stored in the
+  application data.
+* Rotating the access key or revoking all trusted devices invalidates existing
+  Web sessions.
+* Sparkle must be running after a PC restart. Enable Sparkle's existing
+  Windows startup option if the Funnel Web entry should be available
+  automatically.
+
+Funnel exposes the dedicated mobile Web UI through the Tailscale Funnel
+endpoint. See the [Tailscale Funnel documentation](https://tailscale.com/docs/features/tailscale-funnel)
+for the current service limitations and plan requirements.
+
 ### Running the Windows Executable
 
 Download and run the latest Windows executable from the [GitHub Releases page](https://github.com/aaa-927418924/Sparkle/releases/latest).

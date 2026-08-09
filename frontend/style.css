@@ -3676,3 +3676,64 @@ body.settings-operation-active {
     animation: none;
   }
 }
+
+.settings-remote-col {
+  grid-column: 1 / -1;
+}
+
+.remote-access-url {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.remote-access-url a {
+  color: var(--accent, #d98b6e);
+}
+
+.remote-access-key-panel {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent, #d98b6e) 40%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent, #d98b6e) 8%, var(--surface));
+}
+
+.remote-access-key-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.remote-access-key-row .modal-input {
+  min-width: 0;
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0.02em;
+}
+
+.remote-access-actions {
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.ai-export-status[data-tone="success"] {
+  color: #9bc6a3;
+}
+
+.ai-export-status[data-tone="warning"] {
+  color: #e8b37e;
+}
+
+@media (max-width: 640px) {
+  .remote-access-key-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .remote-access-key-row .modal-btn {
+    width: 100%;
+  }
+}

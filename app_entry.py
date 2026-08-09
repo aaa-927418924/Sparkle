@@ -284,10 +284,14 @@ def _run_server() -> None:
     try:
         import uvicorn
         from main import app  # FastAPI アプリ本体
+        from remote_runtime import RemoteAccessManager
 
         app.state.desktop_activate = _activate_window
         app.state.update_status = get_update_state
         app.state.update_apply = _apply_pending_update
+        remote_manager = RemoteAccessManager(main_port=PORT)
+        app.state.remote_access_manager = remote_manager
+        server_ref["remote_manager"] = remote_manager
 
         # noconsoleビルドでは標準入出力がNoneになり得るため、
         # Uvicornの既定ログ設定を使わず、アプリ側のファイルログだけを使う。
@@ -638,6 +642,12 @@ def _activate_window() -> None:
 
 
 def _stop_server() -> None:
+    remote_manager = server_ref.get("remote_manager")
+    if remote_manager is not None:
+        try:
+            remote_manager.shutdown()
+        except Exception:
+            pass
     server = server_ref.get("server")
     if server is not None:
         server.should_exit = True
@@ -1110,6 +1120,17 @@ def main() -> None:
         if not _wait_for_server():
             _show_error(f"サーバーが起動しませんでした。\n詳細: {LOG_PATH}")
             return
+
+        # Funnel is optional.  Reconnect it asynchronously when the app is
+        # configured for remote Web access so startup remains usable even if
+        # the Tailscale service is still coming up.
+        remote_manager = server_ref.get("remote_manager")
+        if remote_manager is not None:
+            threading.Thread(
+                target=remote_manager.start_on_launch,
+                name="sparkle-remote-access-start",
+                daemon=True,
+            ).start()
 
         # 起動時に更新をバックグラウンドで確認する。ネットワーク/表示を待たない。
         threading.Thread(target=_check_update_in_background, daemon=True).start()

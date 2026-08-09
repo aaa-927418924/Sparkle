@@ -28,6 +28,7 @@ from setup import (
     mark_setup_complete,
     start_setup_tutorial,
 )
+from remote_auth import get_auth_store
 
 UPLOADS_DIR = get_uploads_dir()
 get_thumbnails_dir()
@@ -162,6 +163,62 @@ def setup_tutorial_start():
 def setup_tutorial_complete():
     complete_setup_tutorial()
     return {"ok": True, "status": get_setup_tutorial_status()}
+
+
+def _remote_access_manager():
+    return getattr(app.state, "remote_access_manager", None)
+
+
+@app.get("/settings/remote-access", include_in_schema=False)
+def remote_access_status():
+    manager = _remote_access_manager()
+    if manager is not None:
+        return manager.status()
+    return {
+        "mode": "tailscale",
+        "auth": get_auth_store().status(),
+        "remote_server": False,
+        "funnel": {
+            "available": False,
+            "active": False,
+            "target": None,
+            "public_url": None,
+            "error": "Sparkleの実行管理がまだ開始されていません。",
+        },
+        "last_error": None,
+    }
+
+
+def _require_remote_access_manager():
+    manager = _remote_access_manager()
+    if manager is None:
+        raise HTTPException(status_code=503, detail="SparkleのリモートWeb管理を初期化できません。")
+    return manager
+
+
+@app.post("/settings/remote-access/enable", include_in_schema=False)
+def remote_access_enable():
+    return _require_remote_access_manager().enable()
+
+
+@app.post("/settings/remote-access/retry", include_in_schema=False)
+def remote_access_retry():
+    return _require_remote_access_manager().retry()
+
+
+@app.post("/settings/remote-access/disable", include_in_schema=False)
+def remote_access_disable():
+    return _require_remote_access_manager().disable()
+
+
+@app.post("/settings/remote-access/rotate", include_in_schema=False)
+def remote_access_rotate():
+    return _require_remote_access_manager().rotate()
+
+
+@app.post("/settings/remote-access/revoke-all", include_in_schema=False)
+def remote_access_revoke_all():
+    return _require_remote_access_manager().revoke_all()
 
 
 @app.get("/health")

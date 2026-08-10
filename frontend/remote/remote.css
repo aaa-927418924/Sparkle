@@ -737,6 +737,58 @@ a {
   overflow-wrap: anywhere;
 }
 
+.remote-list-related {
+  margin: 5px 0 0;
+  color: var(--remote-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.remote-task-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.remote-task-badges {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.remote-task-priority,
+.remote-task-priority-best {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.remote-task-priority {
+  border: 1px solid var(--remote-border);
+  background: var(--remote-surface);
+  color: var(--remote-muted);
+}
+
+.remote-task-priority-best {
+  background: var(--remote-accent);
+  color: #251b17;
+}
+
+.remote-task-priority-highlight {
+  border-color: color-mix(in srgb, var(--remote-accent) 72%, var(--remote-border));
+  background: color-mix(in srgb, var(--remote-accent) 12%, var(--remote-surface-raised));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--remote-accent) 22%, transparent);
+}
+
 .remote-list-actions {
   display: flex;
   flex-wrap: wrap;
@@ -833,6 +885,55 @@ a {
   border: 1px solid var(--remote-border);
   border-radius: 11px;
   background: color-mix(in srgb, var(--remote-surface-raised) 60%, var(--remote-surface));
+}
+
+.remote-project-link-open {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  flex: 1;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+}
+
+.remote-project-link-open:hover {
+  color: var(--remote-text);
+}
+
+.remote-project-link-open:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--remote-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+
+.remote-project-link-media {
+  display: grid;
+  width: 64px;
+  height: 48px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--remote-surface-soft);
+}
+
+.remote-project-link-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  outline: 1px solid oklch(1 0 0 / 0.1);
+  outline-offset: -1px;
+}
+
+.remote-project-link-media-placeholder {
+  color: var(--remote-muted);
+  font-size: 22px;
 }
 
 .remote-list-unlink {

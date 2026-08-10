@@ -34,6 +34,7 @@
     screen: "home",
     homeView: "list",
     detailClipId: null,
+    detailReturnProjectId: null,
     workspaceTab: "tasks",
     workspaceStatus: "active",
     projectStatus: "active",
@@ -53,6 +54,7 @@
     editingTask: null,
     editingNote: null,
     editingProject: null,
+    editorReturnProjectId: null,
     projectDetailId: null,
     loading: false,
     dataSignature: "",
@@ -141,6 +143,35 @@
   function projectName(projectId) {
     const project = state.projects.find((item) => Number(item.id) === Number(projectId));
     return project ? project.name : "";
+  }
+
+  function taskPriorityValue(task) {
+    const value = Number(task?.priority);
+    return Number.isInteger(value) && value >= 1 && value <= 5 ? value : null;
+  }
+
+  function taskPriorityLabel(task) {
+    const priority = taskPriorityValue(task);
+    return priority === null ? "設定なし" : "優先度" + priority;
+  }
+
+  function taskNotes(task) {
+    return Array.isArray(task?.notes) ? task.notes : [];
+  }
+
+  function highestTaskPriority(tasks) {
+    const priorities = tasks
+      .filter((task) => !task.is_done)
+      .map(taskPriorityValue)
+      .filter((priority) => priority !== null);
+    return priorities.length ? Math.min(...priorities) : null;
+  }
+
+  function priorityOptions(selected) {
+    const current = taskPriorityValue({ priority: selected });
+    return '<option value="">設定なし</option>' + [1, 2, 3, 4, 5].map((value) =>
+      '<option value="' + value + '"' + (current === value ? " selected" : "") + ">優先度" + value + "</option>"
+    ).join("");
   }
 
   function linkedToProject(item, projectId) {
@@ -359,6 +390,7 @@
   function renderHome() {
     state.homeView = "list";
     state.detailClipId = null;
+    state.detailReturnProjectId = null;
     const categories = [
       '<button class="remote-chip ' + (!state.category ? "active" : "") + '" type="button" data-category="">すべて</button>',
       ...state.categories.map((category) =>
@@ -633,7 +665,7 @@
     }
   }
 
-  function renderDetail(id) {
+  function renderDetail(id, returnProjectId = null) {
     const clip = state.clips.find((item) => Number(item.id) === id);
     if (!clip) {
       renderHome();
@@ -641,6 +673,7 @@
     }
     state.homeView = "detail";
     state.detailClipId = Number(id);
+    state.detailReturnProjectId = returnProjectId == null ? null : Number(returnProjectId);
     const source = safeHref(clip.url);
     const image = clipImageUrl(clip);
     main.innerHTML =
@@ -672,7 +705,18 @@
           : "") +
       "</div>";
 
-    document.getElementById("remoteDetailBack").addEventListener("click", renderHome);
+    document.getElementById("remoteDetailBack").addEventListener("click", () => {
+      const projectId = state.detailReturnProjectId;
+      state.detailReturnProjectId = null;
+      if (projectId !== null) {
+        state.screen = "projects";
+        state.homeView = "list";
+        syncNavigation();
+        renderProjectDetail(projectId);
+      } else {
+        renderHome();
+      }
+    });
     document.getElementById("remoteDetailEdit").addEventListener("click", () => renderEditor(clip, null));
     document.getElementById("remoteDetailDelete").addEventListener("click", () => deleteClip(clip.id));
     if (clip.clip_type === "local") {
@@ -920,12 +964,23 @@
   }
 
   function renderTaskList(tasks) {
-    return '<div class="remote-panel-heading"><h2>タスク</h2><button id="remoteNewTask" class="remote-primary-button" type="button">＋ タスク追加</button></div>' +
-      (tasks.length ? '<div class="remote-task-list">' + tasks.map((task) =>
-        '<div class="remote-list-row remote-interactive-row" data-task-row="' + Number(task.id) + '" tabindex="0" role="button" aria-label="タスク「' + escapeHtml(task.title) + '」を編集">' +
+    const highestPriority = highestTaskPriority(tasks);
+    const rows = tasks.map((task) => {
+      const priority = taskPriorityValue(task);
+      const notes = taskNotes(task);
+      const project = task.project_id ? (projectName(task.project_id) || "不明なプロジェクト") : "設定なし";
+      const noteLabel = notes.length ? notes.map((note) => note.title).join("、") : "設定なし";
+      const isHighest = !task.is_done && priority !== null && priority === highestPriority;
+      const relatedLabel = "プロジェクト: " + project + " · メモ: " + noteLabel;
+      const ariaLabel = "タスク「" + task.title + "」を編集。" + taskPriorityLabel(task) + "。" + relatedLabel + (isHighest ? "。最優先" : "");
+      return '<div class="remote-list-row remote-interactive-row' + (isHighest ? " remote-task-priority-highlight" : "") + '" data-task-row="' + Number(task.id) + '" tabindex="0" role="button" aria-label="' + escapeHtml(ariaLabel) + '">' +
         '<label class="remote-list-checkbox"><input type="checkbox" data-task-toggle="' + Number(task.id) + '" aria-label="' + (task.is_done ? "未完了に戻す" : "完了にする") + '"' + (task.is_done ? " checked" : "") + ' /></label>' +
-        '<div class="remote-list-main"><p class="remote-list-title ' + (task.is_done ? "done" : "") + '">' + escapeHtml(task.title) + "</p><p class=\"remote-list-subtitle\">" + (task.due_date ? "期限 " + escapeHtml(task.due_date) : "期限なし") + (task.project_id ? " · " + escapeHtml(projectName(task.project_id)) : "") + "</p></div></div>"
-      ).join("") + "</div>" : '<div class="remote-empty">この状態のタスクはありません。</div>');
+        '<div class="remote-list-main"><div class="remote-task-title-row"><p class="remote-list-title ' + (task.is_done ? "done" : "") + '">' + escapeHtml(task.title) + "</p><div class=\"remote-task-badges\"><span class=\"remote-task-priority\">" + escapeHtml(taskPriorityLabel(task)) + "</span>" + (isHighest ? '<span class="remote-task-priority-best">最優先</span>' : "") + "</div></div>" +
+        '<p class="remote-list-subtitle">' + (task.due_date ? "期限 " + escapeHtml(task.due_date) : "期限なし") + "</p>" +
+        '<p class="remote-list-related">' + escapeHtml(relatedLabel) + "</p></div></div>";
+    }).join("");
+    return '<div class="remote-panel-heading"><h2>タスク</h2><button id="remoteNewTask" class="remote-primary-button" type="button">＋ タスク追加</button></div>' +
+      (tasks.length ? '<div class="remote-task-list">' + rows + "</div>" : '<div class="remote-empty">この状態のタスクはありません。</div>');
   }
 
   function renderNoteList(notes) {
@@ -935,22 +990,24 @@
       ).join("") + "</div>" : '<div class="remote-empty">この状態のメモはありません。</div>');
   }
 
-  function renderTaskEditor(id) {
+  function renderTaskEditor(id, returnProjectId = null) {
     const task = id ? state.tasks.find((item) => Number(item.id) === Number(id)) : null;
     state.editingTask = task;
+    state.editorReturnProjectId = returnProjectId == null ? null : Number(returnProjectId);
     main.innerHTML =
       '<div class="remote-panel"><div class="remote-panel-heading"><div><p class="remote-page-kicker">TASK</p><h1 class="remote-page-title">' + (task ? "タスクを編集" : "タスクを追加") + '</h1></div></div>' +
       '<form id="remoteTaskForm" class="remote-form-grid">' +
       '<label class="remote-field full"><span>タイトル</span><input name="title" required maxlength="500" value="' + escapeHtml(task?.title || "") + '" /></label>' +
       '<label class="remote-field"><span>期限</span><input name="due_date" type="date" value="' + escapeHtml(task?.due_date || "") + '" /></label>' +
-      '<label class="remote-field"><span>優先度</span><select name="priority"><option value="">標準</option><option value="1">高</option><option value="2">中</option><option value="3">低</option></select></label>' +
+      '<label class="remote-field"><span>優先度</span><select name="priority">' + priorityOptions(task?.priority) + '</select><small class="remote-field-help">優先度1が最も高い優先度です。</small></label>' +
       '<div class="remote-form-actions full"><button id="remoteTaskCancel" class="remote-secondary-button" type="button">キャンセル</button><button class="remote-primary-button" type="submit">保存する</button></div><p id="remoteTaskError" class="remote-form-error full" role="alert"></p></form></div>';
-    const priority = main.querySelector("[name=priority]");
-    priority.value = task?.priority == null ? "" : String(task.priority);
     main.querySelector("[name=title]").focus();
     document.getElementById("remoteTaskCancel").addEventListener("click", () => {
+      const projectId = state.editorReturnProjectId;
       state.editingTask = null;
-      renderWorkspace();
+      state.editorReturnProjectId = null;
+      if (projectId !== null) renderProjectDetail(projectId);
+      else renderWorkspace();
     });
     document.getElementById("remoteTaskForm").addEventListener("submit", submitTaskForm);
   }
@@ -973,8 +1030,11 @@
         await api("/tasks", { method: "POST", body: JSON.stringify(payload) });
       }
       await loadData(false);
+      const projectId = state.editorReturnProjectId;
       state.editingTask = null;
-      renderWorkspace();
+      state.editorReturnProjectId = null;
+      if (projectId !== null) renderProjectDetail(projectId);
+      else renderWorkspace();
       showToast("タスクを保存しました。");
     } catch (error) {
       errorEl.textContent = error.message;
@@ -1003,9 +1063,10 @@
     }
   }
 
-  function renderNoteEditor(id) {
+  function renderNoteEditor(id, returnProjectId = null) {
     const note = id ? state.notes.find((item) => Number(item.id) === Number(id)) : null;
     state.editingNote = note;
+    state.editorReturnProjectId = returnProjectId == null ? null : Number(returnProjectId);
     main.innerHTML =
       '<div class="remote-panel"><div class="remote-panel-heading"><div><p class="remote-page-kicker">NOTE</p><h1 class="remote-page-title">' + (note ? "メモを編集" : "メモを追加") + '</h1></div></div>' +
       '<form id="remoteNoteForm" class="remote-form-grid"><label class="remote-field full"><span>タイトル</span><input name="title" required maxlength="500" value="' + escapeHtml(note?.title || "") + '" /></label>' +
@@ -1013,8 +1074,11 @@
       '<div class="remote-form-actions full"><button id="remoteNoteCancel" class="remote-secondary-button" type="button">キャンセル</button><button class="remote-primary-button" type="submit">保存する</button></div><p id="remoteNoteError" class="remote-form-error full" role="alert"></p></form></div>';
     main.querySelector("[name=title]").focus();
     document.getElementById("remoteNoteCancel").addEventListener("click", () => {
+      const projectId = state.editorReturnProjectId;
       state.editingNote = null;
-      renderWorkspace();
+      state.editorReturnProjectId = null;
+      if (projectId !== null) renderProjectDetail(projectId);
+      else renderWorkspace();
     });
     document.getElementById("remoteNoteForm").addEventListener("submit", submitNoteForm);
   }
@@ -1036,8 +1100,11 @@
         await api("/notes", { method: "POST", body: JSON.stringify(payload) });
       }
       await loadData(false);
+      const projectId = state.editorReturnProjectId;
       state.editingNote = null;
-      renderWorkspace();
+      state.editorReturnProjectId = null;
+      if (projectId !== null) renderProjectDetail(projectId);
+      else renderWorkspace();
       showToast("メモを保存しました。");
     } catch (error) {
       errorEl.textContent = error.message;
@@ -1088,6 +1155,22 @@
     });
   }
 
+  function openProjectLinkedItem(kind, id, projectId) {
+    const itemId = Number(id);
+    const returnProjectId = Number(projectId);
+    if (kind === "clip") {
+      state.screen = "home";
+      state.homeView = "detail";
+      state.projectDetailId = returnProjectId;
+      syncNavigation();
+      renderDetail(itemId, returnProjectId);
+    } else if (kind === "task") {
+      renderTaskEditor(itemId, returnProjectId);
+    } else {
+      renderNoteEditor(itemId, returnProjectId);
+    }
+  }
+
   function projectLinkSection(title, kind, items, projectId, emptyText) {
     const rows = items.length
       ? '<div class="remote-project-link-list">' + items.map((item) => {
@@ -1095,10 +1178,17 @@
         const subtitle = kind === "clip"
           ? (item.url || "PC内のファイル")
           : kind === "task"
-            ? (item.due_date ? "期限 " + item.due_date : "期限なし")
+            ? (taskPriorityLabel(item) + " · " + (item.due_date ? "期限 " + item.due_date : "期限なし"))
             : ((item.body || "").slice(0, 160) || "本文なし");
         const label = kind === "clip" ? clipTitle(item) : item.title;
-        return '<div class="remote-project-link-row"><div class="remote-list-main"><p class="remote-list-title ' + (done ? "done" : "") + '">' + escapeHtml(label) + "</p><p class=\"remote-list-subtitle\">" + escapeHtml(subtitle) + "</p></div><button class=\"remote-list-unlink\" type=\"button\" data-project-unlink-kind=\"" + kind + "\" data-project-unlink-id=\"" + Number(item.id) + '" aria-label="' + escapeHtml(title) + '「' + escapeHtml(label) + '」の添付を解除">解除</button></div>';
+        const image = kind === "clip" ? clipImageUrl(item) : "";
+        const media = kind === "clip"
+          ? (image
+            ? '<span class="remote-project-link-media"><img src="' + escapeHtml(image) + '" alt="" loading="lazy" draggable="false" /></span>'
+            : '<span class="remote-project-link-media remote-project-link-media-placeholder" aria-hidden="true">✦</span>')
+          : "";
+        const openLabel = title + "「" + label + "」を開く";
+        return '<div class="remote-project-link-row"><button class="remote-project-link-open" type="button" data-project-open-kind="' + escapeHtml(kind) + '" data-project-open-id="' + Number(item.id) + '" data-project-open-project="' + Number(projectId) + '" aria-label="' + escapeHtml(openLabel) + '">' + media + '<div class="remote-list-main"><p class="remote-list-title ' + (done ? "done" : "") + '">' + escapeHtml(label) + "</p><p class=\"remote-list-subtitle\">" + escapeHtml(subtitle) + "</p></div></button><button class=\"remote-list-unlink\" type=\"button\" data-project-unlink-kind=\"" + escapeHtml(kind) + "\" data-project-unlink-id=\"" + Number(item.id) + '" aria-label="' + escapeHtml(title + "「" + label + "」の添付を解除") + '">解除</button></div>';
       }).join("") + "</div>"
       : '<div class="remote-empty remote-project-link-empty">' + escapeHtml(emptyText) + "</div>";
     return '<section class="remote-project-links remote-panel"><div class="remote-panel-heading"><h2>' + title + "</h2><button class=\"remote-secondary-button\" type=\"button\" data-project-attach=\"" + kind + "\">＋ 添付</button></div>" + rows + "</section>";
@@ -1121,6 +1211,13 @@
       projectLinkSection("メモ", "note", notes, id, "このプロジェクトにメモはありません。");
     document.getElementById("remoteProjectDetailBack").addEventListener("click", renderProjects);
     document.getElementById("remoteProjectDetailDone").addEventListener("change", () => toggleProject(Number(id), true));
+    main.querySelectorAll("[data-project-open-kind]").forEach((button) => {
+      button.addEventListener("click", () => openProjectLinkedItem(
+        button.dataset.projectOpenKind,
+        Number(button.dataset.projectOpenId),
+        Number(button.dataset.projectOpenProject),
+      ));
+    });
     main.querySelectorAll("[data-project-attach]").forEach((button) => {
       button.addEventListener("click", () => openProjectAttachDialog(Number(id), button.dataset.projectAttach));
     });
@@ -1173,6 +1270,7 @@
   function renderProjectEditor(id) {
     const project = id ? state.projects.find((item) => Number(item.id) === Number(id)) : null;
     state.editingProject = project;
+    state.editorReturnProjectId = null;
     main.innerHTML =
       '<div class="remote-panel"><div class="remote-panel-heading"><div><p class="remote-page-kicker">PROJECT</p><h1 class="remote-page-title">' + (project ? "プロジェクトを編集" : "プロジェクトを追加") + '</h1></div></div>' +
       '<form id="remoteProjectForm" class="remote-form-grid"><label class="remote-field full"><span>名前</span><input name="name" required maxlength="200" value="' + escapeHtml(project?.name || "") + '" /></label><label class="remote-field full"><span>説明</span><textarea name="description" rows="6" maxlength="10000">' + escapeHtml(project?.description || "") + '</textarea></label><div class="remote-form-actions full"><button id="remoteProjectCancel" class="remote-secondary-button" type="button">キャンセル</button><button class="remote-primary-button" type="submit">保存する</button></div><p id="remoteProjectError" class="remote-form-error full" role="alert"></p></form></div>';
@@ -1323,12 +1421,16 @@
     }
   }
 
-  function renderCurrentScreen() {
+  function syncNavigation() {
     document.querySelectorAll("[data-screen]").forEach((button) => {
       button.classList.toggle("active", button.dataset.screen === state.screen);
     });
+  }
+
+  function renderCurrentScreen() {
+    syncNavigation();
     if (state.screen === "home") {
-      if (state.homeView === "detail" && state.detailClipId !== null) renderDetail(state.detailClipId);
+      if (state.homeView === "detail" && state.detailClipId !== null) renderDetail(state.detailClipId, state.detailReturnProjectId);
       else if (state.homeView === "list") renderHome();
     } else if (state.screen === "workspace") renderWorkspace();
     else if (state.screen === "projects") {
@@ -1358,12 +1460,14 @@
       state.screen = button.dataset.screen;
       state.homeView = "list";
       state.detailClipId = null;
+      state.detailReturnProjectId = null;
       state.projectDetailId = null;
       state.editingClip = null;
       state.uploadFile = null;
       state.editingTask = null;
       state.editingNote = null;
       state.editingProject = null;
+      state.editorReturnProjectId = null;
       closeClipActionDialog();
       closeItemActionDialog();
       if (projectAttachDialog.open) projectAttachDialog.close();

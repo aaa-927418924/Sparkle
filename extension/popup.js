@@ -561,15 +561,21 @@ function extractPageInfo() {
     return el ? el.getAttribute("content") : null;
   }
   function resolveUrl(url) {
-    try { return new URL(url, location.href).href; } catch (e) { return null; }
+    if (typeof url !== "string" || !url.trim()) return null;
+    try { return new URL(url.trim(), location.href).href; } catch (e) { return null; }
   }
   function getOgImage() {
     // 複数のOGP形式を順に試す
     return (
       getMetaContent('meta[property="og:image"]') ||
+      getMetaContent('meta[property="og:image:url"]') ||
+      getMetaContent('meta[property="og:image:secure_url"]') ||
       getMetaContent('meta[name="og:image"]') ||
+      getMetaContent('meta[property="twitter:image"]') ||
       getMetaContent('meta[name="twitter:image"]') ||
-      getMetaContent('meta[itemprop="image"]')
+      getMetaContent('meta[name="twitter:image:src"]') ||
+      getMetaContent('meta[itemprop="image"]') ||
+      getMetaContent('link[rel="image_src"][href]')
     );
   }
   function getYouTubeThumbnail(url) {

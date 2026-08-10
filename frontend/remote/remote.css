@@ -311,6 +311,8 @@ a {
   cursor: pointer;
   touch-action: manipulation;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   transition: transform 140ms ease-out, box-shadow 140ms ease-out, border-color 140ms ease-out;
 }
 
@@ -342,6 +344,12 @@ a {
   height: auto;
   max-height: 220px;
   object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  outline: 1px solid oklch(1 0 0 / 0.1);
+  outline-offset: -1px;
 }
 
 .remote-card-media-placeholder {
@@ -561,6 +569,61 @@ a {
   margin: -3px 0 0;
   color: var(--remote-muted);
   font-size: 12px;
+}
+
+.remote-clip-metadata-preview {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--remote-border);
+  border-radius: 16px;
+  background: var(--remote-surface-soft);
+}
+
+.remote-clip-metadata-preview[hidden] {
+  display: none;
+}
+
+.remote-clip-metadata-preview-label {
+  margin: 0;
+  color: var(--remote-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.remote-clip-metadata-preview-frame {
+  position: relative;
+  display: grid;
+  min-height: 104px;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--remote-surface);
+}
+
+.remote-clip-metadata-preview-frame img {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  outline: 1px solid oklch(1 0 0 / 0.1);
+  outline-offset: -1px;
+}
+
+.remote-clip-metadata-preview-frame img[hidden],
+.remote-clip-metadata-preview-empty[hidden] {
+  display: none;
+}
+
+.remote-clip-metadata-preview-empty {
+  padding: 22px 14px;
+  color: var(--remote-muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 .remote-check-row {

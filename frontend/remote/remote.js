@@ -32,6 +32,8 @@
 
   const state = {
     screen: "home",
+    homeView: "list",
+    detailClipId: null,
     workspaceTab: "tasks",
     workspaceStatus: "active",
     projectStatus: "active",
@@ -53,6 +55,7 @@
     editingProject: null,
     projectDetailId: null,
     loading: false,
+    dataSignature: "",
   };
   let toastTimer = null;
   let clipActionTarget = null;
@@ -334,7 +337,7 @@
       '<article class="remote-card" data-detail-id="' + Number(clip.id) + '" tabindex="0" role="button" aria-label="' + escapeHtml(title) + 'の詳細を見る">' +
         '<div class="remote-card-media">' +
         (image
-          ? '<img src="' + escapeHtml(image) + '" alt="" loading="lazy" />'
+          ? '<img src="' + escapeHtml(image) + '" alt="" loading="lazy" draggable="false" />'
           : '<span class="remote-card-media-placeholder" aria-hidden="true">' + (clip.clip_type === "local" ? "▧" : "✦") + "</span>") +
         (clip.is_favorite ? '<span class="remote-card-favorite" aria-label="お気に入り">★</span>' : "") +
         "</div>" +
@@ -354,6 +357,8 @@
   }
 
   function renderHome() {
+    state.homeView = "list";
+    state.detailClipId = null;
     const categories = [
       '<button class="remote-chip ' + (!state.category ? "active" : "") + '" type="button" data-category="">すべて</button>',
       ...state.categories.map((category) =>
@@ -457,7 +462,11 @@
         if (event.pointerType === "mouse") clearPress(true);
       });
       card.addEventListener("contextmenu", (event) => {
-        if (longPressed) event.preventDefault();
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      card.addEventListener("dragstart", (event) => {
+        event.preventDefault();
       });
       card.addEventListener("click", (event) => {
         if (longPressed) {
@@ -630,6 +639,8 @@
       renderHome();
       return;
     }
+    state.homeView = "detail";
+    state.detailClipId = Number(id);
     const source = safeHref(clip.url);
     const image = clipImageUrl(clip);
     main.innerHTML =
@@ -698,6 +709,8 @@
   function renderEditor(clip, uploadFile) {
     state.editingClip = clip;
     state.uploadFile = uploadFile;
+    state.homeView = "editor";
+    state.detailClipId = null;
     const isUpload = Boolean(uploadFile);
     const isEdit = Boolean(clip);
     const tags = Array.isArray(clip?.tags) ? clip.tags.map((tag) => tag.name || tag).join(", ") : "";
@@ -713,6 +726,7 @@
             : '<label class="remote-field full"><span>URL</span><input name="url" type="url" required placeholder="https://example.com/..." value="" /></label>') +
           '<label class="remote-field"><span>タイトル</span><input name="title" type="text" maxlength="500" autocomplete="off" value="' + escapeHtml(isUpload ? uploadFile.name : (clip?.title || "")) + '"' + (!isEdit && !isUpload ? ' readonly aria-readonly="true" placeholder="URLから自動取得"' : "") + ' /></label>' +
           (!isEdit && !isUpload ? '<p id="remoteClipMetadataStatus" class="remote-field-help full" role="status" aria-live="polite">URLを入力するとタイトルを自動取得します。</p>' : "") +
+          (!isEdit && !isUpload ? '<div id="remoteClipMetadataPreview" class="remote-clip-metadata-preview full" hidden><p class="remote-clip-metadata-preview-label">サムネイルプレビュー</p><div class="remote-clip-metadata-preview-frame"><img id="remoteClipMetadataPreviewImage" alt="取得したサムネイルのプレビュー" draggable="false" /><span id="remoteClipMetadataPreviewEmpty" class="remote-clip-metadata-preview-empty">URLを入力すると表示されます。</span></div></div>' : "") +
           '<label class="remote-field"><span>カテゴリ</span><select name="category">' + categoryOptions(clip?.category_id) + "</select></label>" +
           '<label class="remote-field"><span>タグ（カンマ区切り）</span><input name="tags" type="text" autocomplete="off" value="' + escapeHtml(tags) + '" placeholder="例：読書,あとで見る" /></label>' +
           '<label class="remote-field full"><span>コメント</span><textarea name="comment" rows="5" maxlength="10000" placeholder="メモを残す">' + escapeHtml(clip?.comment || "") + "</textarea></label>" +
@@ -730,10 +744,38 @@
       state.uploadFile = null;
       renderHome();
     });
-    document.getElementById("remoteClipForm").addEventListener("submit", submitClipForm);
+    document.getElementById("remoteClipForm").addEventListener("submit", (event) => submitClipForm(event, () => metadataThumbnailUrl));
     const urlInput = main.querySelector("[name=url]");
     const titleInput = main.querySelector("[name=title]");
     const metadataStatus = main.querySelector("#remoteClipMetadataStatus");
+    const metadataPreview = main.querySelector("#remoteClipMetadataPreview");
+    const metadataPreviewImage = main.querySelector("#remoteClipMetadataPreviewImage");
+    const metadataPreviewEmpty = main.querySelector("#remoteClipMetadataPreviewEmpty");
+    const updateMetadataPreview = () => {
+      if (!metadataPreview || !metadataPreviewImage || !metadataPreviewEmpty) return;
+      const rawThumbnail = metadataThumbnailUrl || youtubeThumbnailUrl(urlInput?.value);
+      const previewUrl = rawThumbnail.startsWith("/")
+        ? rawThumbnail
+        : (safeHref(rawThumbnail) ? "/thumbnail-proxy?url=" + encodeURIComponent(rawThumbnail) : "");
+      if (!previewUrl) {
+        metadataPreview.hidden = true;
+        metadataPreviewImage.removeAttribute("src");
+        metadataPreviewImage.hidden = false;
+        metadataPreviewEmpty.hidden = false;
+        metadataPreviewEmpty.textContent = "URLを入力すると表示されます。";
+        return;
+      }
+      metadataPreview.hidden = false;
+      metadataPreviewImage.hidden = false;
+      metadataPreviewEmpty.hidden = true;
+      metadataPreviewEmpty.textContent = "サムネイルを表示できません。保存時に再試行します。";
+      metadataPreviewImage.src = previewUrl;
+    };
+    metadataPreviewImage?.addEventListener("error", () => {
+      metadataPreviewImage.hidden = true;
+      metadataPreviewEmpty.hidden = false;
+      metadataPreviewEmpty.textContent = "サムネイルを表示できません。保存時に再試行します。";
+    });
     const requestMetadata = async () => {
       const url = String(urlInput.value || "").trim();
       const requestId = ++metadataRequestId;
@@ -741,6 +783,7 @@
         metadataThumbnailUrl = "";
         titleInput.value = "";
         if (metadataStatus) metadataStatus.textContent = "URLを入力するとタイトルを自動取得します。";
+        updateMetadataPreview();
         return;
       }
       if (metadataStatus) metadataStatus.textContent = "タイトルを取得しています…";
@@ -748,12 +791,14 @@
         const metadata = await api("/url-metadata?url=" + encodeURIComponent(url));
         if (requestId !== metadataRequestId || String(urlInput.value || "").trim() !== url) return;
         titleInput.value = metadata?.title || "";
-        if (metadata?.thumbnail_url) metadataThumbnailUrl = metadata.thumbnail_url;
+        metadataThumbnailUrl = metadata?.thumbnail_url || "";
+        updateMetadataPreview();
         if (metadataStatus) metadataStatus.textContent = metadata?.title
           ? "タイトルを更新しました。内容を確認してから「追加する」を押してください。"
           : "このURLからタイトルを取得できませんでした。保存時に再試行します。";
       } catch {
         if (requestId !== metadataRequestId) return;
+        updateMetadataPreview();
         if (metadataStatus) metadataStatus.textContent = "タイトルを取得できませんでした。保存時に再試行します。";
       }
     };
@@ -762,6 +807,7 @@
       metadataThumbnailUrl = "";
       titleInput.value = "";
       if (metadataStatus) metadataStatus.textContent = "タイトルを取得しています…";
+      updateMetadataPreview();
       metadataTimer = window.setTimeout(requestMetadata, 320);
     });
     urlInput?.addEventListener("blur", () => {
@@ -771,7 +817,7 @@
     });
   }
 
-  async function submitClipForm(event) {
+  async function submitClipForm(event, getMetadataThumbnailUrl = () => "") {
     event.preventDefault();
     const form = event.currentTarget;
     const errorEl = document.getElementById("remoteClipError");
@@ -800,12 +846,13 @@
     } else {
       const url = String(formData.get("url") || "").trim();
       if (!safeHref(url)) throw new Error("http:// または https:// のURLを入力してください。");
+      const thumbnailUrl = getMetadataThumbnailUrl() || youtubeThumbnailUrl(url);
       result = await api("/clips", {
           method: "POST",
           body: JSON.stringify({
             url,
             title: title || null,
-            thumbnail_url: metadataThumbnailUrl || null,
+            thumbnail_url: thumbnailUrl || null,
             comment: comment || null,
             category: category || null,
             tags,
@@ -1258,12 +1305,16 @@
         api("/notes"),
         api("/projects"),
       ]);
+      const nextSignature = JSON.stringify(values);
+      const changed = nextSignature !== state.dataSignature;
+      state.dataSignature = nextSignature;
       state.clips = values[0] || [];
       state.categories = values[1] || [];
       state.tags = values[2] || [];
       state.tasks = values[3] || [];
       state.notes = values[4] || [];
       state.projects = values[5] || [];
+      return changed;
     } catch (error) {
       main.innerHTML = '<div class="remote-empty"><div><p>' + escapeHtml(error.message) + "</p><button id=\"remoteRetryData\" class=\"remote-primary-button\" type=\"button\">再読み込み</button></div></div>";
       document.getElementById("remoteRetryData")?.addEventListener("click", () => loadData(true));
@@ -1276,9 +1327,14 @@
     document.querySelectorAll("[data-screen]").forEach((button) => {
       button.classList.toggle("active", button.dataset.screen === state.screen);
     });
-    if (state.screen === "home") renderHome();
-    else if (state.screen === "workspace") renderWorkspace();
-    else if (state.screen === "projects") renderProjects();
+    if (state.screen === "home") {
+      if (state.homeView === "detail" && state.detailClipId !== null) renderDetail(state.detailClipId);
+      else if (state.homeView === "list") renderHome();
+    } else if (state.screen === "workspace") renderWorkspace();
+    else if (state.screen === "projects") {
+      if (state.projectDetailId !== null) renderProjectDetail(state.projectDetailId);
+      else renderProjects();
+    }
     else if (state.screen === "settings") renderSettings();
   }
 
@@ -1300,6 +1356,17 @@
   document.querySelectorAll("[data-screen]").forEach((button) => {
     button.addEventListener("click", () => {
       state.screen = button.dataset.screen;
+      state.homeView = "list";
+      state.detailClipId = null;
+      state.projectDetailId = null;
+      state.editingClip = null;
+      state.uploadFile = null;
+      state.editingTask = null;
+      state.editingNote = null;
+      state.editingProject = null;
+      closeClipActionDialog();
+      closeItemActionDialog();
+      if (projectAttachDialog.open) projectAttachDialog.close();
       closeDrawer();
       renderCurrentScreen();
     });
@@ -1307,11 +1374,6 @@
   menuButton.addEventListener("click", openDrawer);
   drawerClose.addEventListener("click", closeDrawer);
   backdrop.addEventListener("click", closeDrawer);
-  document.getElementById("remoteRefreshButton").addEventListener("click", async () => {
-    await loadData(true);
-    renderCurrentScreen();
-    showToast("最新のデータを読み込みました。");
-  });
   document.getElementById("remoteLogoutButton").addEventListener("click", async () => {
     if (!window.confirm("このブラウザからログアウトしますか？")) return;
     try {
@@ -1326,11 +1388,50 @@
     if (file) renderEditor(null, file);
   });
 
+  function hasOpenRemoteDialog() {
+    return [clipActionDialog, itemActionDialog, projectAttachDialog].some((dialog) => dialog.open || dialog.hasAttribute("open"));
+  }
+
+  async function refreshRemoteData() {
+    if (
+      state.loading ||
+      state.homeView === "editor" ||
+      state.editingClip ||
+      state.uploadFile ||
+      state.editingTask ||
+      state.editingNote ||
+      state.editingProject ||
+      hasOpenRemoteDialog()
+    ) return;
+    const view = {
+      screen: state.screen,
+      homeView: state.homeView,
+      detailClipId: state.detailClipId,
+      projectDetailId: state.projectDetailId,
+    };
+    const changed = await loadData(false);
+    if (!changed || hasOpenRemoteDialog()) return;
+    if (
+      view.screen !== state.screen ||
+      view.homeView !== state.homeView ||
+      view.detailClipId !== state.detailClipId ||
+      view.projectDetailId !== state.projectDetailId ||
+      state.homeView === "editor" ||
+      state.editingClip ||
+      state.uploadFile ||
+      state.editingTask ||
+      state.editingNote ||
+      state.editingProject
+    ) return;
+    if (state.screen !== "settings") renderCurrentScreen();
+  }
+
   loadData(true).then(renderCurrentScreen);
   window.setInterval(async () => {
-    if (state.screen === "home" && !state.editingClip && !state.uploadFile) {
-      await loadData(false);
-      renderHome();
-    }
-  }, 10000);
+    await refreshRemoteData();
+  }, 5000);
+  window.addEventListener("focus", refreshRemoteData);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshRemoteData();
+  });
 })();

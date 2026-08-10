@@ -964,8 +964,17 @@
   }
 
   function renderTaskList(tasks) {
-    const highestPriority = highestTaskPriority(tasks);
-    const rows = tasks.map((task) => {
+    const sortedTasks = tasks.slice().sort((a, b) => {
+      if (Boolean(a.is_done) !== Boolean(b.is_done)) return a.is_done ? 1 : -1;
+      const aPriority = taskPriorityValue(a);
+      const bPriority = taskPriorityValue(b);
+      if (aPriority === null && bPriority === null) return 0;
+      if (aPriority === null) return 1;
+      if (bPriority === null) return -1;
+      return aPriority - bPriority;
+    });
+    const highestPriority = highestTaskPriority(sortedTasks);
+    const rows = sortedTasks.map((task) => {
       const priority = taskPriorityValue(task);
       const notes = taskNotes(task);
       const project = task.project_id ? (projectName(task.project_id) || "不明なプロジェクト") : "設定なし";

@@ -29,6 +29,7 @@ let categoryHistory = []; // 保存済みカテゴリ履歴(新しい順、chrom
 let tagSuggestIndex = -1; // キーボードでハイライト中の候補index
 let categorySuggestIndex = -1; // キーボードでハイライト中のカテゴリ候補index
 let pendingThumbnail = null; // スクショで選んだ data URL (未選択なら null)
+let sourceTabId = null;
 
 async function api(path, options = {}) {
   const res = await fetch(API_BASE + path, {
@@ -525,6 +526,20 @@ async function save() {
         body: JSON.stringify({ data_url: pendingThumbnail }),
       });
       payload.thumbnail_url = uploaded.url;
+    } else if (sourceTabId && pageInfo.thumbnail_url) {
+      // ページ側で取得できる画像はローカル保存し、認証/CORS/ホットリンク制限を回避する。
+      const imageDataUrl = await fetchPageThumbnailDataUrl(sourceTabId, pageInfo.thumbnail_url);
+      if (imageDataUrl) {
+        try {
+          const uploaded = await api("/uploads/thumbnail", {
+            method: "POST",
+            body: JSON.stringify({ data_url: imageDataUrl }),
+          });
+          payload.thumbnail_url = uploaded.url;
+        } catch (e) {
+          // ローカル化に失敗した場合は元のURLで保存し、保存自体は継続する
+        }
+      }
     }
 
     const created = await api("/clips", {
@@ -562,7 +577,11 @@ function extractPageInfo() {
   }
   function resolveUrl(url) {
     if (typeof url !== "string" || !url.trim()) return null;
-    try { return new URL(url.trim(), location.href).href; } catch (e) { return null; }
+    try {
+      const resolved = new URL(url.trim(), location.href);
+      if (!["http:", "https:", "data:"].includes(resolved.protocol)) return null;
+      return resolved.href;
+    } catch (e) { return null; }
   }
   function getOgImage() {
     // 複数のOGP形式を順に試す
@@ -592,7 +611,8 @@ function extractPageInfo() {
     for (var i = 0; i < cands.length; i++) {
       var el = document.querySelector(cands[i]);
       if (el && el.getAttribute("href")) {
-        return resolveUrl(el.getAttribute("href"));
+        var resolved = resolveUrl(el.getAttribute("href"));
+        if (resolved) return resolved;
       }
     }
     return resolveUrl("/favicon.ico");
@@ -608,6 +628,7 @@ function extractPageInfo() {
 async function loadPageInfo() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.id) return null;
+  sourceTabId = tab.id;
 
   try {
     const results = await chrome.scripting.executeScript({
@@ -617,6 +638,42 @@ async function loadPageInfo() {
     return results && results[0] ? results[0].result : null;
   } catch (e) {
     // chrome:// や拡張機能ページ等、スクリプトを実行できない場合
+    return null;
+  }
+}
+
+async function fetchPageThumbnailDataUrl(tabId, thumbnailUrl) {
+  if (!tabId || !/^https?:\/\//i.test(String(thumbnailUrl || ""))) return null;
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      args: [thumbnailUrl],
+      func: async (imageUrl) => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        try {
+          const response = await fetch(imageUrl, {
+            credentials: "include",
+            signal: controller.signal,
+          });
+          if (!response.ok) return null;
+          const blob = await response.blob();
+          if (!blob.type.toLowerCase().startsWith("image/") || blob.size > 4 * 1024 * 1024) return null;
+          return await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        } catch {
+          return null;
+        } finally {
+          clearTimeout(timeout);
+        }
+      },
+    });
+    return results?.[0]?.result || null;
+  } catch {
     return null;
   }
 }

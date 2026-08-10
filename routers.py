@@ -2479,8 +2479,11 @@ _MIME_EXT = {
     "image/jpg": "jpg",
     "image/gif": "gif",
     "image/webp": "webp",
+    "image/avif": "avif",
     "image/svg+xml": "svg",
     "image/bmp": "bmp",
+    "image/x-icon": "ico",
+    "image/vnd.microsoft.icon": "ico",
 }
 
 _DATA_URL_RE = re.compile(r"^data:(?P<mime>[\w.+/-]+);base64,(?P<data>.+)$", re.DOTALL)

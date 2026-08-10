@@ -1,13 +1,14 @@
 """Close the loop between the AI export and the local database.
 
-The exporter writes a read-only Markdown snapshot; this module detects manual
-edits to ``clips.md`` and applies the edited fields back into SQLite.
-Deletions, new sections, id changes and immutable fields (``clip_type`` and
-``created_at``) are deliberately ignored so the snapshot cannot be used to
-destroy data. After every blocked or applied change the snapshot is
-regenerated from the database so the file always mirrors the real data.
-Local-file clips keep their URL protected because the exporter never exposes
-the absolute path.
+The exporter writes Markdown snapshots; this module detects the explicitly
+editable parts of ``clips.md`` and ``projects.md`` and applies them back into
+SQLite. Deletions, new sections, id changes and immutable fields are
+deliberately ignored so the snapshots cannot be used to destroy data.
+Project Markdown edits are additive only: existing clips can be attached to
+an existing project, but links cannot be removed from Markdown. After every
+applied or blocked change the affected snapshot is regenerated from the
+database. Local-file clips keep their URL protected because the exporter
+never exposes the absolute path.
 """
 
 from __future__ import annotations
@@ -49,6 +50,8 @@ _PROTECTED_LABELS = {
 
 _HEADING_RE = re.compile(r"^## \[(\d+)\](?:\s+)?(.*)$", re.MULTILINE)
 _BULLET_RE = re.compile(r"^-\s*([^:：]*?)[:：]\s*(.*)$")
+_PROJECT_CLIP_ID_RE = re.compile(r"\[(\d+)\](?=\s|$)")
+_PROJECT_CLIP_LABELS = {"関連クリップ", "関連クリップid", "attached clips", "linked clips"}
 
 
 _lock = threading.RLock()
@@ -63,6 +66,8 @@ _last_status: Dict[str, Any] = {
     "skipped_deletes": 0,
     "skipped_new": 0,
     "skipped_protected": 0,
+    "project_links_applied": 0,
+    "project_links_skipped": 0,
     "last_error": None,
 }
 
@@ -176,6 +181,39 @@ def parse_clips_md(text: str) -> List[Dict[str, Any]]:
     return edits
 
 
+def parse_projects_md(text: str) -> List[Dict[str, Any]]:
+    """Parse additive project-to-clip links from the exported projects file.
+
+    Only the ``関連クリップ`` bullet is interpreted. Project fields, section
+    IDs, notes and missing sections are intentionally ignored. Clip titles
+    are presentation-only; the numeric IDs are the source of truth.
+    """
+    edits: List[Dict[str, Any]] = []
+    matches = list(_HEADING_RE.finditer(text))
+    for index, heading in enumerate(matches):
+        project_id = int(heading.group(1))
+        body = (
+            text[heading.end(): matches[index + 1].start()]
+            if index + 1 < len(matches)
+            else text[heading.end():]
+        )
+        for line in body.splitlines():
+            bullet = _BULLET_RE.match(line.strip())
+            if not bullet:
+                continue
+            label = _clean_markdown_inline(bullet.group(1)).strip().lower()
+            if label not in _PROJECT_CLIP_LABELS:
+                continue
+            clip_ids: List[int] = []
+            for match in _PROJECT_CLIP_ID_RE.finditer(bullet.group(2)):
+                clip_id = int(match.group(1))
+                if clip_id not in clip_ids:
+                    clip_ids.append(clip_id)
+            edits.append({"id": project_id, "clip_ids": clip_ids})
+            break
+    return edits
+
+
 # --- database application ---------------------------------------------------
 
 
@@ -254,6 +292,17 @@ def _apply_edit(db: sqlite3.Connection, edit: Dict[str, Any]) -> bool:
     return changed
 
 
+def _empty_result() -> Dict[str, int]:
+    return {
+        "applied": 0,
+        "skipped_deletes": 0,
+        "skipped_new": 0,
+        "skipped_protected": 0,
+        "project_links_applied": 0,
+        "project_links_skipped": 0,
+    }
+
+
 def apply_edits(edits: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Write the parsed edits back into the database.
 
@@ -264,7 +313,7 @@ def apply_edits(edits: List[Dict[str, Any]]) -> Dict[str, Any]:
     from db import get_connection
 
     seen_ids = {edit["id"] for edit in edits}
-    result = {"applied": 0, "skipped_new": 0, "skipped_deletes": 0, "skipped_protected": 0}
+    result = _empty_result()
 
     with get_connection() as db:
         existing_ids = {r["id"] for r in db.execute("SELECT id FROM clips").fetchall()}
@@ -301,6 +350,50 @@ def apply_edits(edits: List[Dict[str, Any]]) -> Dict[str, Any]:
     return result
 
 
+def apply_project_clip_links(edits: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Add valid project-to-clip links without removing existing links."""
+    from db import get_connection
+
+    result = _empty_result()
+    with get_connection() as db:
+        project_ids = {
+            row["id"] for row in db.execute("SELECT id FROM projects").fetchall()
+        }
+        clip_ids = {
+            row["id"] for row in db.execute("SELECT id FROM clips").fetchall()
+        }
+        changed_any = False
+        for edit in edits:
+            project_id = edit["id"]
+            requested_clip_ids = edit.get("clip_ids", [])
+            if project_id not in project_ids:
+                result["project_links_skipped"] += len(requested_clip_ids)
+                continue
+            for clip_id in requested_clip_ids:
+                if clip_id not in clip_ids:
+                    result["project_links_skipped"] += 1
+                    continue
+                existing = db.execute(
+                    "SELECT 1 FROM project_clips WHERE project_id = ? AND clip_id = ?",
+                    (project_id, clip_id),
+                ).fetchone()
+                if existing:
+                    continue
+                db.execute(
+                    "INSERT OR IGNORE INTO project_clips(project_id, clip_id) VALUES (?, ?)",
+                    (project_id, clip_id),
+                )
+                db.execute(
+                    "UPDATE clips SET project_id = ? WHERE id = ? AND project_id IS NULL",
+                    (project_id, clip_id),
+                )
+                result["project_links_applied"] += 1
+                changed_any = True
+        if changed_any:
+            db.commit()
+    return result
+
+
 def _file_hash(path: Path) -> str:
     try:
         return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -312,7 +405,7 @@ def _apply_file(target: Path) -> Dict[str, Any]:
     text = target.read_text(encoding="utf-8")
     edits = parse_clips_md(text)
     if not edits:
-        return {"applied": 0, "skipped_new": 0, "skipped_deletes": 0, "skipped_protected": 0}
+        return _empty_result()
 
     # Keep a copy of the AI-edited file before the importer normalizes it.
     try:
@@ -330,6 +423,25 @@ def _apply_file(target: Path) -> Dict[str, Any]:
     return result
 
 
+def _apply_projects_file(target: Path) -> Dict[str, Any]:
+    text = target.read_text(encoding="utf-8")
+    edits = parse_projects_md(text)
+    if not edits:
+        return _empty_result()
+
+    try:
+        shutil.copy2(target, target.with_name("projects.md.bak"))
+    except OSError:
+        pass
+
+    result = apply_project_clip_links(edits)
+    if result["project_links_applied"] or result["project_links_skipped"]:
+        from ai_export import export_database
+
+        export_database()
+    return result
+
+
 def _watch_loop() -> None:
     while not _stop_event.is_set():
         try:
@@ -338,21 +450,41 @@ def _watch_loop() -> None:
                 _stop_event.wait(POLL_INTERVAL_SECONDS)
                 continue
 
-            clips_md = get_ai_export_dir() / "clips.md"
-            if clips_md.is_file():
-                current_hash = _file_hash(clips_md)
-                if current_hash and current_hash != _last_hash.get("clips.md"):
-                    result = _apply_file(clips_md)
-                    _last_hash["clips.md"] = _file_hash(clips_md)
-                    with _lock:
-                        if result["applied"]:
-                            _last_status["last_apply_at"] = (
-                                datetime.now().astimezone().isoformat(timespec="seconds")
-                            )
-                        _last_status["applied"] += result["applied"]
-                        _last_status["skipped_new"] += result["skipped_new"]
-                        _last_status["skipped_deletes"] += result["skipped_deletes"]
-                        _last_status["skipped_protected"] += result["skipped_protected"]
+            export_dir = get_ai_export_dir()
+            watched_files = (
+                ("clips.md", _apply_file),
+                ("projects.md", _apply_projects_file),
+            )
+            for filename, apply_file in watched_files:
+                target = export_dir / filename
+                if not target.is_file():
+                    continue
+                current_hash = _file_hash(target)
+                if not current_hash or current_hash == _last_hash.get(filename):
+                    continue
+                result = apply_file(target)
+                _last_hash[filename] = _file_hash(target)
+                with _lock:
+                    if any(
+                        result[key]
+                        for key in (
+                            "applied",
+                            "project_links_applied",
+                            "project_links_skipped",
+                            "skipped_deletes",
+                            "skipped_new",
+                            "skipped_protected",
+                        )
+                    ):
+                        _last_status["last_apply_at"] = (
+                            datetime.now().astimezone().isoformat(timespec="seconds")
+                        )
+                    _last_status["applied"] += result["applied"]
+                    _last_status["skipped_new"] += result["skipped_new"]
+                    _last_status["skipped_deletes"] += result["skipped_deletes"]
+                    _last_status["skipped_protected"] += result["skipped_protected"]
+                    _last_status["project_links_applied"] += result["project_links_applied"]
+                    _last_status["project_links_skipped"] += result["project_links_skipped"]
         except Exception as exc:
             with _lock:
                 _last_status["last_error"] = str(exc)

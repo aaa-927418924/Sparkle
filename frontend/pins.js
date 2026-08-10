@@ -831,8 +831,8 @@ function updateAIEditStatus(data) {
     return;
   }
   if (data?.last_error) statusEl.textContent = `反映に失敗しました: ${data.last_error}`;
-  else if (data?.last_apply_at) statusEl.textContent = `最終反映: ${data.last_apply_at}（反映 ${data.applied} 件 / 削除ブロック ${data.skipped_deletes} / 新規ブロック ${data.skipped_new} / 保護フィールド ${data.skipped_protected}）`;
-  else statusEl.textContent = "clips.md の変更を監視しています。";
+  else if (data?.last_apply_at) statusEl.textContent = `最終反映: ${data.last_apply_at}（clips.md反映 ${data.applied} 件 / プロジェクトへのクリップ添付 ${data.project_links_applied || 0} 件 / 無効ID ${data.project_links_skipped || 0} 件 / 削除ブロック ${data.skipped_deletes} / 新規ブロック ${data.skipped_new} / 保護フィールド ${data.skipped_protected}）`;
+  else statusEl.textContent = "clips.md と projects.md の変更を監視しています。";
 }
 
 // Editing requires the export to be enabled; otherwise it is forced off.

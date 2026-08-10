@@ -1,3 +1,5 @@
+![Logo](Icon.png)
+
 # Sparkle
 
 A local Windows application that brings your web clips, notes, tasks, and projects together in one place.

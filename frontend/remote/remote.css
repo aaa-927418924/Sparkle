@@ -151,6 +151,10 @@ a {
   text-align: center;
 }
 
+.remote-loading[hidden] {
+  display: none;
+}
+
 .remote-page-header {
   display: flex;
   align-items: flex-start;

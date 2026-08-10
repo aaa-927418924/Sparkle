@@ -1378,8 +1378,8 @@
       }
     } finally {
       if (renderToken === settingsRenderToken && loadingEl?.isConnected) {
-        loadingEl.hidden = true;
-        if (formEl) formEl.hidden = false;
+        loadingEl.remove();
+        if (formEl) formEl.removeAttribute("hidden");
       }
     }
   }

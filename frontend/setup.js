@@ -8,7 +8,6 @@
   const fileSaveMethod = document.getElementById("setupFileSaveMethod");
   const fileSaveMethodDesc = document.getElementById("setupFileSaveMethodDesc");
   const taskAutoDelete = document.getElementById("setupTaskAutoDelete");
-  const autoCreateNoteOnTask = document.getElementById("setupAutoCreateNoteOnTask");
   const autoCreateNoteOnProject = document.getElementById("setupAutoCreateNoteOnProject");
   const aiExportEnabled = document.getElementById("setupAiExportEnabled");
   const debugNote = document.getElementById("setupDebugNote");
@@ -19,7 +18,6 @@
   const defaults = {
     file_save_method: "reference",
     task_auto_delete: "1w",
-    auto_create_note_on_task: false,
     auto_create_note_on_project: false,
     ai_export_enabled: true,
   };
@@ -42,13 +40,10 @@
 
   function setFormValues(values = {}) {
     const next = { ...defaults, ...values };
-    const savedTaskSetting = localStorage.getItem("autoCreateNoteOnTask");
     const savedProjectSetting = localStorage.getItem("autoCreateNoteOnProject");
-    if (savedTaskSetting !== null) next.auto_create_note_on_task = savedTaskSetting === "true";
     if (savedProjectSetting !== null) next.auto_create_note_on_project = savedProjectSetting === "true";
     fileSaveMethod.value = next.file_save_method;
     taskAutoDelete.value = next.task_auto_delete;
-    autoCreateNoteOnTask.checked = Boolean(next.auto_create_note_on_task);
     autoCreateNoteOnProject.checked = Boolean(next.auto_create_note_on_project);
     aiExportEnabled.checked = Boolean(next.ai_export_enabled);
     updateFileSaveDescription(fileSaveMethod.value);
@@ -59,7 +54,6 @@
     exitButton.disabled = busy;
     fileSaveMethod.disabled = busy;
     taskAutoDelete.disabled = busy;
-    autoCreateNoteOnTask.disabled = busy;
     autoCreateNoteOnProject.disabled = busy;
     aiExportEnabled.disabled = busy;
   }
@@ -94,7 +88,6 @@
       flow: migrationMode ? "migration" : "initial",
       file_save_method: fileSaveMethod.value,
       task_auto_delete: taskAutoDelete.value,
-      auto_create_note_on_task: autoCreateNoteOnTask.checked,
       auto_create_note_on_project: autoCreateNoteOnProject.checked,
       ai_export_enabled: aiExportEnabled.checked,
     };
@@ -108,7 +101,6 @@
       if (!response.ok || !result.ok) {
         throw new Error(result.detail || result.error || "初期設定の保存に失敗しました。");
       }
-      localStorage.setItem("autoCreateNoteOnTask", payload.auto_create_note_on_task ? "true" : "false");
       localStorage.setItem("autoCreateNoteOnProject", payload.auto_create_note_on_project ? "true" : "false");
       status.textContent = migrationMode
         ? "確認が完了しました。Chrome拡張の更新案内を表示します…"

@@ -134,26 +134,12 @@ class TaskOut(BaseModel):
     created_at: str
     project_id: Optional[int] = None
     clip: Optional[LightClipOut] = None
-    notes: List["LightNoteOut"] = []
-
-
-class LightNoteOut(BaseModel):
-    id: int
-    title: str
-
-
-class LightTaskOut(BaseModel):
-    id: int
-    title: str
-    is_done: bool = False
 
 
 class NoteCreate(BaseModel):
     title: str
     body: Optional[str] = None
     clip_ids: List[int] = []
-    task_id: Optional[int] = None
-    task_ids: List[int] = []
     project_id: Optional[int] = None
     project_ids: List[int] = []
 
@@ -163,8 +149,6 @@ class NoteUpdate(BaseModel):
     body: Optional[str] = None
     expected_updated_at: Optional[str] = None
     clip_ids: Optional[List[int]] = None
-    task_id: Optional[int] = None
-    task_ids: Optional[List[int]] = None
     project_id: Optional[int] = None
     project_ids: Optional[List[int]] = None
 
@@ -178,9 +162,6 @@ class NoteOut(BaseModel):
     created_at: str
     updated_at: str
     clips: List[LightClipOut] = []
-    task_id: Optional[int] = None
-    task: Optional[LightTaskOut] = None
-    task_ids: List[int] = []
     project_id: Optional[int] = None
     project_ids: List[int] = []
 

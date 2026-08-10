@@ -110,10 +110,6 @@
           </div>
           <div class="settings-col">
             <h3 class="modal-sub">タスクの設定</h3>
-            <label class="setting-row">
-              <span>タスク作成時に同名の空メモを自動作成する</span>
-              <input type="checkbox" id="autoCreateNote" />
-            </label>
             <label class="setting-row column">
               <span>完了したタスクを自動削除</span>
               <select id="taskAutoDelete" class="setting-select">
@@ -174,26 +170,12 @@
       </div>
     </div>
 
-    <!-- 繝｡繝｢邏蝉ｻ倥￠繝昴ャ繝励い繝・・ -->
-    <div id="linkModal" class="modal" hidden>
-      <div class="modal-box">
-        <h2 class="modal-title">メモを紐付け</h2>
-        <input id="linkSearch" class="modal-input" type="text" placeholder="メモを検索…" autocomplete="off" />
-        <ul id="linkList" class="clip-pick-list"></ul>
-        <div class="modal-actions">
-          <button id="linkCancel" class="modal-btn ghost">キャンセル</button>
-          <button id="linkSave" class="modal-btn">保存</button>
-        </div>
-      </div>
-    </div>
-
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
     <script src="vendor/marked.min.js?v=12.0.0"></script>
     <script src="notes.js?v=notes-ui-20260803-no-memo-hover-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260810-update-notice-v3"></script>
   </body>
 </html>
-
 
 
 

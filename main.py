@@ -64,7 +64,6 @@ class InitialSetupPayload(BaseModel):
     flow: str = "initial"
     file_save_method: str = SETTING_DEFAULTS["file_save_method"]
     task_auto_delete: str = SETTING_DEFAULTS["task_auto_delete"]
-    auto_create_note_on_task: bool = False
     auto_create_note_on_project: bool = False
     ai_export_enabled: bool = True
 

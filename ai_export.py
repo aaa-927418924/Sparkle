@@ -213,9 +213,6 @@ def _build_snapshot(connection: sqlite3.Connection, snapshot_id: str, generated_
     note_clips: Dict[int, list[int]] = {}
     for row in _rows(connection, "SELECT note_id, clip_id FROM note_clips ORDER BY note_id, clip_id"):
         note_clips.setdefault(row["note_id"], []).append(row["clip_id"])
-    task_notes: Dict[int, list[int]] = {}
-    for row in _rows(connection, "SELECT task_id, note_id FROM task_notes ORDER BY task_id, note_id"):
-        task_notes.setdefault(row["task_id"], []).append(row["note_id"])
 
     clips = _rows(
         connection,
@@ -285,10 +282,6 @@ def _build_snapshot(connection: sqlite3.Connection, snapshot_id: str, generated_
 
     task_sections = ["# タスク一覧", "", f"生成日時: {generated_at}", ""]
     for row in tasks:
-        linked_notes = ", ".join(
-            f"[{note_id}] {note_titles.get(note_id, '（不明）')}"
-            for note_id in task_notes.get(row["id"], [])
-        )
         task_sections.extend(
             [
                 f"## [{row['id']}] {task_titles[row['id']]}\n",
@@ -296,7 +289,6 @@ def _build_snapshot(connection: sqlite3.Connection, snapshot_id: str, generated_
                 _bullet("期限", row["due_date"], fallback="（未設定）"),
                 _bullet("優先度", row["priority"], fallback="（未設定）"),
                 _bullet("関連クリップ", f"[{row['clip_id']}] {clip_titles.get(row['clip_id'], '（不明）')}" if row["clip_id"] else "", fallback="（なし）"),
-                _bullet("関連ノート", linked_notes, fallback="（なし）"),
                 _bullet("プロジェクトID", row["project_id"], fallback="（なし）"),
                 _bullet("作成日時", row["created_at"]),
                 _bullet("完了日時", row["completed_at"], fallback="（未完了）"),

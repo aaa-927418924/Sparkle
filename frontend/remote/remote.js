@@ -155,10 +155,6 @@
     return priority === null ? "設定なし" : "優先度" + priority;
   }
 
-  function taskNotes(task) {
-    return Array.isArray(task?.notes) ? task.notes : [];
-  }
-
   function highestTaskPriority(tasks) {
     const priorities = tasks
       .filter((task) => !task.is_done)
@@ -182,11 +178,7 @@
   }
 
   function noteIsDone(note) {
-    if (note?.is_done === true) return true;
-    const taskIds = Array.isArray(note?.task_ids)
-      ? note.task_ids
-      : (note?.task_id == null ? [] : [note.task_id]);
-    return taskIds.some((id) => state.tasks.some((task) => Number(task.id) === Number(id) && task.is_done));
+    return note?.is_done === true;
   }
 
   function statusMatches(item, filter, kind) {
@@ -976,11 +968,9 @@
     const highestPriority = highestTaskPriority(sortedTasks);
     const rows = sortedTasks.map((task) => {
       const priority = taskPriorityValue(task);
-      const notes = taskNotes(task);
       const project = task.project_id ? (projectName(task.project_id) || "不明なプロジェクト") : "設定なし";
-      const noteLabel = notes.length ? notes.map((note) => note.title).join("、") : "設定なし";
       const isHighest = !task.is_done && priority !== null && priority === highestPriority;
-      const relatedLabel = "プロジェクト: " + project + " · メモ: " + noteLabel;
+      const relatedLabel = "プロジェクト: " + project;
       const ariaLabel = "タスク「" + task.title + "」を編集。" + taskPriorityLabel(task) + "。" + relatedLabel + (isHighest ? "。最優先" : "");
       return '<div class="remote-list-row remote-interactive-row' + (isHighest ? " remote-task-priority-highlight" : "") + '" data-task-row="' + Number(task.id) + '" tabindex="0" role="button" aria-label="' + escapeHtml(ariaLabel) + '">' +
         '<label class="remote-list-checkbox"><input type="checkbox" data-task-toggle="' + Number(task.id) + '" aria-label="' + (task.is_done ? "未完了に戻す" : "完了にする") + '"' + (task.is_done ? " checked" : "") + ' /></label>' +
@@ -1362,7 +1352,6 @@
     main.innerHTML =
       renderPageHeader("APP SETTINGS", "アプリ設定", "PC側に保存される設定です。Web入口の認証設定はPCの設定画面から管理します。") +
       '<section class="remote-panel"><div id="remoteSettingsLoading" class="remote-loading">設定を読み込んでいます…</div><div id="remoteSettingsForm" hidden>' +
-      '<label class="remote-setting-row"><span class="remote-setting-copy"><strong>タスク作成時に同名の空メモを作成</strong><small>タスクとメモを一緒に管理します。</small></span><input id="remoteSettingTaskNote" type="checkbox" /></label>' +
       '<label class="remote-setting-row"><span class="remote-setting-copy"><strong>プロジェクト作成時に同名の空メモを作成</strong><small>プロジェクトの概要メモを自動で用意します。</small></span><input id="remoteSettingProjectNote" type="checkbox" /></label>' +
       '<label class="remote-setting-row"><span class="remote-setting-copy"><strong>完了タスクの自動削除</strong><small>PC側のメンテナンス設定です。</small></span><select id="remoteSettingTaskDelete"><option value="3d">3日後</option><option value="1w">1週間後</option><option value="1m">1か月後</option><option value="never">自動削除しない</option></select></label>' +
       '</div><p id="remoteSettingsError" class="remote-form-error" role="alert" hidden></p></section>';
@@ -1371,18 +1360,14 @@
     const errorEl = document.getElementById("remoteSettingsError");
     try {
       const values = await Promise.all([
-        readSetting("auto_create_note_on_task", "false"),
         readSetting("auto_create_note_on_project", "false"),
         readSetting("task_auto_delete", "1w"),
       ]);
       if (renderToken !== settingsRenderToken || !loadingEl?.isConnected) return;
-      const taskNoteEl = document.getElementById("remoteSettingTaskNote");
       const projectNoteEl = document.getElementById("remoteSettingProjectNote");
       const taskDeleteEl = document.getElementById("remoteSettingTaskDelete");
-      taskNoteEl.checked = values[0] === "true";
-      projectNoteEl.checked = values[1] === "true";
-      taskDeleteEl.value = values[2];
-      taskNoteEl.addEventListener("change", (event) => saveSetting("auto_create_note_on_task", event.target.checked));
+      projectNoteEl.checked = values[0] === "true";
+      taskDeleteEl.value = values[1];
       projectNoteEl.addEventListener("change", (event) => saveSetting("auto_create_note_on_project", event.target.checked));
       taskDeleteEl.addEventListener("change", (event) => saveSetting("task_auto_delete", event.target.value));
     } catch (error) {

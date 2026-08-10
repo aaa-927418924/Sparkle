@@ -51,7 +51,6 @@ class SparkleApi private constructor(
     }
 
     fun loadAppSettings(): AppSettings = AppSettings(
-        autoCreateNoteOnTask = getSetting("auto_create_note_on_task")?.toBooleanStrictOrNull() ?: false,
         taskAutoDelete = TaskAutoDeleteOption.fromValue(getSetting("task_auto_delete")).value,
         autoCreateNoteOnProject = getSetting("auto_create_note_on_project")?.toBooleanStrictOrNull() ?: false,
     )
@@ -144,7 +143,6 @@ class SparkleApi private constructor(
         title: String,
         body: String?,
         clipIds: List<Int> = emptyList(),
-        taskIds: List<Int> = emptyList(),
         projectIds: List<Int> = emptyList(),
     ): Note = parseNote(
         request(
@@ -154,7 +152,6 @@ class SparkleApi private constructor(
                 put("title", title)
                 putNullable("body", body)
                 put("clip_ids", JSONArray(clipIds))
-                put("task_ids", JSONArray(taskIds))
                 put("project_ids", JSONArray(projectIds))
             },
         ),
@@ -165,7 +162,6 @@ class SparkleApi private constructor(
         title: String,
         body: String?,
         clipIds: List<Int>? = null,
-        taskIds: List<Int>? = null,
         projectIds: List<Int>? = null,
     ): Note =
         parseNote(
@@ -179,18 +175,8 @@ class SparkleApi private constructor(
                     // from the Android editor.
                     put("body", body ?: "")
                     clipIds?.let { put("clip_ids", JSONArray(it)) }
-                    taskIds?.let { put("task_ids", JSONArray(it)) }
                     projectIds?.let { put("project_ids", JSONArray(it)) }
                 },
-            ),
-        )
-
-    fun updateNoteTaskLinks(noteId: Int, taskIds: List<Int>): Note =
-        parseNote(
-            request(
-                "PUT",
-                "/notes/$noteId",
-                JSONObject().apply { put("task_ids", JSONArray(taskIds)) },
             ),
         )
 
@@ -601,7 +587,6 @@ class SparkleApi private constructor(
         createdAt = json.optString("created_at"),
         projectId = nullableInt(json, "project_id"),
         clip = json.optJSONObject("clip")?.let(::parseClipSummary),
-        notes = json.optJSONArray("notes").toObjectList { NoteSummary(it.optInt("id"), it.optString("title")) },
     )
 
     private fun parseNote(json: JSONObject): Note = Note(
@@ -612,10 +597,6 @@ class SparkleApi private constructor(
         createdAt = json.optString("created_at"),
         updatedAt = json.optString("updated_at"),
         clips = json.optJSONArray("clips").toObjectList(::parseClipSummary),
-        task = json.optJSONObject("task")?.let {
-            TaskSummary(it.optInt("id"), it.optString("title"), it.optBoolean("is_done"))
-        },
-        taskIds = json.optIntList("task_ids", "task_id"),
         projectIds = json.optIntList("project_ids", "project_id"),
     )
 

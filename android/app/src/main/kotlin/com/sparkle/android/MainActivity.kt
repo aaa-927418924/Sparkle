@@ -1070,9 +1070,6 @@ private fun TaskCard(
                     task.dueDate?.takeIf { it.isNotBlank() }?.let { Text("期限 ${it.take(10)}", style = MaterialTheme.typography.labelMedium) }
                     task.priority?.let { Text("優先度 $it", style = MaterialTheme.typography.labelMedium) }
                 }
-                if (task.notes.isNotEmpty()) {
-                    Text("関連メモ ${task.notes.size}件", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                }
             }
         }
     }
@@ -1097,7 +1094,6 @@ private fun NoteCard(note: Note, onClick: () -> Unit, onLongClick: () -> Unit = 
             if (note.clips.isNotEmpty()) {
                 Text("関連クリップ: " + note.clips.joinToString("、") { it.displayTitle }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            note.task?.let { Text("関連タスク: ${it.title}", style = MaterialTheme.typography.bodySmall) }
             Text("更新 ${formatDate(note.updatedAt)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -1516,7 +1512,6 @@ private fun TaskEditorScreen(viewModel: SparkleViewModel, taskId: Int?) {
     var title by remember(taskId) { mutableStateOf(task?.title.orEmpty()) }
     var dueDate by remember(taskId) { mutableStateOf(task?.dueDate?.take(10).orEmpty()) }
     var priority by remember(taskId) { mutableStateOf(task?.priority?.toString().orEmpty()) }
-    var linkedNoteIds by remember(taskId) { mutableStateOf(task?.notes?.map { it.id }?.toSet().orEmpty()) }
     var validationError by remember(taskId) { mutableStateOf<String?>(null) }
     var showDatePicker by remember(taskId) { mutableStateOf(false) }
 
@@ -1566,20 +1561,6 @@ private fun TaskEditorScreen(viewModel: SparkleViewModel, taskId: Int?) {
                 }
             }
             OutlinedTextField(value = priority, onValueChange = { priority = it.filter(Char::isDigit).take(1) }, modifier = Modifier.fillMaxWidth(), label = { Text("優先度") }, supportingText = { Text("1〜5、空欄は未設定") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-            Text("関連メモ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            if (viewModel.notes.isEmpty()) {
-                Text("関連付けられるメモはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                Column(modifier = Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
-                    viewModel.notes.forEach { note ->
-                        LinkCheckboxRow(
-                            label = note.title,
-                            checked = note.id in linkedNoteIds,
-                            onCheckedChange = { checked -> linkedNoteIds = if (checked) linkedNoteIds + note.id else linkedNoteIds - note.id },
-                        )
-                    }
-                }
-            }
             Button(
                 onClick = {
                     if (title.trim().isBlank()) {
@@ -1589,7 +1570,7 @@ private fun TaskEditorScreen(viewModel: SparkleViewModel, taskId: Int?) {
                         if (priorityValue != null && priorityValue !in 1..5) {
                             validationError = "優先度は1〜5で入力してください。"
                         } else {
-                            viewModel.saveTask(taskId, title, dueDate, priorityValue, linkedNoteIds)
+                            viewModel.saveTask(taskId, title, dueDate, priorityValue)
                         }
                     }
                 },
@@ -1633,7 +1614,6 @@ private fun NoteEditorScreen(viewModel: SparkleViewModel, noteId: Int?) {
     val note = viewModel.note(noteId)
     var title by remember(noteId) { mutableStateOf(note?.title.orEmpty()) }
     var body by remember(noteId) { mutableStateOf(note?.body.orEmpty()) }
-    var linkedTaskIds by remember(noteId) { mutableStateOf(note?.taskIds?.toSet().orEmpty()) }
     var validationError by remember(noteId) { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -1679,26 +1659,12 @@ private fun NoteEditorScreen(viewModel: SparkleViewModel, noteId: Int?) {
                 label = { Text("本文") },
                 minLines = 8,
             )
-            Text("関連タスク", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            if (viewModel.tasks.isEmpty()) {
-                Text("関連付けられるタスクはありません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                Column(modifier = Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
-                    viewModel.tasks.forEach { task ->
-                        LinkCheckboxRow(
-                            label = task.title,
-                            checked = task.id in linkedTaskIds,
-                            onCheckedChange = { checked -> linkedTaskIds = if (checked) linkedTaskIds + task.id else linkedTaskIds - task.id },
-                        )
-                    }
-                }
-            }
             Button(
                 onClick = {
                     if (title.trim().isBlank()) {
                         validationError = "メモのタイトルを入力してください。"
                     } else {
-                        viewModel.saveNote(noteId, title, body, linkedTaskIds)
+                        viewModel.saveNote(noteId, title, body)
                     }
                 },
                 enabled = !viewModel.isBusy,
@@ -2272,14 +2238,6 @@ private fun AppSettingsScreen(viewModel: SparkleViewModel, onOpenMenu: () -> Uni
             viewModel.errorMessage?.let { ErrorBanner(it, viewModel::clearError) }
 
             Text("タスクの設定", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            AppSettingSwitchRow(
-                title = "タスク作成時に同名の空メモを自動作成",
-                checked = settings.autoCreateNoteOnTask,
-                enabled = canEdit,
-                onCheckedChange = { checked ->
-                    viewModel.updateAppSetting("auto_create_note_on_task", checked.toString())
-                },
-            )
             Text("完了したタスクを自動削除", style = MaterialTheme.typography.bodyLarge)
             Box {
                 OutlinedButton(

@@ -47,7 +47,7 @@ changes; updating the Android APK alone cannot update the PC server endpoints.
   generated `Xユーザーの名前さん: 「投稿本文」` title from public embed metadata.
 - Tasks and notes are loaded from the PC. Each tab has All/In-progress/
   Completed filters; the add button opens a PC-backed form, tapping edits an
-  item, long-pressing deletes it, and task/note forms can manage their links.
+  item, long-pressing deletes it, and project detail manages clip/task/note links.
   Task due dates are selected with the native Material calendar instead of
   free-form text. Projects have the same status filters, a new/edit form, and
   separate, equally sized link buttons for clips, tasks, and notes. Long-

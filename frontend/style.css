@@ -1283,7 +1283,6 @@ textarea.modal-input {
   align-items: flex-start;
 }
 
-.task-link,
 .task-edit,
 .task-del {
   border: none;
@@ -1295,7 +1294,6 @@ textarea.modal-input {
   padding: 2px;
 }
 
-.task-item:hover .task-link,
 .task-item:hover .task-edit,
 .task-item:hover .task-del {
   opacity: 1;
@@ -1372,13 +1370,6 @@ textarea.modal-input {
   text-decoration: underline;
 }
 
-.task-notes {
-  margin-top: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
 .task-relations {
   margin-top: 3px;
   display: flex;
@@ -1388,7 +1379,6 @@ textarea.modal-input {
   min-width: 0;
 }
 
-.task-note,
 .task-project {
   font-size: 12px;
   color: var(--muted);
@@ -1407,11 +1397,6 @@ textarea.modal-input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.task-note:hover {
-  color: var(--accent);
-  text-decoration: underline;
 }
 
 .status-tabs {
@@ -1455,22 +1440,6 @@ textarea.modal-input {
 .setting-select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.memo-task {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--muted);
-  display: inline-flex;
-  align-items: center;
-  word-break: break-word;
-  overflow-wrap: break-word;
-  white-space: normal;
-  gap: 4px;
-}
-
-.memo-task.done {
-  color: var(--accent);
 }
 
 .task-empty {

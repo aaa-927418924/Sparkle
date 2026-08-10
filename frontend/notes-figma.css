@@ -289,7 +289,6 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
 
 .notes-page .task-due,
 .notes-page .task-clip,
-.notes-page .task-note,
 .notes-page .task-project {
   color: #fff;
 }
@@ -298,14 +297,12 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
   gap: 2px;
 }
 
-.notes-page .task-link,
 .notes-page .task-edit,
 .notes-page .task-del {
   color: #77736d;
   padding: 2px;
 }
 
-.notes-page .task-item:hover .task-link,
 .notes-page .task-item:hover .task-edit,
 .notes-page .task-item:hover .task-del {
   opacity: 0.78;
@@ -420,10 +417,6 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
   padding: 2px 7px;
   color: var(--notes-accent);
   background: color-mix(in srgb, var(--notes-accent) 12%, transparent);
-}
-
-.notes-page .memo-task {
-  color: var(--notes-muted);
 }
 
 .notes-page .memo-card .pin-btn {
@@ -630,8 +623,7 @@ html[data-theme="dark"] .notes-page #taskEditModal .star-rating .star-clear {
 .notes-page .panel-title,
 .notes-page .task-title,
 .notes-page .task-due,
-.notes-page .task-clip,
-.notes-page .task-note {
+.notes-page .task-clip {
   color: #5b5b5b;
 }
 
@@ -639,7 +631,7 @@ html[data-theme="dark"] .notes-page .panel-title,
 html[data-theme="dark"] .notes-page .task-title,
 html[data-theme="dark"] .notes-page .task-due,
 html[data-theme="dark"] .notes-page .task-clip,
-html[data-theme="dark"] .notes-page .task-note {
+html[data-theme="dark"] .notes-page .task-clip {
   color: #ffffff;
 }
 
@@ -656,46 +648,6 @@ html[data-theme="dark"] .notes-page .task-note {
   transform: none;
 }
  
-/* Link-note dialog: match the task edit dialog surface and spacing. */
-.notes-page #linkModal .modal-box {
-  box-sizing: border-box;
-  width: 420px;
-  padding: 22px;
-}
-
-.notes-page #linkModal .modal-input {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-}
-
-html[data-theme="dark"] .notes-page #linkModal .modal-box {
-  background: #232327;
-  border-color: #47474f;
-  color: #f4f3ee;
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.46);
-}
-
-html[data-theme="dark"] .notes-page #linkModal .modal-title {
-  color: #f4f3ee;
-}
-
-html[data-theme="dark"] .notes-page #linkModal .modal-input {
-  border-color: #5c5c64;
-  background: #18181b;
-  color: #f4f3ee;
-  color-scheme: dark;
-}
-
-html[data-theme="dark"] .notes-page #linkModal .modal-input::placeholder {
-  color: #b1ada1;
-}
-
-html[data-theme="dark"] .notes-page #linkModal .modal-btn.ghost {
-  border-color: #5c5c64;
-  color: #b1ada1;
-}
-
 /* Keep non-highlighted task content aligned with the highlighted row.
    The highlighted row has a 1px border, so its 8px inner padding starts
    9px from the list edge. */

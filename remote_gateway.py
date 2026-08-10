@@ -173,7 +173,6 @@ class RemoteGateway:
         "/health",
     }
     _SAFE_SETTINGS = {
-        "auto_create_note_on_task",
         "auto_create_note_on_project",
         "task_auto_delete",
         "file_save_method",

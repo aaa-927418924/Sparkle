@@ -29,7 +29,6 @@ POST_MIGRATION_ONBOARDING_STAGES = {"setup", "extension"}
 SETUP_DEFAULTS: dict[str, Any] = {
     "file_save_method": "reference",
     "task_auto_delete": "1w",
-    "auto_create_note_on_task": False,
     "auto_create_note_on_project": False,
     "ai_export_enabled": True,
 }

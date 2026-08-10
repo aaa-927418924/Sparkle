@@ -57,8 +57,6 @@ from schemas import (
     ClipOut,
     ClipUpdate,
     LightClipOut,
-    LightNoteOut,
-    LightTaskOut,
     NoteCreate,
     NoteOut,
     NoteUpdate,
@@ -322,14 +320,6 @@ def _fetch_project_ids(conn: Connection, table: str, entity_column: str, entity_
         (entity_id,),
     ).fetchall()
     return [int(r["project_id"]) for r in rows]
-
-
-def _fetch_task_ids(conn: Connection, note_id: int) -> List[int]:
-    rows = conn.execute(
-        "SELECT task_id FROM task_notes WHERE note_id = ? ORDER BY task_id",
-        (note_id,),
-    ).fetchall()
-    return [int(r["task_id"]) for r in rows]
 
 
 def _row_to_clip(conn: Connection, row) -> ClipOut:
@@ -1337,17 +1327,6 @@ def _light_clip(db: Connection, clip_id: Optional[int]) -> Optional[LightClipOut
     return LightClipOut(id=row["id"], title=row["title"], url=row["url"])
 
 
-def _linked_notes(db: Connection, task_id: int) -> List["LightNoteOut"]:
-    rows = db.execute(
-        "SELECT DISTINCT n.id, n.title FROM notes n "
-        "LEFT JOIN task_notes tn ON tn.note_id = n.id "
-        "WHERE n.task_id = ? OR tn.task_id = ? "
-        "ORDER BY n.updated_at DESC",
-        (task_id, task_id),
-    ).fetchall()
-    return [LightNoteOut(id=r["id"], title=r["title"]) for r in rows]
-
-
 def _row_to_task(db: Connection, row) -> TaskOut:
     return TaskOut(
         id=row["id"],
@@ -1359,7 +1338,6 @@ def _row_to_task(db: Connection, row) -> TaskOut:
         created_at=row["created_at"],
         project_id=row["project_id"],
         clip=_light_clip(db, row["clip_id"]),
-        notes=_linked_notes(db, row["id"]),
     )
 
 
@@ -1510,25 +1488,10 @@ def _fetch_note_clips(db: Connection, note_id: int) -> List[LightClipOut]:
     ]
 
 
-def _linked_task(db: Connection, task_id: Optional[int]) -> Optional[LightTaskOut]:
-    if task_id is None:
-        return None
-    row = db.execute(
-        "SELECT id, title, is_done FROM tasks WHERE id = ?", (task_id,)
-    ).fetchone()
-    if not row:
-        return None
-    return LightTaskOut(id=row["id"], title=row["title"], is_done=bool(row["is_done"]))
-
-
 def _row_to_note(db: Connection, row) -> NoteOut:
-    task_ids = _fetch_task_ids(db, row["id"]) or (
-        [row["task_id"]] if row["task_id"] is not None else []
-    )
     project_ids = _fetch_project_ids(db, "project_notes", "note_id", row["id"]) or (
         [row["project_id"]] if row["project_id"] is not None else []
     )
-    legacy_task_id = task_ids[0] if task_ids else None
     return NoteOut(
         id=row["id"],
         title=row["title"],
@@ -1538,27 +1501,9 @@ def _row_to_note(db: Connection, row) -> NoteOut:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         clips=_fetch_note_clips(db, row["id"]),
-        task_id=legacy_task_id,
-        task=_linked_task(db, legacy_task_id),
-        task_ids=task_ids,
         project_id=project_ids[0] if project_ids else None,
         project_ids=project_ids,
     )
-
-
-def _set_note_task_links(db: Connection, note_id: int, task_ids: List[int]) -> None:
-    for task_id in task_ids:
-        task = db.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone()
-        if not task:
-            raise HTTPException(status_code=400, detail=f"task_id {task_id} does not exist")
-    db.execute("DELETE FROM task_notes WHERE note_id = ?", (note_id,))
-    for task_id in task_ids:
-        db.execute(
-            "INSERT OR IGNORE INTO task_notes(task_id, note_id) VALUES (?, ?)",
-            (task_id, note_id),
-        )
-    legacy_task_id = task_ids[0] if task_ids else None
-    db.execute("UPDATE notes SET task_id = ? WHERE id = ?", (legacy_task_id, note_id))
 
 
 def _set_note_project_links(db: Connection, note_id: int, project_ids: List[int]) -> None:
@@ -1587,16 +1532,9 @@ def _set_note_clips(db: Connection, note_id: int, clip_ids: List[int]) -> None:
 
 @router.post("/notes", response_model=NoteOut, status_code=201)
 def create_note(payload: NoteCreate, db: Connection = Depends(get_db)):
-    task_ids = list(payload.task_ids) if payload.task_ids else (
-        [payload.task_id] if payload.task_id is not None else []
-    )
     project_ids = list(payload.project_ids) if payload.project_ids else (
         [payload.project_id] if payload.project_id is not None else []
     )
-    for task_id in task_ids:
-        task = db.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone()
-        if not task:
-            raise HTTPException(status_code=400, detail=f"task_id {task_id} does not exist")
     for project_id in project_ids:
         project = db.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
         if not project:
@@ -1606,17 +1544,15 @@ def create_note(payload: NoteCreate, db: Connection = Depends(get_db)):
         if not clip:
             raise HTTPException(status_code=400, detail=f"clip_id {clip_id} does not exist")
     cur = db.execute(
-        "INSERT INTO notes(title, body, task_id, project_id) VALUES (?, ?, ?, ?)",
+        "INSERT INTO notes(title, body, project_id) VALUES (?, ?, ?)",
         (
             payload.title,
             payload.body,
-            task_ids[0] if task_ids else None,
             project_ids[0] if project_ids else None,
         ),
     )
     note_id = cur.lastrowid
     _set_note_clips(db, note_id, payload.clip_ids)
-    _set_note_task_links(db, note_id, task_ids)
     _set_note_project_links(db, note_id, project_ids)
     db.commit()
     row = db.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
@@ -1669,14 +1605,6 @@ def update_note(note_id: int, payload: NoteUpdate, db: Connection = Depends(get_
         db.execute("UPDATE notes SET title = ? WHERE id = ?", (payload.title, note_id))
     if payload.body is not None:
         db.execute("UPDATE notes SET body = ? WHERE id = ?", (payload.body, note_id))
-    if "task_ids" in payload.model_fields_set and payload.task_ids is not None:
-        _set_note_task_links(db, note_id, list(payload.task_ids))
-    elif "task_id" in payload.model_fields_set:
-        _set_note_task_links(
-            db,
-            note_id,
-            [payload.task_id] if payload.task_id is not None else [],
-        )
     if payload.clip_ids is not None:
         for clip_id in payload.clip_ids:
             clip = db.execute("SELECT id FROM clips WHERE id = ?", (clip_id,)).fetchone()
@@ -1719,6 +1647,8 @@ class SettingValue(BaseModel):
 def get_setting(key: str, db: Connection = Depends(get_db)):
     from maintenance import SETTING_DEFAULTS
 
+    if key == "auto_create_note_on_task":
+        raise HTTPException(status_code=404, detail="Unknown setting")
     row = db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
     if row:
         return SettingValue(value=row["value"])
@@ -1729,8 +1659,10 @@ def get_setting(key: str, db: Connection = Depends(get_db)):
 
 @router.put("/settings/{key}", response_model=SettingValue)
 def put_setting(key: str, payload: SettingValue, db: Connection = Depends(get_db)):
+    if key == "auto_create_note_on_task":
+        raise HTTPException(status_code=404, detail="Unknown setting")
     value = payload.value
-    if key in {"auto_create_note_on_task", "auto_create_note_on_project"}:
+    if key == "auto_create_note_on_project":
         value = payload.value.strip().lower()
         if value not in {"true", "false"}:
             raise HTTPException(status_code=422, detail="自動メモ作成の設定値が不正です。")
@@ -2187,13 +2119,12 @@ def _merge_database(source: sqlite3.Connection, dest: Connection) -> dict:
         source_id = _source_id(row["id"])
         if source_id is None:
             continue
-        task_id = task_map.get(_source_id(_source_value(row, note_columns, "task_id")))
         project_id = project_map.get(
             _source_id(_source_value(row, note_columns, "project_id"))
         )
         cur = dest.execute(
-            "INSERT INTO notes(title, body, is_done, completed_at, created_at, updated_at, task_id, project_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO notes(title, body, is_done, completed_at, created_at, updated_at, project_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 row["title"],
                 row["body"],
@@ -2201,16 +2132,10 @@ def _merge_database(source: sqlite3.Connection, dest: Connection) -> dict:
                 _source_value(row, note_columns, "completed_at"),
                 _migration_timestamp(row["created_at"]),
                 _migration_timestamp(row["updated_at"]),
-                task_id,
                 project_id,
             ),
         )
         note_map[source_id] = int(cur.lastrowid)
-        if task_id is not None:
-            dest.execute(
-                "INSERT OR IGNORE INTO task_notes(task_id, note_id) VALUES (?, ?)",
-                (task_id, int(cur.lastrowid)),
-            )
         if project_id is not None:
             dest.execute(
                 "INSERT OR IGNORE INTO project_notes(project_id, note_id) VALUES (?, ?)",
@@ -2251,15 +2176,6 @@ def _merge_database(source: sqlite3.Connection, dest: Connection) -> dict:
             dest.execute(
                 "INSERT OR IGNORE INTO project_notes(project_id, note_id) VALUES (?, ?)",
                 (project_id, note_id),
-            )
-
-    for row in _source_rows(source, "task_notes"):
-        task_id = task_map.get(_source_id(row["task_id"]))
-        note_id = note_map.get(_source_id(row["note_id"]))
-        if task_id is not None and note_id is not None:
-            dest.execute(
-                "INSERT OR IGNORE INTO task_notes(task_id, note_id) VALUES (?, ?)",
-                (task_id, note_id),
             )
 
     # Restore app settings and profile data from the source (migration semantics:

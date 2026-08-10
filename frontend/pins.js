@@ -585,7 +585,6 @@ window.addEventListener("storage", (e) => {
 // ---- Shared Settings ----
 
 const SHARED_BOOLEAN_SETTINGS = Object.freeze({
-  taskAutoCreateNote: { apiKey: "auto_create_note_on_task", storageKey: "autoCreateNoteOnTask" },
   projectAutoCreateNote: { apiKey: "auto_create_note_on_project", storageKey: "autoCreateNoteOnProject" },
 });
 
@@ -633,13 +632,11 @@ window.sparkleSettings = Object.freeze({
 });
 
 async function loadSettingsValues(force = false) {
-  const acn = document.getElementById("autoCreateNote");
   const acnp = document.getElementById("autoCreateNoteOnProject");
-  const [taskAutoCreate, projectAutoCreate] = await Promise.all([
-    getSharedBooleanSetting(SHARED_BOOLEAN_SETTINGS.taskAutoCreateNote.apiKey, SHARED_BOOLEAN_SETTINGS.taskAutoCreateNote.storageKey),
-    getSharedBooleanSetting(SHARED_BOOLEAN_SETTINGS.projectAutoCreateNote.apiKey, SHARED_BOOLEAN_SETTINGS.projectAutoCreateNote.storageKey),
-  ]);
-  if (acn) acn.checked = taskAutoCreate;
+  const projectAutoCreate = await getSharedBooleanSetting(
+    SHARED_BOOLEAN_SETTINGS.projectAutoCreateNote.apiKey,
+    SHARED_BOOLEAN_SETTINGS.projectAutoCreateNote.storageKey,
+  );
   if (acnp) acnp.checked = projectAutoCreate;
   const tad = document.getElementById("taskAutoDelete");
   if (tad && (!tad.dataset.loaded || force)) {
@@ -973,19 +970,6 @@ function waitForSettingsOperationNotice(message, duration = 650) {
 
 function initSettings() {
   if (getSettingsOperationLock()) installSettingsOperationGuard();
-  // autoCreateNote
-  const acn = document.getElementById("autoCreateNote");
-  if (acn) acn.addEventListener("change", async () => {
-    const nextValue = acn.checked;
-    acn.disabled = true;
-    const saved = await setSharedBooleanSetting(
-      SHARED_BOOLEAN_SETTINGS.taskAutoCreateNote.apiKey,
-      SHARED_BOOLEAN_SETTINGS.taskAutoCreateNote.storageKey,
-      nextValue,
-    );
-    if (!saved) acn.checked = !nextValue;
-    acn.disabled = false;
-  });
   // autoCreateNoteOnProject
   const acnp = document.getElementById("autoCreateNoteOnProject");
   if (acnp) acnp.addEventListener("change", async () => {
@@ -1192,13 +1176,7 @@ function initSettings() {
       : window.confirm(message);
     if (!confirmed) return;
     // localStorage settings
-    localStorage.setItem("autoCreateNoteOnTask", "false");
     localStorage.setItem("autoCreateNoteOnProject", "false");
-    void setSharedBooleanSetting(
-      SHARED_BOOLEAN_SETTINGS.taskAutoCreateNote.apiKey,
-      SHARED_BOOLEAN_SETTINGS.taskAutoCreateNote.storageKey,
-      false,
-    );
     void setSharedBooleanSetting(
       SHARED_BOOLEAN_SETTINGS.projectAutoCreateNote.apiKey,
       SHARED_BOOLEAN_SETTINGS.projectAutoCreateNote.storageKey,
@@ -1206,8 +1184,6 @@ function initSettings() {
     );
     localStorage.removeItem("hideAutoCheatsheet");
     // UI update
-    const acn = document.getElementById("autoCreateNote");
-    if (acn) acn.checked = false;
     const acnp = document.getElementById("autoCreateNoteOnProject");
     if (acnp) acnp.checked = false;
     const aiEnabled = document.getElementById("aiExportEnabled");
@@ -1259,7 +1235,6 @@ function initSettings() {
   const dbApi = API_ROOT;
   const BROWSER_SETTINGS_KEYS = [
     "clipSortMode",
-    "autoCreateNoteOnTask",
     "autoCreateNoteOnProject",
     "hideAutoCheatsheet",
     "clipSearchHistory",

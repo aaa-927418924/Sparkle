@@ -44,12 +44,6 @@ data class ClipSummary(
         get() = title?.trim()?.takeIf { it.isNotEmpty() } ?: url
 }
 
-data class TaskSummary(
-    val id: Int,
-    val title: String,
-    val isDone: Boolean,
-)
-
 data class Task(
     val id: Int,
     val title: String,
@@ -60,12 +54,6 @@ data class Task(
     val createdAt: String,
     val projectId: Int?,
     val clip: ClipSummary?,
-    val notes: List<NoteSummary>,
-)
-
-data class NoteSummary(
-    val id: Int,
-    val title: String,
 )
 
 data class Note(
@@ -76,8 +64,6 @@ data class Note(
     val createdAt: String,
     val updatedAt: String,
     val clips: List<ClipSummary>,
-    val task: TaskSummary?,
-    val taskIds: List<Int>,
     val projectIds: List<Int>,
 )
 
@@ -131,7 +117,6 @@ data class RemoteSnapshot(
 )
 
 data class AppSettings(
-    val autoCreateNoteOnTask: Boolean = false,
     val taskAutoDelete: String = "1w",
     val autoCreateNoteOnProject: Boolean = false,
 )

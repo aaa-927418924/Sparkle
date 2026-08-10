@@ -371,31 +371,21 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         title: String,
         dueDate: String?,
         priority: Int?,
-        noteIds: Set<Int>,
     ) {
         if (title.isBlank()) {
             errorMessage = "タスク名を入力してください。"
             return
         }
         val currentApi = requireApi() ?: return
-        val existingNotes = notes
         isBusy = true
         errorMessage = null
         connectionState = ConnectionState.Checking
         executor.execute {
             try {
-                val savedTask = if (taskId == null) {
+                if (taskId == null) {
                     currentApi.createTask(title.trim(), dueDate?.trim()?.takeIf { it.isNotEmpty() }, priority)
                 } else {
                     currentApi.updateTask(taskId, title.trim(), dueDate?.trim()?.takeIf { it.isNotEmpty() }, priority)
-                }
-                existingNotes.forEach { note ->
-                    val desiredTaskIds = note.taskIds
-                        .filter { it != savedTask.id }
-                        .let { ids -> if (note.id in noteIds) ids + savedTask.id else ids }
-                    if (desiredTaskIds != note.taskIds) {
-                        currentApi.updateNoteTaskLinks(note.id, desiredTaskIds.distinct())
-                    }
                 }
                 postSnapshot(currentApi.loadSnapshot()) {
                     screen = Screen.TasksNotes
@@ -442,7 +432,7 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun saveNote(noteId: Int?, title: String, body: String?, taskIds: Set<Int>) {
+    fun saveNote(noteId: Int?, title: String, body: String?) {
         if (title.isBlank()) {
             errorMessage = "メモのタイトルを入力してください。"
             return
@@ -457,14 +447,12 @@ class SparkleViewModel(application: Application) : AndroidViewModel(application)
                     currentApi.createNote(
                         title = title.trim(),
                         body = body?.trim()?.takeIf { it.isNotEmpty() },
-                        taskIds = taskIds.toList(),
                     )
                 } else {
                     currentApi.updateNote(
                         noteId = noteId,
                         title = title.trim(),
                         body = body?.trim()?.takeIf { it.isNotEmpty() },
-                        taskIds = taskIds.toList(),
                     )
                 }
                 val snapshot = currentApi.loadSnapshot()

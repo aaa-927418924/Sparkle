@@ -1,13 +1,4 @@
 const API = window.location.origin;
-const AUTO_KEY = "autoCreateNoteOnTask";
-const AUTO_API_KEY = "auto_create_note_on_task";
-
-async function taskAutoCreateNoteEnabled() {
-  if (typeof window.sparkleSettings?.getBoolean === "function") {
-    return window.sparkleSettings.getBoolean(AUTO_API_KEY, AUTO_KEY);
-  }
-  return localStorage.getItem(AUTO_KEY) === "true";
-}
 
 const state = {
   tasks: [],
@@ -31,11 +22,6 @@ const els = {
   memoEmpty: $("memoEmpty"),
   newNote: $("newNote"),
   statusTabs: $("statusTabs"),
-  linkModal: $("linkModal"),
-  linkSearch: $("linkSearch"),
-  linkList: $("linkList"),
-  linkCancel: $("linkCancel"),
-  linkSave: $("linkSave"),
   taskEditModal: $("taskEditModal"),
   taskEditTitle: $("taskEditTitle"),
   taskEditDue: $("taskEditDue"),
@@ -89,23 +75,6 @@ function linkifyText(raw) {
   }
   out += escapeHtml(raw.slice(last));
   return out;
-}
-
-// --- 繝倥Ν繝代・: 邏舌▼縺榊愛螳・---
-function noteTaskIds(note) {
-  const ids = Array.isArray(note.task_ids) && note.task_ids.length
-    ? note.task_ids
-    : (note.task_id != null ? [note.task_id] : []);
-  return [...new Set(ids.map(Number).filter(Number.isInteger))];
-}
-
-function noteTask(note) {
-  const taskId = noteTaskIds(note)[0];
-  if (taskId == null) return null;
-  return state.tasks.find((t) => t.id === taskId) || null;
-}
-function taskNotes(taskId) {
-  return state.notes.filter((n) => noteTaskIds(n).includes(Number(taskId)));
 }
 
 // --- 繝倥Ν繝代・: 譛滄剞繝ｻ蜆ｪ蜈亥ｺｦ ---
@@ -173,8 +142,7 @@ function taskMatchesStatus(t) {
 }
 function noteMatchesStatus(n) {
   if (state.status === "all") return true;
-  const task = noteTask(n);
-  const done = (n.is_done === true) || (!!(task && task.is_done));
+  const done = n.is_done === true;
   if (state.status === "active") return !done;
   return done; // done
 }
@@ -225,12 +193,6 @@ function renderTasks() {
       const clip = t.clip
           ? `<div class="task-clip" data-url="${escapeAttr(t.clip.url)}" title="クリップを開く"><img class="icon icon-inline" src="icons/clip.svg" alt="" /> ${escapeHtml(t.clip.title || "")}</div>`
         : "";
-      const linked = taskNotes(t.id)
-        .map(
-          (n) =>
-            `<div class="task-note" data-note="${n.id}" title="メモを開く"><img class="icon icon-inline" src="icons/memo.svg" alt="" /> ${escapeHtml(n.title)}</div>`
-        )
-        .join("");
       const project = state.projects.find((item) => item.id === t.project_id);
       const projectLink = project?.name
         ? `<div class="task-project" title="プロジェクト: ${escapeAttr(project.name)}"><img class="icon icon-inline" src="icons/project.svg" alt="" /> ${escapeHtml(project.name)}</div>`
@@ -255,10 +217,9 @@ function renderTasks() {
             ${prio}
             ${due}
             ${clip}
-            ${linked || projectLink ? `<div class="task-relations">${linked ? `<div class="task-notes">${linked}</div>` : ""}${projectLink}</div>` : ""}
+            ${projectLink ? `<div class="task-relations">${projectLink}</div>` : ""}
           </div>
           <div class="task-actions">
-            <button class="task-link" data-link="${t.id}" title="メモを紐付け"><img class="icon icon-btn" src="icons/clip.svg" alt="紐付け" /></button>
             <button class="task-edit" data-edit="${t.id}" title="編集"><img class="icon icon-btn" src="icons/pencil.svg" alt="編集" /></button>
             <button class="task-del" data-del="${t.id}" title="削除"><img class="icon icon-btn" src="icons/trash.svg" alt="削除" /></button>
           </div>
@@ -282,12 +243,6 @@ function renderTasks() {
       if (url) window.open(url, "_blank", "noopener");
     });
   });
-  els.taskList.querySelectorAll(".task-note").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      e.stopPropagation();
-      location.href = `/Note?id=${el.dataset.note}`;
-    });
-  });
   els.taskList.querySelectorAll("[data-del]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -295,12 +250,6 @@ function renderTasks() {
         anchor: btn.closest(".task-item"),
         immediate: e.shiftKey,
       });
-    });
-  });
-  els.taskList.querySelectorAll("[data-link]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openLinkModal(Number(btn.dataset.link));
     });
   });
 }
@@ -426,104 +375,12 @@ els.taskAdd.addEventListener("submit", async (e) => {
     });
     state.tasks.push(created);
     els.taskInput.value = "";
-
-    // 險ｭ螳唹N縺ｪ繧牙酔蜷阪・遨ｺ繝｡繝｢繧定・蜍穂ｽ懈・縺励※邏蝉ｻ倥￠
-    if (await taskAutoCreateNoteEnabled()) {
-      try {
-        const note = await api("/notes", {
-          method: "POST",
-          body: JSON.stringify({ title, body: null, task_id: created.id }),
-        });
-        state.notes.push(note);
-      } catch (e) {
-        // 自動作成に失敗してもタスク作成自体は成功扱い
-      }
-    }
     renderTasks();
     renderNotes();
   } catch (e) {
     alert("追加に失敗しました。");
   }
 });
-
-// --- 繝｡繝｢邏蝉ｻ倥￠繝昴ャ繝励い繝・・ ---
-let linkTargetTaskId = null;
-let linkSelection = new Set();
-
-function openLinkModal(taskId) {
-  linkTargetTaskId = taskId;
-  linkSelection = new Set(
-    state.notes
-      .filter((n) => noteTaskIds(n).includes(taskId))
-      .map((n) => n.id)
-  );
-  els.linkModal.hidden = false;
-  renderLinkList("");
-}
-function closeLinkModal() {
-  els.linkModal.hidden = true;
-  linkTargetTaskId = null;
-  linkSelection = new Set();
-}
-function renderLinkList(q) {
-  const query = q.trim().toLowerCase();
-  const list = state.notes
-    .filter((n) => (n.title || "").toLowerCase().includes(query))
-    .sort((a, b) => a.id - b.id);
-  els.linkList.innerHTML = list
-    .map((n) => {
-      const linked = linkSelection.has(n.id) ? " checked" : "";
-      return `<li>
-        <label class="clip-pick-item">
-          <input type="checkbox" data-id="${n.id}"${linked} />
-          <span>${escapeHtml(n.title || "(辟｡鬘・")}</span>
-        </label>
-      </li>`;
-    })
-    .join("");
-  els.linkList.querySelectorAll("input[data-id]").forEach((cb) => {
-    cb.addEventListener("change", () => {
-      const noteId = Number(cb.dataset.id);
-      if (cb.checked) linkSelection.add(noteId);
-      else linkSelection.delete(noteId);
-    });
-  });
-}
-
-async function saveLinkModal() {
-  const taskId = linkTargetTaskId;
-  if (taskId == null) return;
-  const changed = state.notes.filter((note) => {
-    const currentlyLinked = noteTaskIds(note).includes(taskId);
-    return currentlyLinked !== linkSelection.has(note.id);
-  });
-
-  try {
-    const updatedNotes = await Promise.all(
-      changed.map((note) => {
-        const currentIds = noteTaskIds(note);
-        const nextIds = linkSelection.has(note.id)
-          ? [...new Set([...currentIds, taskId])]
-          : currentIds.filter((id) => id !== taskId);
-        return api(`/notes/${note.id}`, {
-          method: "PUT",
-          body: JSON.stringify({ task_ids: nextIds }),
-        });
-      })
-    );
-    updatedNotes.forEach((updated) => {
-      const index = state.notes.findIndex((note) => note.id === updated.id);
-      if (index >= 0) state.notes[index] = updated;
-    });
-    closeLinkModal();
-    renderTasks();
-    renderNotes();
-    await Promise.all(updatedNotes.map((note) => window.refreshPinnedData?.("note", note.id)));
-    await window.refreshAllPinnedProjects?.();
-  } catch (e) {
-    alert("紐付けに失敗しました。");
-  }
-}
 
 async function deleteNote(id, options = {}) {
   const note = state.notes.find((item) => item.id === id);
@@ -544,13 +401,6 @@ async function deleteNote(id, options = {}) {
   }
 }
 
-els.linkSearch.addEventListener("input", (e) => renderLinkList(e.target.value));
-els.linkCancel.addEventListener("click", closeLinkModal);
-els.linkSave.addEventListener("click", saveLinkModal);
-els.linkModal.addEventListener("click", (e) => {
-  if (e.target === els.linkModal) closeLinkModal();
-});
-
 // --- 繝｡繝｢ ---
 function renderNotes() {
   const list = state.notes.filter(noteMatchesStatus);
@@ -563,11 +413,7 @@ function renderNotes() {
       const clips = first
         ? `<div class="memo-clips"><span class="clip-chip" data-url="${escapeAttr(first.url)}"><img class="icon icon-inline" src="icons/clip.svg" alt="" /> ${escapeHtml(truncate(first.title || first.url || "", 32))}</span>${extra > 0 ? `<span class="clip-more">+${extra}</span>` : ""}</div>`
         : "";
-      const task = noteTask(n);
-      const done = n.is_done === true || !!(task && task.is_done);
-      const taskBadge = task
-        ? `<div class="memo-task${task.is_done ? " done" : ""}" data-task="${task.id}"><img class="icon icon-inline" src="icons/${task.is_done ? "checkbox" : "box"}.svg" alt="" /> ${escapeHtml(task.title)}</div>`
-        : "";
+      const done = n.is_done === true;
       const pinned = typeof isPinned === "function" && isPinned(n.id, "note");
       const selected = state.selected.get(n.id) === "note" ? " selected" : "";
       const doneBadge = done
@@ -584,7 +430,6 @@ function renderNotes() {
           ${clips ? `<div class="memo-clips">${clips}</div>` : ""}
           <h3 class="memo-title">${escapeHtml(n.title)}</h3>
           ${doneBadge}
-          ${taskBadge}
           <div class="memo-preview">${escapeHtml(n.body || "")}</div>
         </article>`;
     })
@@ -726,7 +571,6 @@ function duplicateLabel(value, fallback) {
 
 async function duplicateNote(note) {
   const clipIds = [...new Set((note.clips || []).map((clip) => Number(clip.id)).filter(Number.isInteger))];
-  const taskIds = [...new Set(noteTaskIds(note).map(Number).filter(Number.isInteger))];
   const projectIds = [...new Set(
     (Array.isArray(note.project_ids) ? note.project_ids : (note.project_id != null ? [note.project_id] : []))
       .map(Number)
@@ -738,7 +582,6 @@ async function duplicateNote(note) {
       title: duplicateLabel(note.title, "無題のメモ"),
       body: note.body ?? null,
       clip_ids: clipIds,
-      task_ids: taskIds,
       project_ids: projectIds,
     }),
   });

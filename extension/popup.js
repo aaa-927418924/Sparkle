@@ -1,10 +1,16 @@
 const API_BASE = "http://127.0.0.1:8000";
+const MAX_TEMPLATES = 4;
+const DEFAULT_TEMPLATE_OPTIONS = {
+  includeComment: false,
+  autoSave: false,
+};
 
 const $ = (id) => document.getElementById(id);
 
 const els = {
   pageTitle: $("pageTitle"),
   pageUrl: $("pageUrl"),
+  templateSlots: $("templateSlots"),
   comment: $("comment"),
   category: $("category"),
   categorySuggest: $("categorySuggest"),
@@ -12,6 +18,14 @@ const els = {
   tagInput: $("tagInput"),
   tagSuggest: $("tagSuggest"),
   favorite: $("favorite"),
+  addTemplate: $("addTemplate"),
+  templateEditor: $("templateEditor"),
+  templateTitle: $("templateTitle"),
+  templateSummary: $("templateSummary"),
+  templateCommentSummary: $("templateCommentSummary"),
+  templateCancel: $("templateCancel"),
+  templateCreate: $("templateCreate"),
+  templateEditorStatus: $("templateEditorStatus"),
   save: $("save"),
   status: $("status"),
   pickThumb: $("pickThumb"),
@@ -30,6 +44,8 @@ let tagSuggestIndex = -1; // キーボードでハイライト中の候補index
 let categorySuggestIndex = -1; // キーボードでハイライト中のカテゴリ候補index
 let pendingThumbnail = null; // スクショで選んだ data URL (未選択なら null)
 let sourceTabId = null;
+let templates = [];
+let templateOptions = { ...DEFAULT_TEMPLATE_OPTIONS };
 
 async function api(path, options = {}) {
   const res = await fetch(API_BASE + path, {
@@ -39,6 +55,237 @@ async function api(path, options = {}) {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.status === 204 ? null : res.json();
 }
+
+function normalizeTagKey(value) {
+  return String(value || "")
+    .trim()
+    .normalize("NFKC")
+    .toLocaleLowerCase();
+}
+
+function cleanTagValue(value) {
+  return String(value || "").trim();
+}
+
+function uniqueTagValues(values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const tag = cleanTagValue(value);
+    const key = normalizeTagKey(tag);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(tag);
+  }
+  return result;
+}
+
+function createTemplateId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `template-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function normalizeTemplate(value) {
+  if (!value || typeof value !== "object") return null;
+
+  const title = String(value.title || "").trim().slice(0, 40);
+  const category = String(value.category || "").trim();
+  const tags = uniqueTagValues(value.tags);
+  const comment = String(value.comment || "").trim();
+  if (!title || (!category && !tags.length)) return null;
+
+  return {
+    id: String(value.id || createTemplateId()),
+    title,
+    category,
+    tags,
+    comment,
+    createdAt: Number(value.createdAt) || Date.now(),
+    updatedAt: Number(value.updatedAt) || Date.now(),
+  };
+}
+
+async function loadTemplateState() {
+  try {
+    const data = await chrome.storage.local.get(["clipTemplates", "templateOptions"]);
+    templates = Array.isArray(data.clipTemplates)
+      ? data.clipTemplates
+          .map(normalizeTemplate)
+          .filter(Boolean)
+          .slice(0, MAX_TEMPLATES)
+      : [];
+
+    const savedOptions = data.templateOptions;
+    templateOptions = {
+      ...DEFAULT_TEMPLATE_OPTIONS,
+      ...(savedOptions && typeof savedOptions === "object" ? savedOptions : {}),
+      includeComment: !!(savedOptions && savedOptions.includeComment),
+      autoSave: !!(savedOptions && savedOptions.autoSave),
+    };
+  } catch (e) {
+    templates = [];
+    templateOptions = { ...DEFAULT_TEMPLATE_OPTIONS };
+  }
+  renderTemplateSlots();
+  updateTemplateEditorSummary();
+  els.addTemplate.disabled = false;
+}
+
+function renderTemplateSlots() {
+  els.templateSlots.innerHTML = "";
+  templates.slice(0, MAX_TEMPLATES).forEach((template, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "template-slot";
+    button.textContent = String(index + 1);
+    button.title = template.title;
+    button.setAttribute("aria-label", `テンプレート${index + 1}: ${template.title}`);
+    button.addEventListener("click", () => applyTemplate(template));
+    els.templateSlots.appendChild(button);
+  });
+  els.templateSlots.hidden = templates.length === 0;
+}
+
+function setTemplateEditorStatus(message) {
+  els.templateEditorStatus.textContent = message || "";
+  els.templateEditorStatus.hidden = !message;
+}
+
+function updateTemplateEditorSummary() {
+  if (!els.templateEditor || els.templateEditor.hidden) return;
+
+  const category = els.category.value.trim();
+  const currentTags = uniqueTagValues(tags);
+  const categoryText = category || "なし";
+  const tagText = currentTags.length ? currentTags.join(", ") : "なし";
+  els.templateSummary.textContent = `カテゴリ：${categoryText}　タグ：${tagText}`;
+  els.templateCommentSummary.textContent = templateOptions.includeComment
+    ? `コメント：保存する${els.comment.value.trim() ? "（入力済み）" : "（空欄）"}`
+    : "コメント：保存しない（オプションで変更できます）";
+}
+
+function openTemplateEditor() {
+  if (templates.length >= MAX_TEMPLATES) {
+    setStatus("テンプレートは最大4個までです。オプションから削除できます。", "err");
+    return;
+  }
+  els.templateTitle.value = "";
+  setTemplateEditorStatus("");
+  els.templateEditor.hidden = false;
+  updateTemplateEditorSummary();
+  els.templateTitle.focus();
+}
+
+function closeTemplateEditor() {
+  els.templateEditor.hidden = true;
+  els.templateTitle.value = "";
+  setTemplateEditorStatus("");
+}
+
+async function createTemplate() {
+  const title = els.templateTitle.value.trim().slice(0, 40);
+  const category = els.category.value.trim();
+  const templateTags = uniqueTagValues(tags);
+  const comment = templateOptions.includeComment ? els.comment.value.trim() : "";
+
+  if (!title) {
+    setTemplateEditorStatus("テンプレートの表示タイトルを入力してください。");
+    els.templateTitle.focus();
+    return;
+  }
+  if (!category && !templateTags.length) {
+    setTemplateEditorStatus("カテゴリまたはタグを1つ以上設定してください。");
+    return;
+  }
+  if (templates.length >= MAX_TEMPLATES) {
+    closeTemplateEditor();
+    setStatus("テンプレートは最大4個までです。", "err");
+    return;
+  }
+
+  const now = Date.now();
+  const template = {
+    id: createTemplateId(),
+    title,
+    category,
+    tags: templateTags,
+    comment,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const nextTemplates = [...templates, template].slice(0, MAX_TEMPLATES);
+
+  try {
+    await chrome.storage.local.set({ clipTemplates: nextTemplates });
+    templates = nextTemplates;
+    renderTemplateSlots();
+    closeTemplateEditor();
+    setStatus(`テンプレート「${title}」を作成しました`, "ok");
+  } catch (e) {
+    setTemplateEditorStatus("テンプレートを保存できませんでした。もう一度お試しください。");
+  }
+}
+
+function appendTemplateComment(templateComment) {
+  const comment = String(templateComment || "").trim();
+  if (!comment) return;
+
+  const current = els.comment.value.trim();
+  if (!current) {
+    els.comment.value = comment;
+  } else if (current !== comment) {
+    els.comment.value = `${current}\n${comment}`;
+  }
+}
+
+async function applyTemplate(template) {
+  const normalized = normalizeTemplate(template);
+  if (!normalized) {
+    setStatus("テンプレートの内容が不正です", "err");
+    return;
+  }
+
+  tags = uniqueTagValues([...tags, ...normalized.tags]);
+  renderTags();
+  if (normalized.category) {
+    els.category.value = normalized.category;
+  }
+  appendTemplateComment(normalized.comment);
+  updateTemplateEditorSummary();
+  await saveDraft();
+
+  if (templateOptions.autoSave) {
+    await save();
+  } else {
+    setStatus(`テンプレート「${normalized.title}」を適用しました`, "ok");
+  }
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local") return;
+
+  if (changes.clipTemplates) {
+    templates = Array.isArray(changes.clipTemplates.newValue)
+      ? changes.clipTemplates.newValue
+          .map(normalizeTemplate)
+          .filter(Boolean)
+          .slice(0, MAX_TEMPLATES)
+      : [];
+    renderTemplateSlots();
+  }
+  if (changes.templateOptions) {
+    const next = changes.templateOptions.newValue;
+    templateOptions = {
+      ...DEFAULT_TEMPLATE_OPTIONS,
+      ...(next && typeof next === "object" ? next : {}),
+      includeComment: !!(next && next.includeComment),
+      autoSave: !!(next && next.autoSave),
+    };
+    updateTemplateEditorSummary();
+  }
+});
 
 async function loadSuggestions() {
   let categoriesOk = false;
@@ -128,11 +375,12 @@ function renderTags() {
       saveDraft();
     });
   });
+  updateTemplateEditorSummary();
 }
 
 function addTag(value) {
-  const name = value.trim();
-  if (name && !tags.includes(name)) {
+  const name = cleanTagValue(value);
+  if (name && !tags.some((tag) => normalizeTagKey(tag) === normalizeTagKey(name))) {
     tags.push(name);
     renderTags();
   }
@@ -301,6 +549,7 @@ els.tagInput.addEventListener("click", () => {
 els.category.addEventListener("input", () => {
   categorySuggestIndex = -1;
   renderCategorySuggest(els.category.value);
+  updateTemplateEditorSummary();
   saveDraft();
 });
 
@@ -414,6 +663,19 @@ els.category.addEventListener("keydown", (e) => {
 });
 
 els.comment.addEventListener("input", saveDraft);
+els.comment.addEventListener("input", updateTemplateEditorSummary);
+els.addTemplate.addEventListener("click", openTemplateEditor);
+els.templateCancel.addEventListener("click", closeTemplateEditor);
+els.templateCreate.addEventListener("click", createTemplate);
+els.templateTitle.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    closeTemplateEditor();
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    createTemplate();
+  }
+});
 els.favorite.addEventListener("change", saveDraft);
 
 function setStatus(msg, kind) {
@@ -460,7 +722,7 @@ async function loadDraft() {
     if (draft && (!pageInfo || draft.url === pageInfo.url)) {
       els.comment.value = draft.comment || "";
       els.category.value = draft.category || "";
-      tags = Array.isArray(draft.tags) ? draft.tags : [];
+      tags = uniqueTagValues(draft.tags);
       els.favorite.checked = !!draft.favorite;
       renderTags();
     }
@@ -713,6 +975,7 @@ async function loadPendingThumbnail() {
 }
 
 async function init() {
+  await loadTemplateState();
   pageInfo = await loadPageInfo();
 
   // YouTube サムネイルのフォールバック: maxresdefault が存在しない場合は hqdefault を使う

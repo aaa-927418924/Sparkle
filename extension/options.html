@@ -25,6 +25,11 @@
         margin: 0 0 20px;
         color: #f4f3ee;
       }
+      h2 {
+        font-size: 15px;
+        margin: 0 0 8px;
+        color: #f4f3ee;
+      }
       .section {
         margin-bottom: 20px;
       }
@@ -73,6 +78,92 @@
       .muted {
         color: #b1ada1;
       }
+      .check-row {
+        display: flex !important;
+        align-items: flex-start;
+        gap: 8px;
+        margin: 10px 0 0;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        line-height: 1.5;
+        cursor: pointer;
+      }
+      .check-row input {
+        flex: 0 0 auto;
+        width: 16px;
+        height: 16px;
+        margin: 2px 0 0;
+        accent-color: #d77a50;
+      }
+      .check-row input:disabled {
+        opacity: 0.6;
+      }
+      .check-row input:focus-visible,
+      .template-delete:focus-visible {
+        outline: 2px solid #f0b69a;
+        outline-offset: 2px;
+      }
+      .template-count {
+        margin: 14px 0 8px !important;
+      }
+      .template-list {
+        display: grid;
+        gap: 8px;
+      }
+      .template-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 10px;
+        border: 1px solid #3f3f42;
+        border-radius: 8px;
+        background: #18181b;
+      }
+      .template-item-main {
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+      .template-item-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #f4f3ee;
+        font-size: 14px;
+        font-weight: 700;
+      }
+      .template-item-meta {
+        margin-top: 3px;
+        overflow-wrap: anywhere;
+        color: #b1ada1;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .template-delete {
+        flex: 0 0 auto;
+        padding: 5px 8px;
+        border: 1px solid #5a514b;
+        border-radius: 6px;
+        background: transparent;
+        color: #f0b69a;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .template-delete:hover {
+        background: rgba(215, 122, 80, 0.16);
+      }
+      .template-empty {
+        padding: 12px;
+        border: 1px dashed #3f3f42;
+        border-radius: 8px;
+        color: #b1ada1;
+        font-size: 13px;
+      }
+      .option-status {
+        margin-top: 10px;
+        color: #6ee7a8;
+        font-size: 13px;
+      }
     </style>
   </head>
   <body>
@@ -94,6 +185,27 @@
       </div>
 
       <hr style="border:none; border-top:1px solid #3f3f42; margin:20px 0;" />
+
+      <div class="section">
+        <h2>保存テンプレート</h2>
+        <p>
+          拡張機能ポップアップで作成したテンプレートを管理します。テンプレートは最大4個まで保存できます。
+        </p>
+        <p class="muted" style="font-size:13px;">
+          コメント設定をオフにしても、既存テンプレートのコメントは削除されません。
+        </p>
+        <label class="check-row" for="templateIncludeComment">
+          <input id="templateIncludeComment" type="checkbox" disabled />
+          <span>テンプレート作成時にコメントも保存する</span>
+        </label>
+        <label class="check-row" for="templateAutoSave">
+          <input id="templateAutoSave" type="checkbox" disabled />
+          <span>テンプレート使用時にクリップも自動保存する</span>
+        </label>
+        <p id="templateCount" class="muted template-count">テンプレート：0 / 4</p>
+        <div id="templateList" class="template-list"></div>
+        <div id="templateStatus" class="option-status" role="status" aria-live="polite" hidden></div>
+      </div>
 
       <div class="section">
         <label>保存先サーバー</label>

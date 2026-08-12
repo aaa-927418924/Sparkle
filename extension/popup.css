@@ -26,10 +26,60 @@ body {
   padding: 14px;
 }
 
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 .title {
+  min-width: 0;
+  flex: 1 1 auto;
   font-size: 15px;
-  margin: 0 0 8px;
+  margin: 0;
   color: #f4f3ee;
+}
+
+.template-slots {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 3px;
+}
+
+.template-slot {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #5a514b;
+  border-radius: 5px;
+  background: #2d2522;
+  color: #f0b69a;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  cursor: pointer;
+  transition: background-color 120ms ease-out, transform 120ms ease-out;
+}
+
+.template-slot:hover {
+  background: #4a3027;
+}
+
+.template-slot:active {
+  transform: scale(0.96);
+}
+
+.template-slot:focus-visible,
+.template-add:focus-visible,
+.template-btn:focus-visible,
+.thumb-btn:focus-visible,
+.save:focus-visible,
+.tag button:focus-visible {
+  outline: 2px solid #f0b69a;
+  outline-offset: 2px;
 }
 
 .field {
@@ -86,7 +136,8 @@ input[type="text"]::placeholder {
 
 textarea:focus,
 input[type="text"]:focus {
-  outline: none;
+  outline: 2px solid #f0b69a;
+  outline-offset: 1px;
   border-color: #d77a50;
 }
 
@@ -200,7 +251,9 @@ textarea {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  margin-bottom: 0;
   font-weight: 600;
   color: #f4f3ee;
   cursor: pointer;
@@ -208,6 +261,115 @@ textarea {
 
 .fav input {
   accent-color: #d77a50;
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.template-add {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #5a514b;
+  border-radius: 6px;
+  background: transparent;
+  color: #f0b69a;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease-out, transform 120ms ease-out;
+}
+
+.template-add:hover {
+  background: rgba(215, 122, 80, 0.16);
+}
+
+.template-add:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.template-add:active,
+.template-btn:active {
+  transform: scale(0.96);
+}
+
+.template-editor {
+  margin-bottom: 8px;
+  padding: 10px;
+  border: 1px solid #5a514b;
+  border-radius: 8px;
+  background: #211f20;
+}
+
+.template-editor-heading {
+  margin-bottom: 8px;
+  color: #f4f3ee;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.template-editor > label {
+  display: block;
+  margin-bottom: 4px;
+  color: #f4f3ee;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.template-summary {
+  margin: 7px 0 0;
+  color: #b1ada1;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.template-editor-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.template-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #d77a50;
+  border-radius: 6px;
+  background: #d77a50;
+  color: #18181b;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 120ms ease-out, transform 120ms ease-out;
+}
+
+.template-btn:hover {
+  background: #e39772;
+}
+
+.template-btn.ghost {
+  border-color: #3f3f42;
+  background: transparent;
+  color: #d5d1c8;
+}
+
+.template-btn.ghost:hover {
+  background: #2d2d31;
+}
+
+.template-editor-status {
+  margin-top: 7px;
+  color: #fca5a5;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .save {
@@ -267,6 +429,24 @@ textarea {
 .status.err {
   background: #3a1414;
   color: #fca5a5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .template-slot,
+  .template-add,
+  .template-btn {
+    transition: none;
+  }
+
+  .template-slot:active,
+  .template-add:active,
+  .template-btn:active {
+    transform: none;
+  }
+
+  .status {
+    animation: none;
+  }
 }
 
 .suggest-wrap {

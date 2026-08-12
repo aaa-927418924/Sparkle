@@ -6,7 +6,10 @@
   </head>
   <body>
     <div class="popup">
-      <h1 class="title">クリップを保存</h1>
+      <div class="title-row">
+        <h1 class="title">クリップを保存</h1>
+        <div id="templateSlots" class="template-slots" aria-label="保存テンプレート"></div>
+      </div>
 
       <div class="field">
         <label>ページ</label>
@@ -67,9 +70,31 @@
         </div>
       </div>
 
-      <label class="fav">
-        <input id="favorite" type="checkbox" /> お気に入りに追加
-      </label>
+      <div class="action-row">
+        <label class="fav">
+          <input id="favorite" type="checkbox" /> お気に入りに追加
+        </label>
+        <button id="addTemplate" type="button" class="template-add" disabled>テンプレートとして追加</button>
+      </div>
+
+      <div id="templateEditor" class="template-editor" hidden>
+        <div class="template-editor-heading">テンプレートを作成</div>
+        <label for="templateTitle">表示タイトル</label>
+        <input
+          id="templateTitle"
+          type="text"
+          maxlength="40"
+          placeholder="例：技術記事"
+          autocomplete="off"
+        />
+        <p id="templateSummary" class="template-summary"></p>
+        <p id="templateCommentSummary" class="template-summary"></p>
+        <div class="template-editor-actions">
+          <button id="templateCancel" type="button" class="template-btn ghost">キャンセル</button>
+          <button id="templateCreate" type="button" class="template-btn">保存</button>
+        </div>
+        <div id="templateEditorStatus" class="template-editor-status" role="status" aria-live="polite" hidden></div>
+      </div>
 
       <div class="save-row">
         <button id="save" class="save">保存</button>

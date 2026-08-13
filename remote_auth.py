@@ -1,4 +1,4 @@
-"""Authentication state for Sparkle's optional Funnel web gateway.
+"""Authentication state for Sparkle's optional remote Web gateway.
 
 The desktop application itself remains local and unauthenticated.  This module
 stores only hashes of the access key and browser session tokens, so the
@@ -24,6 +24,8 @@ from paths import get_app_data_dir
 PERSISTENT_SESSION_DAYS = 365
 SESSION_HOURS = 12
 STATE_VERSION = 1
+DEFAULT_REMOTE_MODE = "funnel"
+REMOTE_MODES = frozenset({"funnel", "serve"})
 
 
 class InvalidAccessKey(ValueError):
@@ -58,6 +60,7 @@ def _hash(value: str) -> str:
 def _empty_state() -> dict[str, Any]:
     return {
         "version": STATE_VERSION,
+        "remote_mode": DEFAULT_REMOTE_MODE,
         "enabled": False,
         "access_key_hash": None,
         "access_key_created_at": None,
@@ -66,7 +69,7 @@ def _empty_state() -> dict[str, Any]:
 
 
 class AuthStore:
-    """Small file-backed store for the Funnel gateway's bearer credentials."""
+    """Small file-backed store for remote Web credentials and sessions."""
 
     def __init__(self, path: Optional[Path | str] = None) -> None:
         self.path = Path(path) if path is not None else get_app_data_dir() / "remote-auth.json"
@@ -83,6 +86,12 @@ class AuthStore:
 
         state = _empty_state()
         state["version"] = raw.get("version", STATE_VERSION)
+        remote_mode = raw.get("remote_mode")
+        state["remote_mode"] = (
+            remote_mode
+            if isinstance(remote_mode, str) and remote_mode in REMOTE_MODES
+            else DEFAULT_REMOTE_MODE
+        )
         state["enabled"] = bool(raw.get("enabled", False))
         state["access_key_hash"] = raw.get("access_key_hash") if isinstance(raw.get("access_key_hash"), str) else None
         state["access_key_created_at"] = (
@@ -149,6 +158,21 @@ class AuthStore:
     def is_enabled(self) -> bool:
         with self._lock:
             return bool(self._state.get("enabled") and self._state.get("access_key_hash"))
+
+    def get_remote_mode(self) -> str:
+        with self._lock:
+            mode = self._state.get("remote_mode")
+            return mode if mode in REMOTE_MODES else DEFAULT_REMOTE_MODE
+
+    def set_remote_mode(self, mode: str) -> str:
+        normalized = str(mode or "").strip().lower()
+        if normalized not in REMOTE_MODES:
+            raise ValueError("リモートWebの公開方式は funnel または serve を指定してください。")
+        with self._lock:
+            if self._state.get("remote_mode") != normalized:
+                self._state["remote_mode"] = normalized
+                self._save_locked()
+            return normalized
 
     def enable(self) -> str:
         """Enable access and return a newly generated key exactly once."""
@@ -282,6 +306,7 @@ class AuthStore:
                 self._save_locked()
             sessions = self.list_trusted()
             return {
+                "remote_mode": self.get_remote_mode(),
                 "enabled": bool(self._state.get("enabled") and self._state.get("access_key_hash")),
                 "access_key_created_at": self._state.get("access_key_created_at"),
                 "session_count": len(sessions),

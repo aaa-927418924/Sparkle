@@ -76,14 +76,21 @@ If `dist\Sparkle.exe` exists, the executable version will be launched. Otherwise
 
 ---
 
-### Optional Funnel Web Access
+### Optional Remote Web Access
 
 The default remote connection remains the existing Tailscale tailnet mode. From
-Sparkle's desktop Settings, you can enable Funnel Web for browsers and phones
-that cannot install the Tailscale app.
+Sparkle's desktop Settings, you can choose one of two authenticated Web modes
+for the dedicated mobile Web UI:
 
-* Funnel Web runs on a separate local gateway and does not add a login screen
-  to the Sparkle desktop application.
+* **Funnel Web** is for browsers and phones that cannot install the Tailscale
+  app. It is reachable through a public Tailscale Funnel URL, but the Sparkle
+  Web gateway still requires the generated access key.
+* **Tailscale Serve Web** is for phones and browsers that can connect to the
+  same Tailscale tailnet. It is tailnet-only and also requires the Sparkle
+  access key, so a device must pass both the Tailscale and Sparkle checks.
+
+Both modes run on a separate local gateway and do not add a login screen to the
+Sparkle desktop application itself.
 * The first activation shows an access key once. Share it only with intended
   users.
 * On the Web login screen, Trust this device stores an opaque browser session
@@ -92,12 +99,15 @@ that cannot install the Tailscale app.
 * Rotating the access key or revoking all trusted devices invalidates existing
   Web sessions.
 * Sparkle must be running after a PC restart. Enable Sparkle's existing
-  Windows startup option if the Funnel Web entry should be available
+  Windows startup option if the remote Web entry should be available
   automatically.
 
 Funnel exposes the dedicated mobile Web UI through the Tailscale Funnel
-endpoint. See the [Tailscale Funnel documentation](https://tailscale.com/docs/features/tailscale-funnel)
-for the current service limitations and plan requirements.
+endpoint. Serve Web uses HTTPS port `8443` so it can coexist with the
+existing desktop Serve route; Sparkle displays the complete URL in Settings.
+See the [Tailscale Serve documentation](https://tailscale.com/docs/features/tailscale-serve)
+and [Tailscale Funnel documentation](https://tailscale.com/docs/features/tailscale-funnel)
+for current service limitations and plan requirements.
 
 ### Running the Windows Executable
 

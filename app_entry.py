@@ -1121,8 +1121,8 @@ def main() -> None:
             _show_error(f"サーバーが起動しませんでした。\n詳細: {LOG_PATH}")
             return
 
-        # Funnel is optional.  Reconnect it asynchronously when the app is
-        # configured for remote Web access so startup remains usable even if
+        # Remote Web access is optional. Reconnect its configured route
+        # asynchronously so startup remains usable even if
         # the Tailscale service is still coming up.
         remote_manager = server_ref.get("remote_manager")
         if remote_manager is not None:

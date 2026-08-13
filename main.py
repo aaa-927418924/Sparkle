@@ -68,6 +68,10 @@ class InitialSetupPayload(BaseModel):
     ai_export_enabled: bool = True
 
 
+class RemoteAccessModePayload(BaseModel):
+    mode: str
+
+
 @app.get("/migration/status", include_in_schema=False)
 def migration_status():
     return get_migration_status()
@@ -172,8 +176,16 @@ def remote_access_status():
         return manager.status()
     return {
         "mode": "tailscale",
+        "web_mode": "funnel",
         "auth": get_auth_store().status(),
         "remote_server": False,
+        "remote": {
+            "available": False,
+            "active": False,
+            "target": None,
+            "public_url": None,
+            "error": "SparkleのリモートWeb管理を初期化できません。",
+        },
         "funnel": {
             "available": False,
             "active": False,
@@ -198,6 +210,11 @@ def _require_remote_access_manager():
 @app.post("/settings/remote-access/enable", include_in_schema=False)
 def remote_access_enable():
     return _require_remote_access_manager().enable()
+
+
+@app.post("/settings/remote-access/mode", include_in_schema=False)
+def remote_access_set_mode(payload: RemoteAccessModePayload):
+    return _require_remote_access_manager().set_mode(payload.mode)
 
 
 @app.post("/settings/remote-access/retry", include_in_schema=False)

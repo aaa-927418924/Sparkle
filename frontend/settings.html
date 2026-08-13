@@ -106,9 +106,22 @@
             <div class="settings-col settings-remote-col">
               <h3 class="modal-sub">外部Webアクセス</h3>
               <p class="file-save-desc">
-                Tailscaleアプリを入れられない端末から、Funnel経由の専用Web画面を使えるようにします。
-                Sparkleデスクトップアプリ本体にはログイン制限をかけません。
+                Tailscaleアプリを入れられない端末にはFunnel、Tailscaleに接続できる端末にはServe Webを使えます。
+                どちらも専用Web画面だけがアクセスキーの対象で、Sparkleデスクトップアプリ本体にはログイン制限をかけません。
               </p>
+              <div class="setting-row column remote-access-mode-row">
+                <label for="remoteAccessMode">Web公開方式</label>
+                <div class="remote-access-mode-controls">
+                  <select id="remoteAccessMode" class="modal-input">
+                    <option value="funnel">Funnel Web（Tailscaleなしでアクセス）</option>
+                    <option value="serve">Tailscale Serve Web（Tailscale接続端末のみ）</option>
+                  </select>
+                  <button id="remoteAccessModeApply" class="modal-btn ghost" type="button">方式を適用</button>
+                </div>
+                <span id="remoteAccessModeHint" class="file-save-desc">
+                  Funnelはインターネット経由、Serve WebはTailnet内からアクセスできます。
+                </span>
+              </div>
               <div id="remoteAccessStatus" class="ai-export-status" role="status" aria-live="polite">
                 状態を確認しています…
               </div>
@@ -212,6 +225,6 @@
 
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260810-update-notice-v3"></script>
-    <script src="remote-access.js?v=remote-access-20260810-v1"></script>
+    <script src="remote-access.js?v=remote-access-20260810-v2"></script>
   </body>
 </html>

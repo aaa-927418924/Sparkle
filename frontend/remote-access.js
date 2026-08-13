@@ -9,11 +9,36 @@
     revoke: document.getElementById("remoteAccessRevokeAll"),
     disable: document.getElementById("remoteAccessDisable"),
   };
+  const modeSelect = document.getElementById("remoteAccessMode");
+  const modeApply = document.getElementById("remoteAccessModeApply");
+  const modeHint = document.getElementById("remoteAccessModeHint");
   const keyPanel = document.getElementById("remoteAccessKeyPanel");
   const keyInput = document.getElementById("remoteAccessKey");
   const urlWrap = document.getElementById("remoteAccessUrl");
   const urlLink = document.getElementById("remoteAccessUrlLink");
   let busy = false;
+
+  const modeInfo = {
+    funnel: {
+      name: "Funnel Web",
+      description: "Tailscaleなしの端末からアクセスできます。",
+      confirmation: "インターネット上からアクセスできるFunnel Web入口を作成します。アクセスキーを知っている人だけに共有してください。続行しますか？",
+    },
+    serve: {
+      name: "Tailscale Serve Web",
+      description: "Tailscaleに接続した端末からだけアクセスできます。",
+      confirmation: "Tailnet内だけで使えるTailscale Serve Web入口を作成します。続行しますか？",
+    },
+  };
+
+  function getMode(data = {}) {
+    const value = data.web_mode || data.auth?.remote_mode || modeSelect?.value;
+    return modeInfo[value] ? value : "funnel";
+  }
+
+  function getRoute(data, mode) {
+    return data.remote || data[mode] || data.funnel || {};
+  }
 
   async function request(path, options = {}) {
     const response = await fetch(window.location.origin + path, {
@@ -47,19 +72,25 @@
 
   function render(data) {
     const auth = data?.auth || {};
-    const funnel = data?.funnel || {};
+    const mode = getMode(data);
+    const info = modeInfo[mode];
+    const route = getRoute(data, mode);
     const enabled = Boolean(auth.enabled);
-    const active = Boolean(funnel.active && funnel.target === "remote");
-    const statusError = data?.last_error || funnel.error;
+    const active = Boolean(route.active && route.target === "remote");
+    const statusError = data?.last_error || route.error;
 
+    if (modeSelect && modeSelect.value !== mode) modeSelect.value = mode;
+    if (modeHint) modeHint.textContent = info.description;
     buttons.enable.hidden = enabled;
     buttons.retry.hidden = !enabled || active;
     buttons.rotate.hidden = !enabled;
     buttons.revoke.hidden = !enabled;
     buttons.disable.hidden = !enabled;
+    buttons.enable.textContent = info.name + "を有効にする";
+    buttons.disable.textContent = info.name + "を無効にする";
 
     if (!enabled) {
-      setStatus("通常モード：Tailscale経由の接続を使用しています。");
+      setStatus("通常モード：Tailscale経由の接続を使用しています。" + info.name + "を使う場合は方式を選んで有効にしてください。");
       urlWrap.hidden = true;
       if (keyPanel) keyPanel.hidden = true;
       if (keyInput) keyInput.value = "";
@@ -68,16 +99,19 @@
 
     if (active) {
       const count = Number(auth.session_count || 0);
-      setStatus("Funnel Webは有効です。信頼端末 " + count + " 台", "success");
+      const scope = mode === "serve"
+        ? "Tailscale接続端末からアクセスできます。"
+        : "アクセスキーを知っている端末からアクセスできます。";
+      setStatus(info.name + "は有効です。" + scope + "信頼端末" + count + "台", "success");
     } else if (statusError) {
-      setStatus("設定は保存されていますが、Funnelに接続できません：" + statusError, "warning");
-    } else if (!funnel.available) {
+      setStatus("設定は保存されていますが、" + info.name + "に接続できません：" + statusError, "warning");
+    } else if (!route.available) {
       setStatus("設定は保存されています。Tailscaleの状態を確認できるまで待っています。", "warning");
     } else {
-      setStatus("Funnel Webを起動しています…", "warning");
+      setStatus(info.name + "を起動しています…", "warning");
     }
 
-    const publicUrl = typeof funnel.public_url === "string" ? funnel.public_url : "";
+    const publicUrl = typeof route.public_url === "string" ? route.public_url : "";
     if (publicUrl) {
       urlWrap.hidden = false;
       urlLink.href = publicUrl;
@@ -117,12 +151,37 @@
     }
   }
 
-  buttons.enable.addEventListener("click", () => runOperation(
-    buttons.enable,
-    "/settings/remote-access/enable",
-    "インターネット上からアクセスできるWeb入口を作成します。アクセスキーを知っている人だけに共有してください。続行しますか？",
-    true,
-  ));
+  async function applyMode() {
+    if (busy || !modeSelect || !modeApply) return;
+    const mode = getMode({ web_mode: modeSelect.value });
+    const info = modeInfo[mode];
+    if (!window.confirm(info.name + "に公開方式を変更します。現在有効なWeb入口がある場合は接続先を切り替えます。続行しますか？")) {
+      await refresh();
+      return;
+    }
+    busy = true;
+    modeApply.disabled = true;
+    setStatus("公開方式を切り替えています…", "warning");
+    try {
+      const data = await request("/settings/remote-access/mode", {
+        method: "POST",
+        body: JSON.stringify({ mode }),
+      });
+      render(data.status || data);
+      if (data.error) setStatus(data.error, "warning");
+    } catch (error) {
+      setStatus("公開方式の変更に失敗しました：" + error.message, "warning");
+    } finally {
+      modeApply.disabled = false;
+      busy = false;
+      await refresh();
+    }
+  }
+
+  buttons.enable.addEventListener("click", () => {
+    const mode = getMode({ web_mode: modeSelect?.value });
+    runOperation(buttons.enable, "/settings/remote-access/enable", modeInfo[mode].confirmation, true);
+  });
   buttons.retry.addEventListener("click", () => runOperation(
     buttons.retry,
     "/settings/remote-access/retry",
@@ -139,11 +198,15 @@
     "/settings/remote-access/revoke-all",
     "すべての信頼端末を解除します。続行しますか？",
   ));
-  buttons.disable.addEventListener("click", () => runOperation(
-    buttons.disable,
-    "/settings/remote-access/disable",
-    "Funnel Webを停止し、外部Webからのアクセスを無効にします。続行しますか？",
-  ));
+  buttons.disable.addEventListener("click", () => {
+    const mode = getMode({ web_mode: modeSelect?.value });
+    runOperation(
+      buttons.disable,
+      "/settings/remote-access/disable",
+      modeInfo[mode].name + "を停止し、外部Webからのアクセスを無効にします。続行しますか？",
+    );
+  });
+  modeApply?.addEventListener("click", applyMode);
 
   document.getElementById("remoteAccessCopyKey")?.addEventListener("click", async () => {
     if (!keyInput?.value) return;

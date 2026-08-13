@@ -1,4 +1,4 @@
-"""Funnel-only authenticated gateway for Sparkle.
+"""Authenticated remote Web gateway for Sparkle.
 
 The normal desktop FastAPI application stays on 127.0.0.1:8000 and keeps its
 existing no-login behavior.  This ASGI gateway is bound to a separate local
@@ -35,7 +35,7 @@ class RemoteLoginPayload(BaseModel):
 
 
 def _cookie_secure(request: Request) -> bool:
-    # Funnel terminates HTTPS before forwarding to this local listener.  The
+    # Tailscale terminates HTTPS before forwarding to this local listener. The
     # secure flag is therefore always correct for the public URL.  Keeping it
     # enabled for direct local tests also prevents accidental bearer-cookie
     # transmission over an ordinary network HTTP connection.

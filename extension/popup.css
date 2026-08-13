@@ -29,27 +29,33 @@ body {
 .title-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   margin-bottom: 8px;
 }
 
 .title {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   font-size: 15px;
   margin: 0;
   color: #f4f3ee;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .template-slots {
-  display: flex;
-  flex: 0 0 auto;
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(var(--template-count, 1), minmax(0, 1fr));
   gap: 3px;
 }
 
 .template-slot {
-  width: 22px;
+  width: 100%;
+  min-width: 0;
+  min-height: 22px;
   height: 22px;
   padding: 0;
   border: 1px solid #5a514b;

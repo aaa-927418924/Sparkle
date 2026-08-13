@@ -1,5 +1,5 @@
 const API_BASE = "http://127.0.0.1:8000";
-const MAX_TEMPLATES = 4;
+const MAX_TEMPLATES = 8;
 const DEFAULT_TEMPLATE_OPTIONS = {
   includeComment: false,
   autoSave: false,
@@ -135,7 +135,16 @@ async function loadTemplateState() {
 
 function renderTemplateSlots() {
   els.templateSlots.innerHTML = "";
-  templates.slice(0, MAX_TEMPLATES).forEach((template, index) => {
+  const visibleTemplates = templates.slice(0, MAX_TEMPLATES);
+  els.templateSlots.style.setProperty(
+    "--template-count",
+    String(Math.max(1, visibleTemplates.length))
+  );
+  els.templateSlots.setAttribute(
+    "aria-label",
+    visibleTemplates.length ? `保存テンプレート（${visibleTemplates.length}件）` : "保存テンプレート"
+  );
+  visibleTemplates.forEach((template, index) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "template-slot";
@@ -145,7 +154,7 @@ function renderTemplateSlots() {
     button.addEventListener("click", () => applyTemplate(template));
     els.templateSlots.appendChild(button);
   });
-  els.templateSlots.hidden = templates.length === 0;
+  els.templateSlots.hidden = visibleTemplates.length === 0;
 }
 
 function setTemplateEditorStatus(message) {
@@ -168,7 +177,7 @@ function updateTemplateEditorSummary() {
 
 function openTemplateEditor() {
   if (templates.length >= MAX_TEMPLATES) {
-    setStatus("テンプレートは最大4個までです。オプションから削除できます。", "err");
+    setStatus("テンプレートは最大8個までです。オプションから削除できます。", "err");
     return;
   }
   els.templateTitle.value = "";
@@ -201,7 +210,7 @@ async function createTemplate() {
   }
   if (templates.length >= MAX_TEMPLATES) {
     closeTemplateEditor();
-    setStatus("テンプレートは最大4個までです。", "err");
+    setStatus("テンプレートは最大8個までです。", "err");
     return;
   }
 
@@ -228,18 +237,6 @@ async function createTemplate() {
   }
 }
 
-function appendTemplateComment(templateComment) {
-  const comment = String(templateComment || "").trim();
-  if (!comment) return;
-
-  const current = els.comment.value.trim();
-  if (!current) {
-    els.comment.value = comment;
-  } else if (current !== comment) {
-    els.comment.value = `${current}\n${comment}`;
-  }
-}
-
 async function applyTemplate(template) {
   const normalized = normalizeTemplate(template);
   if (!normalized) {
@@ -247,12 +244,14 @@ async function applyTemplate(template) {
     return;
   }
 
-  tags = uniqueTagValues([...tags, ...normalized.tags]);
+  // テンプレートは現在の入力内容へ追加せず、保存プリセットとして置き換える。
+  tags = uniqueTagValues(normalized.tags);
+  els.tagInput.value = "";
   renderTags();
-  if (normalized.category) {
-    els.category.value = normalized.category;
-  }
-  appendTemplateComment(normalized.comment);
+  els.category.value = normalized.category;
+  els.comment.value = normalized.comment;
+  closeTagSuggest();
+  closeCategorySuggest();
   updateTemplateEditorSummary();
   await saveDraft();
 

@@ -1,6 +1,6 @@
 // Sparkle - options page
 
-const MAX_TEMPLATES = 4;
+const MAX_TEMPLATES = 8;
 const DEFAULT_TEMPLATE_OPTIONS = {
   includeComment: false,
   autoSave: false,

@@ -342,17 +342,17 @@ def _get_native_window_handle(window):
         return None
 
 
-def _post_native_nonclient_down(handle, hit_test: int) -> bool:
-    """Ask Windows to begin a non-client drag/resize without blocking JS.
+def _begin_native_nonclient_interaction(window, handle, hit_test: int) -> bool:
+    """Start a Windows move/resize loop from the WinForms UI thread.
 
-    ``SendMessage(WM_NCLBUTTONDOWN, ...)`` enters Windows' modal move/size
-    loop on the calling thread. Calling it from a pywebview JS bridge worker
-    leaves that bridge request pending for the duration of the gesture, which
-    prevents the other window interaction APIs from responding. Posting the
-    same message lets the WinForms UI thread process it normally and returns
-    to the bridge immediately.
+    WebView2 sends a JavaScript API call to a worker thread. ``ReleaseCapture``
+    is thread-owned, however, so calling it from that worker does not release
+    the WebView control's mouse capture. Likewise, posting
+    ``WM_NCLBUTTONDOWN`` from the worker does not reliably enter the Form's
+    native move/size loop. Queue the whole operation on the WinForms control,
+    where both calls run in the same input thread as the WebView.
     """
-    if handle is None or os.name != "nt":
+    if window is None or handle is None or os.name != "nt":
         return False
 
     try:
@@ -368,31 +368,47 @@ def _post_native_nonclient_down(handle, hit_test: int) -> bool:
         release_capture = ctypes.WINFUNCTYPE(ctypes.c_int)(
             ("ReleaseCapture", user32)
         )
-        post_message = ctypes.WINFUNCTYPE(
-            ctypes.c_int,
+        send_message = ctypes.WINFUNCTYPE(
+            ctypes.c_ssize_t,
             ctypes.c_void_p,
             ctypes.c_uint,
             ctypes.c_size_t,
             ctypes.c_ssize_t,
-        )(("PostMessageW", user32))
+        )(("SendMessageW", user32))
 
-        cursor = POINT()
-        if not get_cursor_pos(ctypes.byref(cursor)):
-            return False
+        def begin_on_ui_thread() -> None:
+            cursor = POINT()
+            if not get_cursor_pos(ctypes.byref(cursor)):
+                return
 
-        # WM_NCLBUTTONDOWN expects the cursor position packed as two words.
-        lparam = ((int(cursor.y) & 0xFFFF) << 16) | (int(cursor.x) & 0xFFFF)
-        release_capture()
-        return bool(
-            post_message(
+            # WM_NCLBUTTONDOWN expects the cursor position packed as two words.
+            lparam = ((int(cursor.y) & 0xFFFF) << 16) | (int(cursor.x) & 0xFFFF)
+            release_capture()
+            # This enters the normal Windows modal move/size loop. It must run
+            # on the Form's UI thread, but the JS bridge remains free because
+            # BeginInvoke only queues this callback.
+            send_message(
                 ctypes.c_void_p(int(handle)),
                 0x00A1,  # WM_NCLBUTTONDOWN
-                int(hit_test),
+                ctypes.c_size_t(int(hit_test)),
                 ctypes.c_ssize_t(lparam),
             )
-        )
+
+        native = getattr(window, "native", None)
+        if native is None:
+            return False
+
+        import clr  # noqa: F401 - initializes pythonnet's System namespace
+        from System import Action
+
+        if bool(getattr(native, "InvokeRequired", False)):
+            native.BeginInvoke(Action(begin_on_ui_thread))
+            return True
+
+        begin_on_ui_thread()
+        return True
     except Exception as exc:
-        print(f"[window] native non-client message failed: {exc!r}", file=sys.stderr)
+        print(f"[window] native non-client interaction failed: {exc!r}", file=sys.stderr)
         return False
 
 
@@ -931,7 +947,7 @@ class NativeWindowApi:
                 screen_x,
                 screen_y,
             )
-        return _post_native_nonclient_down(handle, 2)  # HTCAPTION
+        return _begin_native_nonclient_interaction(window, handle, 2)  # HTCAPTION
 
     @staticmethod
     def move_window(x: int, y: int) -> None:
@@ -972,7 +988,7 @@ class NativeWindowApi:
             return False
 
         NativeWindowApi.restore_window_for_drag()
-        return _post_native_nonclient_down(handle, hit_test)
+        return _begin_native_nonclient_interaction(window, handle, hit_test)
 
     @staticmethod
     def resize_window(width: int, height: int, x: int, y: int) -> None:

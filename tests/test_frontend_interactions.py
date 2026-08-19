@@ -43,14 +43,16 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertIn("function startWindowResizeFallback", js_source)
         self.assertIn("html.native-titlebar .window-resize-handle", css_source)
 
-    def test_native_window_api_posts_non_client_messages(self):
+    def test_native_window_api_uses_ui_thread_non_client_messages(self):
         source = (ROOT / "app_entry.py").read_text(encoding="utf-8")
         drag_start = source.index("def begin_native_drag")
         resize_start = source.index("def begin_native_resize")
         native_api = source[drag_start:resize_start]
 
-        self.assertIn("PostMessageW", source)
-        self.assertNotIn("SendMessageW", native_api)
+        self.assertIn("SendMessageW", source)
+        self.assertIn("BeginInvoke", source)
+        self.assertIn("ReleaseCapture", source)
+        self.assertNotIn("PostMessageW", native_api)
         self.assertIn("HTCAPTION", native_api)
 
 

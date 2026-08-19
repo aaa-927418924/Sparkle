@@ -8,12 +8,15 @@
     { path: "/Projects", aliases: ["/projects.html"], nav: "projects" },
   ];
   const TRANSITION_KEY = "sparkle.pageTransition";
-  const SWIPE_LOCK_KEY = "sparkle.pageSwipeLockUntil";
+  const SWIPE_LOCK_KEY = "sparkle.pageSwipeGestureLock";
+  const LEGACY_SWIPE_LOCK_KEY = "sparkle.pageSwipeLockUntil";
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   const SWIPE_THRESHOLD = 96;
   const SWIPE_WINDOW_MS = 220;
   const SWIPE_COOLDOWN_MS = 500;
-  const SWIPE_GESTURE_LOCK_MS = 1000;
+  const SWIPE_GESTURE_MIN_LOCK_MS = 360;
+  const SWIPE_GESTURE_IDLE_MS = 140;
+  const SWIPE_GESTURE_MAX_LOCK_MS = 1600;
   const HORIZONTAL_SCROLL_TOLERANCE_PX = 8;
   const AXIS_RATIO = 1.2;
   const LINE_DELTA_PX = 16;
@@ -24,7 +27,7 @@
   let accumulatedSign = 0;
   let accumulationStartedAt = 0;
   let cooldownUntil = 0;
-  let swipeLockUntil = 0;
+  let swipeLock = null;
 
   function normalizePath(pathname) {
     const value = String(pathname || "/").replace(/\/+$/, "");
@@ -80,40 +83,72 @@
 
   function restoreSwipeLock() {
     try {
-      const storedUntil = Number(sessionStorage.getItem(SWIPE_LOCK_KEY));
-      swipeLockUntil = Number.isFinite(storedUntil) && storedUntil > Date.now() ? storedUntil : 0;
-      if (!swipeLockUntil) sessionStorage.removeItem(SWIPE_LOCK_KEY);
+      sessionStorage.removeItem(LEGACY_SWIPE_LOCK_KEY);
+      const raw = sessionStorage.getItem(SWIPE_LOCK_KEY);
+      const stored = raw ? JSON.parse(raw) : null;
+      const startedAt = Number(stored?.startedAt);
+      const lastEventAt = Number(stored?.lastEventAt);
+      const now = Date.now();
+      if (
+        Number.isFinite(startedAt) &&
+        Number.isFinite(lastEventAt) &&
+        startedAt <= lastEventAt &&
+        lastEventAt <= now &&
+        now - startedAt < SWIPE_GESTURE_MAX_LOCK_MS
+      ) {
+        swipeLock = { startedAt, lastEventAt };
+      } else {
+        clearSwipeLock();
+      }
     } catch {
-      swipeLockUntil = 0;
+      clearSwipeLock();
     }
   }
 
   function lockSwipeGesture(now = Date.now()) {
-    swipeLockUntil = now + SWIPE_GESTURE_LOCK_MS;
+    swipeLock = { startedAt: now, lastEventAt: now };
+    persistSwipeLock();
+  }
+
+  function persistSwipeLock() {
     try {
-      sessionStorage.setItem(SWIPE_LOCK_KEY, String(swipeLockUntil));
+      if (swipeLock) {
+        sessionStorage.setItem(SWIPE_LOCK_KEY, JSON.stringify(swipeLock));
+      }
     } catch {
       // The in-memory lock still protects the current document.
     }
   }
 
+  function clearSwipeLock() {
+    swipeLock = null;
+    try {
+      sessionStorage.removeItem(SWIPE_LOCK_KEY);
+    } catch {
+      // Ignore storage cleanup failures.
+    }
+  }
+
   function isSwipeLocked(now = Date.now()) {
-    if (now < swipeLockUntil) {
-      // Trackpad inertia can continue after the document navigation. Extend
-      // the quiet period whenever another horizontal event from that tail
-      // arrives, including on the destination document.
-      lockSwipeGesture(now);
-      return true;
+    if (!swipeLock) return false;
+
+    const lockAge = now - swipeLock.startedAt;
+    const idleTime = now - swipeLock.lastEventAt;
+    if (
+      lockAge >= SWIPE_GESTURE_MAX_LOCK_MS ||
+      (lockAge >= SWIPE_GESTURE_MIN_LOCK_MS && idleTime >= SWIPE_GESTURE_IDLE_MS)
+    ) {
+      // A quiet gap marks the end of the previous physical gesture. The
+      // current wheel event is the start of a new swipe and must be handled.
+      clearSwipeLock();
+      return false;
     }
-    if (swipeLockUntil) {
-      swipeLockUntil = 0;
-      try {
-        sessionStorage.removeItem(SWIPE_LOCK_KEY);
-      } catch {
-        // Ignore storage cleanup failures.
-      }
-    }
-    return false;
+
+    // Events that arrive without a quiet gap are the momentum tail of the
+    // swipe that already navigated. Keep blocking only that gesture.
+    swipeLock.lastEventAt = now;
+    persistSwipeLock();
+    return true;
   }
 
   function markTransition(targetPath, direction) {

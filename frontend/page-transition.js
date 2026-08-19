@@ -13,10 +13,10 @@
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   const SWIPE_THRESHOLD = 96;
   const SWIPE_WINDOW_MS = 220;
-  const SWIPE_COOLDOWN_MS = 500;
-  const SWIPE_GESTURE_MIN_LOCK_MS = 360;
-  const SWIPE_GESTURE_IDLE_MS = 140;
-  const SWIPE_GESTURE_MAX_LOCK_MS = 1600;
+  const SWIPE_COOLDOWN_MS = 220;
+  const SWIPE_GESTURE_MIN_LOCK_MS = 220;
+  const SWIPE_GESTURE_IDLE_MS = 90;
+  const SWIPE_GESTURE_MAX_LOCK_MS = 1000;
   const HORIZONTAL_SCROLL_TOLERANCE_PX = 8;
   const AXIS_RATIO = 1.2;
   const LINE_DELTA_PX = 16;

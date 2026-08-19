@@ -8,15 +8,13 @@
     { path: "/Projects", aliases: ["/projects.html"], nav: "projects" },
   ];
   const TRANSITION_KEY = "sparkle.pageTransition";
-  const SWIPE_LOCK_KEY = "sparkle.pageSwipeGestureLock";
-  const LEGACY_SWIPE_LOCK_KEY = "sparkle.pageSwipeLockUntil";
+  const SWIPE_GESTURE_KEY = "sparkle.pageSwipePhysicalGesture";
+  const LEGACY_SWIPE_KEYS = [
+    "sparkle.pageSwipeGestureLock",
+    "sparkle.pageSwipeLockUntil",
+  ];
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   const SWIPE_THRESHOLD = 96;
-  const SWIPE_WINDOW_MS = 220;
-  const SWIPE_COOLDOWN_MS = 220;
-  const SWIPE_GESTURE_MIN_LOCK_MS = 220;
-  const SWIPE_GESTURE_IDLE_MS = 90;
-  const SWIPE_GESTURE_STALE_MS = 5000;
   const HORIZONTAL_SCROLL_TOLERANCE_PX = 8;
   const AXIS_RATIO = 1.2;
   const LINE_DELTA_PX = 16;
@@ -26,9 +24,7 @@
   let focusAttemptedAt = 0;
   let accumulatedDelta = 0;
   let accumulatedSign = 0;
-  let accumulationStartedAt = 0;
-  let cooldownUntil = 0;
-  let swipeLock = null;
+  let swipeGesture = null;
 
   function normalizePath(pathname) {
     const value = String(pathname || "/").replace(/\/+$/, "");
@@ -71,7 +67,6 @@
   function resetAccumulator() {
     accumulatedDelta = 0;
     accumulatedSign = 0;
-    accumulationStartedAt = 0;
   }
 
   function clearTransitionMarker() {
@@ -82,70 +77,61 @@
     }
   }
 
-  function restoreSwipeLock() {
+  function restoreSwipeGesture() {
     try {
-      sessionStorage.removeItem(LEGACY_SWIPE_LOCK_KEY);
-      const raw = sessionStorage.getItem(SWIPE_LOCK_KEY);
+      for (const key of LEGACY_SWIPE_KEYS) sessionStorage.removeItem(key);
+      const raw = sessionStorage.getItem(SWIPE_GESTURE_KEY);
       const stored = raw ? JSON.parse(raw) : null;
-      const startedAt = Number(stored?.startedAt);
-      const lastEventAt = Number(stored?.lastEventAt);
-      const now = Date.now();
-      if (
-        Number.isFinite(startedAt) &&
-        Number.isFinite(lastEventAt) &&
-        startedAt <= lastEventAt &&
-        lastEventAt <= now &&
-        now - startedAt < SWIPE_GESTURE_STALE_MS
-      ) {
-        swipeLock = { startedAt, lastEventAt };
+      if (stored?.latched === true) {
+        swipeGesture = {
+          latched: true,
+          sawMomentum: stored.sawMomentum === true,
+        };
       } else {
-        clearSwipeLock();
+        clearSwipeGesture();
       }
     } catch {
-      clearSwipeLock();
+      clearSwipeGesture();
     }
   }
 
-  function lockSwipeGesture(now = Date.now()) {
-    swipeLock = { startedAt: now, lastEventAt: now };
-    persistSwipeLock();
+  function latchSwipeGesture() {
+    swipeGesture = { latched: true, sawMomentum: false };
+    persistSwipeGesture();
   }
 
-  function persistSwipeLock() {
+  function persistSwipeGesture() {
     try {
-      if (swipeLock) {
-        sessionStorage.setItem(SWIPE_LOCK_KEY, JSON.stringify(swipeLock));
+      if (swipeGesture) {
+        sessionStorage.setItem(SWIPE_GESTURE_KEY, JSON.stringify(swipeGesture));
       }
     } catch {
-      // The in-memory lock still protects the current document.
+      // The in-memory latch still protects the current document.
     }
   }
 
-  function clearSwipeLock() {
-    swipeLock = null;
+  function clearSwipeGesture() {
+    swipeGesture = null;
     try {
-      sessionStorage.removeItem(SWIPE_LOCK_KEY);
+      sessionStorage.removeItem(SWIPE_GESTURE_KEY);
     } catch {
       // Ignore storage cleanup failures.
     }
   }
 
-  function isSwipeLocked(now = Date.now()) {
-    if (!swipeLock) return false;
+  function markSwipeMomentum() {
+    if (!swipeGesture?.latched || swipeGesture.sawMomentum) return;
+    swipeGesture.sawMomentum = true;
+    persistSwipeGesture();
+  }
 
-    const lockAge = now - swipeLock.startedAt;
-    const idleTime = now - swipeLock.lastEventAt;
-    if (lockAge >= SWIPE_GESTURE_MIN_LOCK_MS && idleTime >= SWIPE_GESTURE_IDLE_MS) {
-      // A quiet gap marks the end of the previous physical gesture. The
-      // current wheel event is the start of a new swipe and must be handled.
-      clearSwipeLock();
-      return false;
-    }
+  function beginDirectSwipeIfReady() {
+    if (!swipeGesture?.latched) return true;
+    if (!swipeGesture.sawMomentum) return false;
 
-    // Events that arrive without a quiet gap are the momentum tail of the
-    // swipe that already navigated. Keep blocking only that gesture.
-    swipeLock.lastEventAt = now;
-    persistSwipeLock();
+    // The first non-momentum event after an inertia phase is the beginning of
+    // a new physical swipe. Process that same event without a cooldown.
+    clearSwipeGesture();
     return true;
   }
 
@@ -284,7 +270,7 @@
     clearTransitionMarker();
 
     if (context.type === "back") {
-      lockSwipeGesture();
+      latchSwipeGesture();
       if (context.sameDocument) {
         const backButton = document.getElementById(context.backElementId);
         if (backButton) {
@@ -312,11 +298,28 @@
     const targetIndex = (currentIndex + step + ROUTES.length) % ROUTES.length;
 
     const target = ROUTES[targetIndex];
-    lockSwipeGesture();
+    latchSwipeGesture();
     window.location.assign(target.path);
   }
 
   function handleWheel(event) {
+    const { x, y } = normalizeWheelDelta(event);
+
+    // Chromium marks synthetic inertia after the fingers leave the trackpad.
+    // It can be arbitrarily strong, but it never starts page navigation.
+    if (event.momentum === true) {
+      markSwipeMomentum();
+      resetAccumulator();
+      return;
+    }
+
+    // Chromium may emit a zero-delta phase-end event when no inertia follows.
+    if (!x && !y) {
+      clearSwipeGesture();
+      resetAccumulator();
+      return;
+    }
+
     if (
       event.defaultPrevented ||
       event.ctrlKey ||
@@ -331,31 +334,19 @@
       return;
     }
 
-    const now = Date.now();
-    if (now < cooldownUntil) {
+    if (Math.abs(x) <= Math.abs(y) * AXIS_RATIO) {
       resetAccumulator();
       return;
     }
-
-    const { x, y } = normalizeWheelDelta(event);
-    if (!x || Math.abs(x) <= Math.abs(y) * AXIS_RATIO) {
-      resetAccumulator();
-      return;
-    }
-    if (isSwipeLocked(now)) {
+    if (!beginDirectSwipeIfReady()) {
       resetAccumulator();
       return;
     }
 
     const sign = Math.sign(x);
-    if (
-      sign !== accumulatedSign ||
-      !accumulationStartedAt ||
-      now - accumulationStartedAt > SWIPE_WINDOW_MS
-    ) {
+    if (sign !== accumulatedSign) {
       accumulatedDelta = 0;
       accumulatedSign = sign;
-      accumulationStartedAt = now;
     }
     accumulatedDelta += x;
 
@@ -363,7 +354,6 @@
 
     const context = getSwipeContext();
     resetAccumulator();
-    cooldownUntil = now + SWIPE_COOLDOWN_MS;
     if (!context) return;
 
     if (event.cancelable) event.preventDefault();
@@ -413,7 +403,7 @@
   function boot() {
     if (installed || !window.pywebview?.api) return;
     installed = true;
-    restoreSwipeLock();
+    restoreSwipeGesture();
     consumeTransition();
     installFocusRecovery();
     document.addEventListener("wheel", handleWheel, {

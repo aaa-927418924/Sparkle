@@ -1144,6 +1144,12 @@ body.native-titlebar .window-controls {
 .window-resize-se { right: 0; bottom: 0; cursor: nwse-resize; }
 .window-resize-sw { left: 0; bottom: 0; cursor: nesw-resize; }
 
+/* The native caption owns resizing when this mode is enabled. */
+html.native-titlebar .window-resize-handle,
+body.native-titlebar .window-resize-handle {
+  display: none;
+}
+
 .sidebar .side-btn,
 .home-page .side-btn,
 .notes-page .side-btn,

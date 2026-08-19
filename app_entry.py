@@ -342,6 +342,60 @@ def _get_native_window_handle(window):
         return None
 
 
+def _post_native_nonclient_down(handle, hit_test: int) -> bool:
+    """Ask Windows to begin a non-client drag/resize without blocking JS.
+
+    ``SendMessage(WM_NCLBUTTONDOWN, ...)`` enters Windows' modal move/size
+    loop on the calling thread. Calling it from a pywebview JS bridge worker
+    leaves that bridge request pending for the duration of the gesture, which
+    prevents the other window interaction APIs from responding. Posting the
+    same message lets the WinForms UI thread process it normally and returns
+    to the bridge immediately.
+    """
+    if handle is None or os.name != "nt":
+        return False
+
+    try:
+        import ctypes
+
+        class POINT(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        get_cursor_pos = ctypes.WINFUNCTYPE(
+            ctypes.c_int, ctypes.POINTER(POINT)
+        )(("GetCursorPos", user32))
+        release_capture = ctypes.WINFUNCTYPE(ctypes.c_int)(
+            ("ReleaseCapture", user32)
+        )
+        post_message = ctypes.WINFUNCTYPE(
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_uint,
+            ctypes.c_size_t,
+            ctypes.c_ssize_t,
+        )(("PostMessageW", user32))
+
+        cursor = POINT()
+        if not get_cursor_pos(ctypes.byref(cursor)):
+            return False
+
+        # WM_NCLBUTTONDOWN expects the cursor position packed as two words.
+        lparam = ((int(cursor.y) & 0xFFFF) << 16) | (int(cursor.x) & 0xFFFF)
+        release_capture()
+        return bool(
+            post_message(
+                ctypes.c_void_p(int(handle)),
+                0x00A1,  # WM_NCLBUTTONDOWN
+                int(hit_test),
+                ctypes.c_ssize_t(lparam),
+            )
+        )
+    except Exception as exc:
+        print(f"[window] native non-client message failed: {exc!r}", file=sys.stderr)
+        return False
+
+
 def _focus_native_webview() -> bool:
     """Restore wheel/key input to the WebView2 control after navigation."""
     window = window_ref.get("window")
@@ -433,16 +487,15 @@ def _apply_window_caption(window, native_titlebar: bool) -> None:
 
     # A real caption needs more than WS_CAPTION: without SYSMENU, MIN/MAXBOX
     # and THICKFRAME, the native bar renders empty (no minimize/maximize/close
-    # buttons). Custom mode drops the caption AND the sizing frame; keeping
-    # WS_THICKFRAME would make DWM paint a thin leftover frame edge along the
-    # top of the window. Resizing still works through the app's own JS resize
-    # handles.
+    # buttons). Custom mode drops the caption but keeps THICKFRAME so the
+    # custom edge handles can delegate resizing to Windows. The DWM frame
+    # margin remains zero in custom mode, so this does not add a visible bar.
     _apply_window_style(
         handle,
         (
             lambda style: (style | 0x00C00000 | 0x00080000 | 0x00020000 | 0x00010000 | 0x00040000)
             if native_titlebar
-            else (style & ~(0x00C00000 | 0x00040000))
+            else ((style & ~0x00C00000) | 0x00040000)
         ),
     )
     _apply_dwm_frame_margin(handle, native_titlebar)
@@ -860,35 +913,25 @@ class NativeWindowApi:
 
     @staticmethod
     def begin_native_drag(screen_x=None, screen_y=None) -> bool:
-        """Start an OS-driven window move via the non-client hit test.
-
-        Works in both the frameless (custom title bar) and caption (native
-        title bar) modes, and gives edge snapping / maximize restore for free.
-        """
+        """Start an OS-driven window move without blocking the JS bridge."""
         window = window_ref.get("window")
         if window is None:
             return False
         handle = _get_native_window_handle(window)
         if handle is None:
             return False
-        try:
-            import ctypes
-
-            class POINT(ctypes.Structure):
-                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
-
-            user32 = ctypes.windll.user32
-            cursor = POINT()
-            ok = user32.GetCursorPos(ctypes.byref(cursor))
-            lparam = ((int(cursor.y) & 0xFFFF) << 16) | (int(cursor.x) & 0xFFFF)
-            hwnd = ctypes.c_void_p(handle)
-            user32.ReleaseCapture()
-            res = user32.SendMessageW(hwnd, 0x00A1, 2, lparam)  # WM_NCLBUTTONDOWN, HTCAPTION
-            print(f"[drag] begin_native_drag ok={ok} pos=({cursor.x},{cursor.y}) hwnd={int(handle)} res={res}", file=sys.stderr)
-            return True
-        except Exception as exc:
-            print(f"[drag] begin_native_drag error={exc!r}", file=sys.stderr)
-            return False
+        maximized_geometry = _get_window_geometry(window)
+        restored = NativeWindowApi.restore_window_for_drag()
+        if restored:
+            restored_geometry = _get_window_geometry(window, restored=True)
+            _place_restored_window_at_cursor(
+                window,
+                maximized_geometry,
+                restored_geometry,
+                screen_x,
+                screen_y,
+            )
+        return _post_native_nonclient_down(handle, 2)  # HTCAPTION
 
     @staticmethod
     def move_window(x: int, y: int) -> None:
@@ -903,6 +946,33 @@ class NativeWindowApi:
             return None
         restored = NativeWindowApi.restore_window_for_drag()
         return _get_window_geometry(window, restored=restored)
+
+    @staticmethod
+    def begin_native_resize(direction: str) -> bool:
+        """Start an OS-driven edge resize without a WebView mouse loop."""
+        hit_tests = {
+            "w": 10,   # HTLEFT
+            "e": 11,   # HTRIGHT
+            "n": 12,   # HTTOP
+            "nw": 13,  # HTTOPLEFT
+            "ne": 14,  # HTTOPRIGHT
+            "s": 15,   # HTBOTTOM
+            "sw": 16,  # HTBOTTOMLEFT
+            "se": 17,  # HTBOTTOMRIGHT
+        }
+        hit_test = hit_tests.get(str(direction or "").strip().lower())
+        if hit_test is None:
+            return False
+
+        window = window_ref.get("window")
+        if window is None:
+            return False
+        handle = _get_native_window_handle(window)
+        if handle is None:
+            return False
+
+        NativeWindowApi.restore_window_for_drag()
+        return _post_native_nonclient_down(handle, hit_test)
 
     @staticmethod
     def resize_window(width: int, height: int, x: int, y: int) -> None:

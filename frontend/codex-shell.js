@@ -701,13 +701,46 @@
 
   function resizeWindowFromPointer(event, direction) {
     const api = window.pywebview?.api;
-    if (!api || typeof api.begin_window_resize !== "function" || typeof api.resize_window !== "function") return;
+    const hasNativeResize = typeof api?.begin_native_resize === "function";
+    const hasFallbackResize = typeof api?.begin_window_resize === "function"
+      && typeof api?.resize_window === "function";
+    if (!api || (!hasNativeResize && !hasFallbackResize)) return;
 
     event.preventDefault();
     event.stopImmediatePropagation();
 
     const startScreenX = event.screenX;
     const startScreenY = event.screenY;
+
+    // Let Windows own the pointer loop. Resizing by repeatedly calling the
+    // WebView API loses mouse events as soon as the edge moves away from the
+    // pointer, just like the old custom window drag implementation.
+    if (typeof api.begin_native_resize === "function") {
+      try {
+        Promise.resolve(api.begin_native_resize(direction)).then((started) => {
+          if (started !== false || activeResize !== null) return;
+          if (hasFallbackResize) {
+            startWindowResizeFallback(api, direction, startScreenX, startScreenY);
+          }
+        }).catch(() => {
+          if (hasFallbackResize && activeResize === null) {
+            startWindowResizeFallback(api, direction, startScreenX, startScreenY);
+          }
+        });
+      } catch {
+        if (hasFallbackResize) {
+          startWindowResizeFallback(api, direction, startScreenX, startScreenY);
+        }
+      }
+      return;
+    }
+
+    if (hasFallbackResize) {
+      startWindowResizeFallback(api, direction, startScreenX, startScreenY);
+    }
+  }
+
+  function startWindowResizeFallback(api, direction, startScreenX, startScreenY) {
     const resize = { api, direction, geometry: null, startScreenX, startScreenY };
     activeResize = resize;
 

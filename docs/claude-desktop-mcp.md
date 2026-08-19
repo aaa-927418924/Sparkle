@@ -14,16 +14,16 @@ uv pip install --python .venv313\Scripts\python.exe -r requirements-mcp.txt
 
 ## 2. Claude Desktopの設定
 
+PyInstallerでビルドした配布物を使う場合は、stdioの標準入出力を保持できる専用の`dist\\SparkleMCP.exe`を指定します。GUI本体の`Sparkle.exe`は`console=False`のため、Claude Desktopのstdio子プロセスには指定しません。
+
 設定ファイルはWindowsでは通常`%APPDATA%\Claude\claude_desktop_config.json`です。既存の`mcpServers`を削除せず、下記の`"sparkle"`エントリを追加します。
 
 ```json
 {
   "mcpServers": {
     "sparkle": {
-      "command": "C:\\Users\\PC_User.DESKTOP-N70PB5O\\Documents\\OpenCode\\Sparkle\\.venv313\\Scripts\\python.exe",
-      "args": [
-        "C:\\Users\\PC_User.DESKTOP-N70PB5O\\Documents\\OpenCode\\Sparkle\\mcp_server.py"
-      ]
+      "command": "C:\\Users\\PC_User.DESKTOP-N70PB5O\\Documents\\OpenCode\\Sparkle\\dist\\SparkleMCP.exe",
+      "args": []
     }
   }
 }
@@ -69,4 +69,4 @@ Sparkleで「Qwen」を検索して、候補のIDとタイトルだけ表示し�
 
 ## 今回の範囲外
 
-Remote MCPのHTTPS公開、OAuth/Token認証、書き込みTool、GUI EXEへのMCP同梱はまだ有効化していません。`sparkle_mcp.service.ToolService`と`ReadRepository`はtransportから分離しているため、次フェーズでStreamable HTTPと認証を追加できます。
+Remote MCPのHTTPS公開、OAuth/Token認証、書き込みToolはまだ有効化していません。`sparkle_mcp.service.ToolService`と`ReadRepository`はtransportから分離しているため、次フェーズでStreamable HTTPと認証を追加できます。

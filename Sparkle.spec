@@ -14,7 +14,23 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+
+mcp_a = Analysis(
+    ['mcp_entry.py'],
+    pathex=[],
+    binaries=[],
+    datas=[],
+    hiddenimports=[],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=['PyQt5', 'PyQt6', 'PySide2', 'PySide6', 'cefpython3', 'gi'],
+    noarchive=False,
+    optimize=0,
+)
+
 pyz = PYZ(a.pure)
+mcp_pyz = PYZ(mcp_a.pure)
 
 exe = EXE(
     pyz,
@@ -31,6 +47,28 @@ exe = EXE(
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+mcp_exe = EXE(
+    mcp_pyz,
+    mcp_a.scripts,
+    mcp_a.binaries,
+    mcp_a.datas,
+    [],
+    name='SparkleMCP',
+    icon='Icon.png',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

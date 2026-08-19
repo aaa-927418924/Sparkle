@@ -44,12 +44,23 @@ if not exist "%PYINSTALLER%" (
 )
 
 set "SPARKLE_EXE=%~dp0dist\Sparkle.exe"
+set "SPARKLE_MCP_EXE=%~dp0dist\SparkleMCP.exe"
 echo.
 echo Closing the running Sparkle app from "%SPARKLE_EXE%" if necessary...
 powershell -NoProfile -Command "$target = [System.IO.Path]::GetFullPath($env:SPARKLE_EXE); $matches = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -ieq 'Sparkle.exe' -and $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $target) }); foreach ($match in $matches) { $process = Get-Process -Id $match.ProcessId -ErrorAction SilentlyContinue; if ($process) { $null = $process.CloseMainWindow(); if (-not $process.WaitForExit(5000)) { Stop-Process -Id $match.ProcessId -Force -ErrorAction Stop } } }"
 if errorlevel 1 (
   echo.
   echo Could not close the running Sparkle app safely.
+  pause
+  exit /b 1
+)
+
+echo.
+echo Closing the running SparkleMCP server from "%SPARKLE_MCP_EXE%" if necessary...
+powershell -NoProfile -Command "$target = [System.IO.Path]::GetFullPath($env:SPARKLE_MCP_EXE); $matches = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -ieq 'SparkleMCP.exe' -and $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $target) }); foreach ($match in $matches) { $process = Get-Process -Id $match.ProcessId -ErrorAction SilentlyContinue; if ($process) { Stop-Process -Id $process.Id -Force -ErrorAction Stop } }"
+if errorlevel 1 (
+  echo.
+  echo Could not close the running SparkleMCP server safely.
   pause
   exit /b 1
 )
@@ -66,8 +77,8 @@ if errorlevel 1 (
 )
 
 echo.
-echo Generating Sparkle.exe.sha256...
-powershell -NoProfile -Command "$f = Join-Path 'dist' 'Sparkle.exe'; $h = (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash.ToLowerInvariant(); Set-Content -LiteralPath (Join-Path 'dist' 'Sparkle.exe.sha256') -Value ('{0}  Sparkle.exe' -f $h) -Encoding ascii"
+echo Generating executable SHA-256 files...
+powershell -NoProfile -Command "$files = @(@('dist\Sparkle.exe','dist\Sparkle.exe.sha256','Sparkle.exe'), @('dist\SparkleMCP.exe','dist\SparkleMCP.exe.sha256','SparkleMCP.exe')); foreach ($item in $files) { $h = (Get-FileHash -LiteralPath $item[0] -Algorithm SHA256).Hash.ToLowerInvariant(); Set-Content -LiteralPath $item[1] -Value ('{0}  {1}' -f $h, $item[2]) -Encoding ascii }"
 if errorlevel 1 (
   echo.
   echo SHA-256 generation failed.
@@ -76,5 +87,5 @@ if errorlevel 1 (
 )
 
 echo.
-echo Done: dist\Sparkle.exe (+ Sparkle.exe.sha256)
+echo Done: dist\Sparkle.exe and dist\SparkleMCP.exe (+ SHA-256 files)
 pause

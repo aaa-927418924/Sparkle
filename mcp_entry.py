@@ -1,4 +1,4 @@
-"""Console-capable PyInstaller entry point for Claude Desktop stdio MCP."""
+"""Console-capable PyInstaller entry point for local and Remote MCP."""
 
 from __future__ import annotations
 

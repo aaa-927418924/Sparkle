@@ -27,3 +27,4 @@ uploads/
 
 # Generated extension package
 extension.zip
+*.mcpb

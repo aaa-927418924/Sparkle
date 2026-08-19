@@ -78,7 +78,7 @@ if errorlevel 1 (
 
 echo.
 echo Generating executable SHA-256 files...
-powershell -NoProfile -Command "$files = @(@('dist\Sparkle.exe','dist\Sparkle.exe.sha256','Sparkle.exe'), @('dist\SparkleMCP.exe','dist\SparkleMCP.exe.sha256','SparkleMCP.exe')); foreach ($item in $files) { $h = (Get-FileHash -LiteralPath $item[0] -Algorithm SHA256).Hash.ToLowerInvariant(); Set-Content -LiteralPath $item[1] -Value ('{0}  {1}' -f $h, $item[2]) -Encoding ascii }"
+"%PYTHON%" -c "from hashlib import sha256; from pathlib import Path; items=[(Path(r'dist\Sparkle.exe'),Path(r'dist\Sparkle.exe.sha256'),'Sparkle.exe'),(Path(r'dist\SparkleMCP.exe'),Path(r'dist\SparkleMCP.exe.sha256'),'SparkleMCP.exe')]; [out.write_text(sha256(src.read_bytes()).hexdigest()+'  '+name+chr(10),encoding='ascii') for src,out,name in items]"
 if errorlevel 1 (
   echo.
   echo SHA-256 generation failed.
@@ -87,5 +87,15 @@ if errorlevel 1 (
 )
 
 echo.
-echo Done: dist\Sparkle.exe and dist\SparkleMCP.exe (+ SHA-256 files)
+echo Creating Claude Desktop MCPB bundle...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0build_mcpb.ps1"
+if errorlevel 1 (
+  echo.
+  echo MCPB bundle generation failed.
+  pause
+  exit /b 1
+)
+
+echo.
+echo Done: dist\Sparkle.exe, dist\SparkleMCP.exe, and dist\Sparkle.mcpb (+ SHA-256 files)
 pause

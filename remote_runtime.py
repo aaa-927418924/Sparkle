@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -708,11 +709,15 @@ class RemoteAccessManager:
             "target": None,
             "public_url": None,
         }
+        configured_mcp_url = os.environ.get("SPARKLE_MCP_PUBLIC_URL")
+        if not configured_mcp_url and remote.get("public_url"):
+            configured_mcp_url = f"{str(remote['public_url']).rstrip('/')}/mcp"
         return {
             "mode": web_mode if enabled else "tailscale",
             "web_mode": web_mode,
             "auth": self.auth_store.status(),
             "remote_server": bool(self._thread and self._thread.is_alive()),
+            "mcp_url": configured_mcp_url,
             "remote": remote,
             "funnel": remote if web_mode == WEB_MODE_FUNNEL else empty_route,
             "serve": remote if web_mode == WEB_MODE_SERVE else empty_route,

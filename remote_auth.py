@@ -190,6 +190,18 @@ class AuthStore:
         """Replace the key and invalidate every existing browser session."""
         return self.enable()
 
+    def validate_access_key(self, access_key: str) -> bool:
+        """Validate the access key without creating a browser session."""
+
+        supplied_hash = _hash(access_key.strip()) if isinstance(access_key, str) else ""
+        with self._lock:
+            stored_hash = self._state.get("access_key_hash")
+            return bool(
+                self._state.get("enabled")
+                and isinstance(stored_hash, str)
+                and hmac.compare_digest(stored_hash, supplied_hash)
+            )
+
     def disable(self) -> None:
         with self._lock:
             self._state["enabled"] = False

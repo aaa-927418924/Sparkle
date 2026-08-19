@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/schemas/mcpb-manifest-v0.3.schema.json",
+  "manifest_version": "0.3",
+  "name": "sparkle",
+  "display_name": "Sparkle",
+  "version": "0.1.0",
+  "description": "Read-only access to Sparkle clips, memos, tasks, and projects.",
+  "long_description": "Search first for compact candidates, then fetch only the details needed. The bundled server opens Sparkle's SQLite database read-only and never exposes arbitrary SQL or local file paths.",
+  "author": {
+    "name": "Sparkle"
+  },
+  "icon": "icon.png",
+  "server": {
+    "type": "binary",
+    "entry_point": "server/SparkleMCP.exe",
+    "mcp_config": {
+      "command": "${__dirname}/server/SparkleMCP.exe",
+      "args": [],
+      "env": {}
+    }
+  },
+  "tools": [
+    { "name": "search_clips", "description": "Search saved clips and return compact candidates." },
+    { "name": "get_clip", "description": "Get one saved clip by ID with bounded details." },
+    { "name": "search_memos", "description": "Search memos and return compact candidates." },
+    { "name": "get_memo", "description": "Get one memo by ID with bounded details." },
+    { "name": "search_tasks", "description": "Search tasks by text, project, status, tags, or dates." },
+    { "name": "get_task", "description": "Get one task by ID with linked context." },
+    { "name": "search_projects", "description": "Search projects by name, description, status, or date." },
+    { "name": "get_project", "description": "Get one project by ID with bounded item counts." },
+    { "name": "list_project_items", "description": "List bounded clip, memo, and task candidates in a project." }
+  ],
+  "tools_generated": false,
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": ["win32"]
+  }
+}

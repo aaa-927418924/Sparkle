@@ -67,6 +67,8 @@ Sparkleで「Qwen」を検索して、候補のIDとタイトルだけ表示し�
 
 データベースが見つからない場合は、MCP設定の`env.SPARKLE_DB_PATH`を確認してください。ログへ本文や検索引数は出さず、予期しない例外はサーバー側ログに種類だけを記録します。
 
-## 今回の範囲外
+## Remote MCPについて
 
-Remote MCPのHTTPS公開、OAuth/Token認証、書き込みToolはまだ有効化していません。`sparkle_mcp.service.ToolService`と`ReadRepository`はtransportから分離しているため、次フェーズでStreamable HTTPと認証を追加できます。
+Claude Web、Claude Desktopのアカウント側Remote Connector、ChatGPT Webへ接続する場合は、同じ読み取りToolをStreamable HTTPで公開できます。OAuth 2.1 + PKCE、Bearer Token、MCPB、公開URLの設定は[Remote MCP手順](remote-mcp.md)を参照してください。
+
+ローカルstdioとRemote MCPは別の接続方式です。Local MCPはClaude Desktopが`SparkleMCP.exe`を子プロセスとして起動するため公開URL不要ですが、Remote Connectorは外部サービスから到達可能なHTTPS URLが必要です。

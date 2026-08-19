@@ -9,6 +9,7 @@ of the data API.
 from __future__ import annotations
 
 import hmac
+import logging
 import secrets
 from pathlib import Path
 from typing import Any, Optional
@@ -23,6 +24,7 @@ from paths import get_resource_dir
 from remote_auth import AuthStore, InvalidAccessKey
 
 
+LOGGER = logging.getLogger("sparkle.remote_gateway")
 SESSION_COOKIE = "__Host-sparkle_remote_session"
 CSRF_COOKIE = "__Host-sparkle_remote_csrf"
 REMOTE_DIR = get_resource_dir() / "frontend" / "remote"
@@ -197,10 +199,30 @@ class RemoteGateway:
     }
     _DENIED_SUFFIXES = ("/path", "/open", "/explorer")
 
-    def __init__(self, main_app: ASGIApp, store: AuthStore) -> None:
+    def __init__(self, main_app: ASGIApp, store: AuthStore, mcp_runtime: Any = None) -> None:
         self.main_app = main_app
         self.store = store
         self.public_app = _build_public_app(store)
+        self.mcp_runtime = mcp_runtime
+        if self.mcp_runtime is None:
+            try:
+                import os
+
+                from remote_mcp import build_remote_mcp_runtime
+
+                self.mcp_runtime = build_remote_mcp_runtime(
+                    auth_store=store,
+                    host="127.0.0.1",
+                    port=8001,
+                    public_url=os.environ.get("SPARKLE_MCP_PUBLIC_URL"),
+                    static_token=os.environ.get("SPARKLE_MCP_TOKEN"),
+                )
+            except (ImportError, ValueError) as exc:
+                # The MCP dependency is optional for existing Remote Web
+                # deployments.  The Web gateway remains usable when only the
+                # original GUI requirements are installed.
+                LOGGER.warning("Remote MCP is unavailable: %s", exc)
+                self.mcp_runtime = None
 
     @staticmethod
     def _path_matches_root(path: str, root: str) -> bool:
@@ -300,9 +322,46 @@ class RemoteGateway:
 
         await self.main_app(forwarded_scope, receive, send_with_private_headers)
 
+    async def _handle_lifespan(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Run FastAPI and MCP startup/shutdown in the same ASGI process."""
+
+        if self.mcp_runtime is None:
+            await self.main_app(scope, receive, send)
+            return
+
+        router = getattr(self.main_app, "router", None)
+        main_lifespan = getattr(router, "lifespan_context", None)
+        if main_lifespan is None:
+            await self.main_app(scope, receive, send)
+            return
+
+        started = False
+        try:
+            async with main_lifespan(self.main_app):
+                async with self.mcp_runtime.lifespan_context():
+                    await receive()
+                    await send({"type": "lifespan.startup.complete"})
+                    started = True
+                    while True:
+                        message = await receive()
+                        if message.get("type") == "lifespan.shutdown":
+                            await send({"type": "lifespan.shutdown.complete"})
+                            return
+        except BaseException as exc:
+            LOGGER.exception("Remote gateway lifespan failed")
+            await send(
+                {
+                    "type": "lifespan.shutdown.failed" if started else "lifespan.startup.failed",
+                    "message": str(exc)[:500],
+                }
+            )
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         scope_type = scope.get("type")
-        if scope_type in {"lifespan", "websocket"}:
+        if scope_type == "lifespan":
+            await self._handle_lifespan(scope, receive, send)
+            return
+        if scope_type == "websocket":
             await self.main_app(scope, receive, send)
             return
         if scope_type != "http":
@@ -311,6 +370,9 @@ class RemoteGateway:
 
         path = scope.get("path", "/")
         method = scope.get("method", "GET").upper()
+        if self.mcp_runtime is not None and self.mcp_runtime.handles_path(path):
+            await self.mcp_runtime.app(scope, receive, send)
+            return
         if path == "/health":
             await JSONResponse({"status": "ok", "app": "Sparkle Remote"})(scope, receive, send)
             return

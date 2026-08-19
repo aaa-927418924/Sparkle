@@ -16,7 +16,7 @@
   const SWIPE_COOLDOWN_MS = 220;
   const SWIPE_GESTURE_MIN_LOCK_MS = 220;
   const SWIPE_GESTURE_IDLE_MS = 90;
-  const SWIPE_GESTURE_MAX_LOCK_MS = 1000;
+  const SWIPE_GESTURE_STALE_MS = 5000;
   const HORIZONTAL_SCROLL_TOLERANCE_PX = 8;
   const AXIS_RATIO = 1.2;
   const LINE_DELTA_PX = 16;
@@ -94,7 +94,7 @@
         Number.isFinite(lastEventAt) &&
         startedAt <= lastEventAt &&
         lastEventAt <= now &&
-        now - startedAt < SWIPE_GESTURE_MAX_LOCK_MS
+        now - startedAt < SWIPE_GESTURE_STALE_MS
       ) {
         swipeLock = { startedAt, lastEventAt };
       } else {
@@ -134,10 +134,7 @@
 
     const lockAge = now - swipeLock.startedAt;
     const idleTime = now - swipeLock.lastEventAt;
-    if (
-      lockAge >= SWIPE_GESTURE_MAX_LOCK_MS ||
-      (lockAge >= SWIPE_GESTURE_MIN_LOCK_MS && idleTime >= SWIPE_GESTURE_IDLE_MS)
-    ) {
+    if (lockAge >= SWIPE_GESTURE_MIN_LOCK_MS && idleTime >= SWIPE_GESTURE_IDLE_MS) {
       // A quiet gap marks the end of the previous physical gesture. The
       // current wheel event is the start of a new swipe and must be handled.
       clearSwipeLock();

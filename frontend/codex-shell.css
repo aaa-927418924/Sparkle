@@ -354,6 +354,40 @@ html:not([data-theme="dark"]) .home-page .card-ph {
   will-change: opacity, transform;
 }
 
+/* Horizontal trackpad navigation enters the next document from the swipe
+   direction while leaving the persistent sidebar stationary. */
+@keyframes sparkle-page-enter-forward {
+  from {
+    opacity: 0;
+    transform: translate3d(20px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes sparkle-page-enter-back {
+  from {
+    opacity: 0;
+    transform: translate3d(-20px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+html.page-transition-enter-forward #mainContent {
+  animation: sparkle-page-enter-forward 240ms cubic-bezier(0.2, 0, 0, 1) both;
+  will-change: opacity, transform;
+}
+
+html.page-transition-enter-back #mainContent {
+  animation: sparkle-page-enter-back 240ms cubic-bezier(0.2, 0, 0, 1) both;
+  will-change: opacity, transform;
+}
+
 .home-page .search-liquid,
 .home-page #favOnly,
 .home-page #addLocalBtn,

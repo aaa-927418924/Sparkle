@@ -192,19 +192,17 @@
   }
 
   function focusPageIfNeeded(force = false) {
-    // `window.focus()` can update the DOM focus state before WebView2 has
-    // focused its native control. Pointer entry must therefore retry it even
-    // when document.hasFocus() already reports true.
+    // DOM focus and the native WebView2 control focus are separate. Pointer
+    // entry must therefore retry both even when document.hasFocus() is true.
     if (!force && typeof document.hasFocus === "function" && document.hasFocus()) return;
 
     const now = Date.now();
     if (!force && now - focusAttemptedAt < FOCUS_RETRY_MS) return;
     focusAttemptedAt = now;
     try {
-      // A document loaded by WebView2 can keep the wheel target unfocused
-      // after navigation. Focusing from the hovered pointer event restores
-      // wheel delivery without requiring a click on the page first.
       window.focus?.();
+      const nativeFocus = window.pywebview?.api?.focus_webview?.();
+      nativeFocus?.catch?.(() => {});
     } catch {
       // Browser previews and restricted hosts may reject focus requests.
     }

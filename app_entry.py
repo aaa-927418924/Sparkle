@@ -342,6 +342,35 @@ def _get_native_window_handle(window):
         return None
 
 
+def _focus_native_webview() -> bool:
+    """Restore wheel/key input to the WebView2 control after navigation."""
+    window = window_ref.get("window")
+    native = getattr(window, "native", None) if window is not None else None
+    webview = getattr(native, "webview", None)
+    if webview is None:
+        webview = getattr(getattr(native, "browser", None), "webview", None)
+    if webview is None:
+        return False
+
+    def _focus() -> None:
+        try:
+            webview.Focus()
+        except Exception:
+            pass
+
+    try:
+        if bool(getattr(webview, "InvokeRequired", False)):
+            import clr  # noqa: F401 - initializes pythonnet's System namespace
+            from System import Action
+
+            webview.Invoke(Action(_focus))
+        else:
+            _focus()
+        return True
+    except Exception:
+        return False
+
+
 def _get_window_geometry(window, restored: bool = False):
     if window is None:
         return None
@@ -731,6 +760,10 @@ class NativeWindowApi:
     def clear_dropped_files() -> None:
         with native_drop_condition:
             native_drop_paths.clear()
+
+    @staticmethod
+    def focus_webview() -> bool:
+        return _focus_native_webview()
 
     @staticmethod
     def read_dropped_files():
@@ -1200,6 +1233,7 @@ def main() -> None:
         window_ref["window"] = window
         window.events.loaded += _attach_native_drop_listener
         window.events.loaded += _apply_native_chrome
+        window.events.loaded += _focus_native_webview
         window.events.closing += _on_window_closing
 
         icon = _build_tray_icon()

@@ -17,7 +17,9 @@
   const HORIZONTAL_SCROLL_TOLERANCE_PX = 8;
   const AXIS_RATIO = 1.2;
   const LINE_DELTA_PX = 16;
+  const FOCUS_RETRY_MS = 250;
   let installed = false;
+  let focusAttemptedAt = 0;
   let accumulatedDelta = 0;
   let accumulatedSign = 0;
   let accumulationStartedAt = 0;
@@ -155,6 +157,34 @@
     window.setTimeout(() => {
       document.documentElement.classList.remove(className);
     }, 360);
+  }
+
+  function focusPageIfNeeded(force = false) {
+    if (typeof document.hasFocus === "function" && document.hasFocus()) return;
+
+    const now = Date.now();
+    if (!force && now - focusAttemptedAt < FOCUS_RETRY_MS) return;
+    focusAttemptedAt = now;
+    try {
+      // A document loaded by WebView2 can keep the wheel target unfocused
+      // after navigation. Focusing from the hovered pointer event restores
+      // wheel delivery without requiring a click on the page first.
+      window.focus?.();
+    } catch {
+      // Browser previews and restricted hosts may reject focus requests.
+    }
+  }
+
+  function installFocusRecovery() {
+    focusPageIfNeeded(true);
+    document.addEventListener("pointerover", () => focusPageIfNeeded(true), {
+      capture: true,
+      passive: true,
+    });
+    document.addEventListener("pointermove", focusPageIfNeeded, {
+      capture: true,
+      passive: true,
+    });
   }
 
   function hasHorizontalScrollParent(target) {
@@ -346,6 +376,7 @@
     installed = true;
     restoreSwipeLock();
     consumeTransition();
+    installFocusRecovery();
     document.addEventListener("wheel", handleWheel, {
       capture: true,
       passive: false,

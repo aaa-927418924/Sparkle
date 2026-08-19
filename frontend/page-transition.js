@@ -3,9 +3,9 @@
   // are separate HTML documents, so the destination is selected from the
   // same route table used by the sidebar rather than from SPA state.
   const ROUTES = [
-    { path: "/Home", nav: "home" },
-    { path: "/Notes", nav: "memo" },
-    { path: "/Projects", nav: "projects" },
+    { path: "/Home", aliases: ["/", "/index.html"], nav: "home" },
+    { path: "/Notes", aliases: ["/notes.html"], nav: "memo" },
+    { path: "/Projects", aliases: ["/projects.html"], nav: "projects" },
   ];
   const TRANSITION_KEY = "sparkle.pageTransition";
   const SWIPE_LOCK_KEY = "sparkle.pageSwipeLockUntil";
@@ -31,12 +31,14 @@
 
   function routeIndex(pathname = window.location.pathname) {
     const path = normalizePath(pathname);
-    return ROUTES.findIndex((route) => route.path === path);
+    return ROUTES.findIndex(
+      (route) => route.path === path || route.aliases?.includes(path),
+    );
   }
 
   function getSwipeContext() {
     const path = normalizePath(window.location.pathname);
-    if (path === "/Note") {
+    if (path === "/Note" || path === "/note-editor.html") {
       return {
         type: "back",
         targetPath: "/Notes",
@@ -44,7 +46,10 @@
       };
     }
 
-    if (path === "/Projects" && new URLSearchParams(window.location.search).has("id")) {
+    if (
+      (path === "/Projects" || path === "/projects.html") &&
+      new URLSearchParams(window.location.search).has("id")
+    ) {
       return {
         type: "back",
         targetPath: "/Projects",
@@ -179,6 +184,8 @@
     ) {
       return true;
     }
+
+    if (target.closest("[data-page-swipe-surface]")) return false;
 
     // Notes and Projects use vertical list scrollers whose computed
     // overflowX can become `auto` even though they have no intentional

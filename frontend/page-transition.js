@@ -14,6 +14,7 @@
   const SWIPE_WINDOW_MS = 220;
   const SWIPE_COOLDOWN_MS = 500;
   const SWIPE_GESTURE_LOCK_MS = 1000;
+  const HORIZONTAL_SCROLL_TOLERANCE_PX = 8;
   const AXIS_RATIO = 1.2;
   const LINE_DELTA_PX = 16;
   let installed = false;
@@ -60,6 +61,14 @@
     accumulatedDelta = 0;
     accumulatedSign = 0;
     accumulationStartedAt = 0;
+  }
+
+  function clearTransitionMarker() {
+    try {
+      sessionStorage.removeItem(TRANSITION_KEY);
+    } catch {
+      // Navigation remains usable when storage is unavailable.
+    }
   }
 
   function restoreSwipeLock() {
@@ -148,7 +157,12 @@
     while (element && element !== document.body) {
       const style = window.getComputedStyle(element);
       const scrollable = ["auto", "scroll", "overlay"].includes(style.overflowX);
-      if (scrollable && element.scrollWidth > element.clientWidth + 1) return true;
+      if (
+        scrollable &&
+        element.scrollWidth > element.clientWidth + HORIZONTAL_SCROLL_TOLERANCE_PX
+      ) {
+        return true;
+      }
       element = element.parentElement;
     }
     return false;
@@ -165,6 +179,17 @@
     ) {
       return true;
     }
+
+    // Notes and Projects use vertical list scrollers whose computed
+    // overflowX can become `auto` even though they have no intentional
+    // horizontal interaction. Keep the page surface swipeable there.
+    if (
+      target.closest("#mainContent") &&
+      document.body?.matches("body.notes-page, body.projects-page")
+    ) {
+      return false;
+    }
+
     return hasHorizontalScrollParent(target);
   }
 
@@ -180,6 +205,7 @@
 
   function navigateBySwipe(deltaSign, context) {
     if (!context) return;
+    clearTransitionMarker();
 
     if (context.type === "back") {
       lockSwipeGesture();
@@ -190,7 +216,6 @@
           return;
         }
       } else {
-        markTransition(context.targetPath, "back");
         const backLink = document.getElementById(context.backElementId);
         if (backLink) {
           backLink.click();
@@ -205,12 +230,13 @@
     if (currentIndex < 0) return;
 
     // A negative deltaX is a physical left swipe in Chromium's wheel model.
-    const targetIndex = currentIndex + (deltaSign < 0 ? 1 : -1);
-    if (targetIndex < 0 || targetIndex >= ROUTES.length) return;
+    // The three main pages form a loop, so either direction always advances
+    // exactly one page (Home <- Notes <- Projects <- Home).
+    const step = deltaSign < 0 ? 1 : -1;
+    const targetIndex = (currentIndex + step + ROUTES.length) % ROUTES.length;
 
     const target = ROUTES[targetIndex];
     lockSwipeGesture();
-    markTransition(target.path, targetIndex > currentIndex ? "forward" : "back");
     window.location.assign(target.path);
   }
 
@@ -263,11 +289,6 @@
     resetAccumulator();
     cooldownUntil = now + SWIPE_COOLDOWN_MS;
     if (!context) return;
-
-    if (context.type === "route") {
-      const targetIndex = context.currentIndex + (sign < 0 ? 1 : -1);
-      if (targetIndex < 0 || targetIndex >= ROUTES.length) return;
-    }
 
     if (event.cancelable) event.preventDefault();
     navigateBySwipe(sign, context);

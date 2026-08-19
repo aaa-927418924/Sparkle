@@ -69,6 +69,6 @@ Sparkleで「Qwen」を検索して、候補のIDとタイトルだけ表示し�
 
 ## Remote MCPについて
 
-Claude Web、Claude Desktopのアカウント側Remote Connector、ChatGPT Webへ接続する場合は、同じ読み取りToolをStreamable HTTPで公開できます。OAuth 2.1 + PKCE、Bearer Token、MCPB、公開URLの設定は[Remote MCP手順](remote-mcp.md)を参照してください。
+Claude Web、Claude Desktopのアカウント側Remote Connector、ChatGPT Webへ接続する場合は、同じ読み取りToolをStreamable HTTPで公開できます。OAuth 2.1 + PKCE、Bearer Token、MCPB、公開URL、Web用とは別のMCP専用アクセスキーの設定は[Remote MCP手順](remote-mcp.md)を参照してください。
 
 ローカルstdioとRemote MCPは別の接続方式です。Local MCPはClaude Desktopが`SparkleMCP.exe`を子プロセスとして起動するため公開URL不要ですが、Remote Connectorは外部サービスから到達可能なHTTPS URLが必要です。

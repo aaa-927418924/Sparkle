@@ -28,7 +28,7 @@ from setup import (
     mark_setup_complete,
     start_setup_tutorial,
 )
-from remote_auth import get_auth_store
+from remote_auth import get_auth_store, get_mcp_auth_store
 
 UPLOADS_DIR = get_uploads_dir()
 get_thumbnails_dir()
@@ -178,7 +178,9 @@ def remote_access_status():
         "mode": "tailscale",
         "web_mode": "funnel",
         "auth": get_auth_store().status(),
+        "mcp_auth": get_mcp_auth_store().status(),
         "remote_server": False,
+        "mcp_url": os.environ.get("SPARKLE_MCP_PUBLIC_URL"),
         "remote": {
             "available": False,
             "active": False,
@@ -212,6 +214,11 @@ def remote_access_enable():
     return _require_remote_access_manager().enable()
 
 
+@app.post("/settings/remote-access/mcp/enable", include_in_schema=False)
+def remote_mcp_enable():
+    return _require_remote_access_manager().enable_mcp()
+
+
 @app.post("/settings/remote-access/mode", include_in_schema=False)
 def remote_access_set_mode(payload: RemoteAccessModePayload):
     return _require_remote_access_manager().set_mode(payload.mode)
@@ -235,6 +242,26 @@ def remote_access_rotate():
 @app.post("/settings/remote-access/revoke-all", include_in_schema=False)
 def remote_access_revoke_all():
     return _require_remote_access_manager().revoke_all()
+
+
+@app.post("/settings/remote-access/mcp/retry", include_in_schema=False)
+def remote_mcp_retry():
+    return _require_remote_access_manager().retry()
+
+
+@app.post("/settings/remote-access/mcp/disable", include_in_schema=False)
+def remote_mcp_disable():
+    return _require_remote_access_manager().disable_mcp()
+
+
+@app.post("/settings/remote-access/mcp/rotate", include_in_schema=False)
+def remote_mcp_rotate():
+    return _require_remote_access_manager().rotate_mcp()
+
+
+@app.post("/settings/remote-access/mcp/revoke-all", include_in_schema=False)
+def remote_mcp_revoke_all():
+    return _require_remote_access_manager().revoke_mcp_all()
 
 
 @app.get("/health")

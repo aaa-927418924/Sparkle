@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from paths import get_resource_dir
-from remote_auth import AuthStore, InvalidAccessKey
+from remote_auth import AuthStore, InvalidAccessKey, get_mcp_auth_store
 
 
 LOGGER = logging.getLogger("sparkle.remote_gateway")
@@ -199,10 +199,17 @@ class RemoteGateway:
     }
     _DENIED_SUFFIXES = ("/path", "/open", "/explorer")
 
-    def __init__(self, main_app: ASGIApp, store: AuthStore, mcp_runtime: Any = None) -> None:
+    def __init__(
+        self,
+        main_app: ASGIApp,
+        store: AuthStore,
+        mcp_runtime: Any = None,
+        mcp_auth_store: Optional[AuthStore] = None,
+    ) -> None:
         self.main_app = main_app
         self.store = store
         self.public_app = _build_public_app(store)
+        self.mcp_auth_store = mcp_auth_store or get_mcp_auth_store()
         self.mcp_runtime = mcp_runtime
         if self.mcp_runtime is None:
             try:
@@ -211,7 +218,7 @@ class RemoteGateway:
                 from remote_mcp import build_remote_mcp_runtime
 
                 self.mcp_runtime = build_remote_mcp_runtime(
-                    auth_store=store,
+                    auth_store=self.mcp_auth_store,
                     host="127.0.0.1",
                     port=8001,
                     public_url=os.environ.get("SPARKLE_MCP_PUBLIC_URL"),

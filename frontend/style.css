@@ -3708,6 +3708,12 @@ body.settings-operation-active {
   margin-top: 12px;
 }
 
+.remote-mcp-settings {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
 .ai-export-status[data-tone="success"] {
   color: #9bc6a3;
 }

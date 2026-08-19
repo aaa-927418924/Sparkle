@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle — 設定</title>
-    <link rel="stylesheet" href="style.css?v=settings-operation-lock-20260803-v1" />
+    <link rel="stylesheet" href="style.css?v=settings-remote-mcp-20260820-v1" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
     <script>document.documentElement.setAttribute("data-theme", "dark");
       try {
@@ -107,7 +107,7 @@
               <h3 class="modal-sub">外部Webアクセス</h3>
               <p class="file-save-desc">
                 Tailscaleアプリを入れられない端末にはFunnel、Tailscaleに接続できる端末にはServe Webを使えます。
-                どちらも専用Web画面だけがアクセスキーの対象で、Sparkleデスクトップアプリ本体にはログイン制限をかけません。
+                どちらも専用Web画面だけがアクセスキーの対象で、Sparkleデスクトップアプリ本体にはログイン制限をかけません。Remote MCPは別のアクセスキーで管理します。
               </p>
               <div class="setting-row column remote-access-mode-row">
                 <label for="remoteAccessMode">Web公開方式</label>
@@ -146,6 +146,37 @@
               <p class="file-save-desc">
                 「この端末を信頼する」を選んだブラウザだけが、以後キーなしで利用できます。ブラウザのCookieを削除した場合やログアウトした場合は再入力が必要です。
               </p>
+
+              <div class="remote-mcp-settings">
+                <h3 class="modal-sub">Remote MCP</h3>
+                <p class="file-save-desc">
+                  ChatGPT WebやClaude Webなどから読み取り専用Toolを使うための公開入口です。スマホ・Web画面用とは別のMCP専用アクセスキーを発行するため、両方を同時に利用できます。
+                </p>
+                <div id="remoteMcpStatus" class="ai-export-status" role="status" aria-live="polite">
+                  状態を確認しています…
+                </div>
+                <p id="remoteMcpUrl" class="remote-access-url" hidden>
+                  MCP接続URL: <a id="remoteMcpUrlLink" href="#" target="_blank" rel="noreferrer"></a>
+                </p>
+                <div id="remoteMcpKeyPanel" class="remote-access-key-panel" hidden>
+                  <label class="modal-label" for="remoteMcpAccessKey">今回のMCPアクセスキー</label>
+                  <div class="remote-access-key-row">
+                    <input id="remoteMcpAccessKey" class="modal-input" type="text" readonly autocomplete="off" spellcheck="false" />
+                    <button id="remoteMcpCopyKey" class="modal-btn ghost" type="button">コピー</button>
+                  </div>
+                  <p class="file-save-desc">このキーは設定ファイルには保存されません。紛失した場合は再発行してください。OAuth認証画面にはこのキーを入力します。</p>
+                </div>
+                <div class="settings-data-actions remote-access-actions">
+                  <button id="remoteMcpEnable" class="modal-btn" type="button">Remote MCPを有効にする</button>
+                  <button id="remoteMcpRetry" class="modal-btn ghost" type="button" hidden>接続を再試行</button>
+                  <button id="remoteMcpRotate" class="modal-btn ghost" type="button" hidden>MCPアクセスキーを再発行</button>
+                  <button id="remoteMcpRevokeAll" class="modal-btn ghost" type="button" hidden>接続をすべて解除</button>
+                  <button id="remoteMcpDisable" class="modal-btn ghost" type="button" hidden>Remote MCPを無効にする</button>
+                </div>
+                <p class="file-save-desc">
+                  OAuthで発行済みのMCP接続はメモリ上で管理されます。キーを再発行または接続をすべて解除すると、既存のMCPクライアントは再認証が必要になります。
+                </p>
+              </div>
             </div>
 
             <div class="settings-col settings-data-col">
@@ -225,6 +256,6 @@
 
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260810-update-notice-v3"></script>
-    <script src="remote-access.js?v=remote-access-20260810-v2"></script>
+    <script src="remote-access.js?v=remote-access-20260820-v3"></script>
   </body>
 </html>

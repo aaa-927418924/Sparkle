@@ -15,6 +15,91 @@ from remote_runtime import (
 
 
 class RemoteAuthStoreTests(unittest.TestCase):
+    def test_web_and_mcp_access_keys_are_independent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            web_store = AuthStore(Path(directory) / "remote-auth.json")
+            mcp_store = AuthStore(Path(directory) / "mcp-auth.json")
+            web_key = web_store.enable()
+            mcp_key = mcp_store.enable()
+
+            self.assertNotEqual(web_key, mcp_key)
+            self.assertTrue(web_store.validate_access_key(web_key))
+            self.assertTrue(mcp_store.validate_access_key(mcp_key))
+            self.assertFalse(web_store.validate_access_key(mcp_key))
+            self.assertFalse(mcp_store.validate_access_key(web_key))
+
+    def test_mcp_enable_does_not_enable_web_or_share_its_key(self):
+        with tempfile.TemporaryDirectory() as directory:
+            web_store = AuthStore(Path(directory) / "remote-auth.json")
+            mcp_store = AuthStore(Path(directory) / "mcp-auth.json")
+            manager = RemoteAccessManager(
+                auth_store=web_store,
+                mcp_auth_store=mcp_store,
+            )
+            with (
+                patch.object(manager, "_start_remote_server", return_value=True),
+                patch.object(manager, "_start_web_route", return_value={"ok": True}),
+                patch.object(
+                    manager,
+                    "_web_status",
+                    return_value={
+                        "available": True,
+                        "active": True,
+                        "target": "remote",
+                        "public_url": "https://sparkle.example.ts.net",
+                    },
+                ),
+            ):
+                result = manager.enable_mcp()
+
+            self.assertTrue(result["ok"])
+            self.assertFalse(web_store.is_enabled())
+            self.assertTrue(mcp_store.is_enabled())
+            self.assertTrue(mcp_store.validate_access_key(result["access_key"]))
+            self.assertFalse(web_store.validate_access_key(result["access_key"]))
+
+    def test_disabling_web_keeps_mcp_route_and_server_alive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            web_store = AuthStore(Path(directory) / "remote-auth.json")
+            mcp_store = AuthStore(Path(directory) / "mcp-auth.json")
+            web_store.enable()
+            mcp_store.enable()
+            manager = RemoteAccessManager(
+                auth_store=web_store,
+                mcp_auth_store=mcp_store,
+            )
+            with (
+                patch.object(manager, "_web_status", return_value={"available": True, "active": True, "target": "remote", "public_url": "https://sparkle.example.ts.net"}),
+                patch.object(manager, "_stop_remote_server") as stop_server,
+            ):
+                result = manager.disable()
+
+            self.assertTrue(result["ok"])
+            self.assertFalse(web_store.is_enabled())
+            self.assertTrue(mcp_store.is_enabled())
+            stop_server.assert_not_called()
+
+    def test_disabling_mcp_keeps_web_route_and_server_alive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            web_store = AuthStore(Path(directory) / "remote-auth.json")
+            mcp_store = AuthStore(Path(directory) / "mcp-auth.json")
+            web_store.enable()
+            mcp_store.enable()
+            manager = RemoteAccessManager(
+                auth_store=web_store,
+                mcp_auth_store=mcp_store,
+            )
+            with (
+                patch.object(manager, "_web_status", return_value={"available": True, "active": True, "target": "remote", "public_url": "https://sparkle.example.ts.net"}),
+                patch.object(manager, "_stop_remote_server") as stop_server,
+            ):
+                result = manager.disable_mcp()
+
+            self.assertTrue(result["ok"])
+            self.assertTrue(web_store.is_enabled())
+            self.assertFalse(mcp_store.is_enabled())
+            stop_server.assert_not_called()
+
     def test_remote_mode_defaults_to_funnel_and_persists(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "remote-auth.json"

@@ -26,6 +26,7 @@ SESSION_HOURS = 12
 STATE_VERSION = 1
 DEFAULT_REMOTE_MODE = "funnel"
 REMOTE_MODES = frozenset({"funnel", "serve"})
+MCP_AUTH_FILE = "mcp-auth.json"
 
 
 class InvalidAccessKey(ValueError):
@@ -329,6 +330,7 @@ class AuthStore:
 
 
 _default_store: Optional[AuthStore] = None
+_default_mcp_store: Optional[AuthStore] = None
 _default_store_lock = threading.Lock()
 
 
@@ -338,3 +340,13 @@ def get_auth_store() -> AuthStore:
         if _default_store is None:
             _default_store = AuthStore()
         return _default_store
+
+
+def get_mcp_auth_store() -> AuthStore:
+    """Return the persistent credential store used only by Remote MCP."""
+
+    global _default_mcp_store
+    with _default_store_lock:
+        if _default_mcp_store is None:
+            _default_mcp_store = AuthStore(get_app_data_dir() / MCP_AUTH_FILE)
+        return _default_mcp_store

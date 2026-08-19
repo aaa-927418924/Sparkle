@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.request import urlopen
 
-from remote_auth import AuthStore
+from remote_auth import AuthStore, get_mcp_auth_store
 
 
 REMOTE_HOST = "127.0.0.1"
@@ -161,15 +161,32 @@ def _has_any_route_config(value: Any) -> bool:
 class RemoteAccessManager:
     """Own the local authenticated gateway and its Funnel/Serve route."""
 
-    def __init__(self, auth_store: Optional[AuthStore] = None, main_port: int = MAIN_PORT) -> None:
+    def __init__(
+        self,
+        auth_store: Optional[AuthStore] = None,
+        main_port: int = MAIN_PORT,
+        mcp_auth_store: Optional[AuthStore] = None,
+    ) -> None:
         self.auth_store = auth_store or AuthStore()
+        self.mcp_auth_store = mcp_auth_store or get_mcp_auth_store()
         self.main_target = f"http://{REMOTE_HOST}:{int(main_port)}"
         self._lock = threading.RLock()
         self._server = None
         self._thread: Optional[threading.Thread] = None
+        self._mcp_runtime = None
         self._last_error: Optional[str] = None
         self._funnel_cache: Optional[dict[str, Any]] = None
         self._funnel_cache_at = 0.0
+
+    def _any_enabled(self) -> bool:
+        return self.auth_store.is_enabled() or self.mcp_auth_store.is_enabled()
+
+    def _reset_mcp_oauth(self) -> None:
+        with self._lock:
+            runtime = self._mcp_runtime
+        revoke_all = getattr(runtime, "revoke_all", None) if runtime is not None else None
+        if callable(revoke_all):
+            revoke_all()
 
     @staticmethod
     def _tailscale_path() -> Optional[str]:
@@ -340,8 +357,13 @@ class RemoteAccessManager:
                 from main import app
                 from remote_gateway import RemoteGateway
 
+                gateway = RemoteGateway(
+                    app,
+                    self.auth_store,
+                    mcp_auth_store=self.mcp_auth_store,
+                )
                 config = uvicorn.Config(
-                    RemoteGateway(app, self.auth_store),
+                    gateway,
                     host=REMOTE_HOST,
                     port=REMOTE_PORT,
                     log_config=None,
@@ -359,6 +381,7 @@ class RemoteAccessManager:
                     self._last_error = f"リモートWebサーバーが停止しました: {exc}"
 
             self._server = server
+            self._mcp_runtime = gateway.mcp_runtime
             self._thread = threading.Thread(target=run, name="sparkle-remote-web", daemon=True)
             self._thread.start()
 
@@ -382,6 +405,8 @@ class RemoteAccessManager:
             server.should_exit = True
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=3.0)
+        with self._lock:
+            self._mcp_runtime = None
 
     def _prepare_serve_switch(self) -> tuple[bool, Optional[str]]:
         serve = self._serve_status()
@@ -565,9 +590,34 @@ class RemoteAccessManager:
             "error": result.get("error"),
         }
 
+    def enable_mcp(self) -> dict[str, Any]:
+        """Enable Remote MCP with a credential independent from Remote Web."""
+
+        key = self.mcp_auth_store.enable()
+        self._reset_mcp_oauth()
+        if not self._start_remote_server():
+            return {
+                "ok": False,
+                "access_key": key,
+                "status": self.status(),
+                "error": self._last_error,
+            }
+        result = self._start_web_route()
+        self._last_error = result.get("error") if not result.get("ok") else None
+        return {
+            "ok": bool(result.get("ok")),
+            "access_key": key,
+            "status": self.status(),
+            "error": result.get("error"),
+        }
+
     def retry(self) -> dict[str, Any]:
-        if not self.auth_store.is_enabled():
-            return {"ok": False, "status": self.status(), "error": "先に外部Webアクセスを有効にしてください。"}
+        if not self._any_enabled():
+            return {
+                "ok": False,
+                "status": self.status(),
+                "error": "先に外部WebアクセスまたはRemote MCPを有効にしてください。",
+            }
         if not self._start_remote_server():
             return {"ok": False, "status": self.status(), "error": self._last_error}
         result = self._start_web_route()
@@ -591,7 +641,7 @@ class RemoteAccessManager:
         if previous == normalized:
             return {"ok": True, "status": self.status()}
 
-        if self.auth_store.is_enabled():
+        if self._any_enabled():
             if previous == WEB_MODE_FUNNEL:
                 current = self.funnel_status(force=True)
                 if not current.get("available"):
@@ -617,7 +667,7 @@ class RemoteAccessManager:
                     return {"ok": False, "status": self.status(), "error": error}
 
         self.auth_store.set_remote_mode(normalized)
-        if not self.auth_store.is_enabled():
+        if not self._any_enabled():
             self._last_error = None
             return {"ok": True, "status": self.status()}
         result = self._start_web_route()
@@ -638,38 +688,74 @@ class RemoteAccessManager:
         self.auth_store.revoke_all()
         return {"ok": True, "status": self.status()}
 
-    def disable(self) -> dict[str, Any]:
+    def rotate_mcp(self) -> dict[str, Any]:
+        if not self.mcp_auth_store.is_enabled():
+            return {"ok": False, "status": self.status(), "error": "先にRemote MCPを有効にしてください。"}
+        key = self.mcp_auth_store.rotate_access_key()
+        self._reset_mcp_oauth()
+        return {"ok": True, "access_key": key, "status": self.status()}
+
+    def revoke_mcp_all(self) -> dict[str, Any]:
+        if not self.mcp_auth_store.is_enabled():
+            return {"ok": False, "status": self.status(), "error": "Remote MCPは有効になっていません。"}
+        self.mcp_auth_store.revoke_all()
+        self._reset_mcp_oauth()
+        return {"ok": True, "status": self.status()}
+
+    def _stop_public_route(self) -> tuple[bool, Optional[str]]:
         mode = self._configured_web_mode()
         if mode == WEB_MODE_SERVE:
             current = self._serve_web_status()
             if not current.get("available"):
-                self._last_error = current.get("error") or "Tailscale Serveの状態を確認できません。"
-                return {"ok": False, "status": self.status(), "error": self._last_error}
+                return False, current.get("error") or "Tailscale Serveの状態を確認できません。"
             if current.get("active"):
-                stopped, error = self._stop_serve_web_route()
-                if not stopped:
-                    self._last_error = error
-                    return {"ok": False, "status": self.status(), "error": error}
-        else:
-            current = self.funnel_status(force=True)
-            if not current.get("available"):
-                self._last_error = current.get("error") or "Tailscale Funnelの状態を確認できません。"
-                return {"ok": False, "status": self.status(), "error": self._last_error}
-            if current.get("active") and current.get("target") == "remote":
-                ok, stdout, stderr = self._run_cli(["funnel", "reset"])
-                if not ok:
-                    self._last_error = self._cli_error(stderr or stdout)
-                    return {"ok": False, "status": self.status(), "error": self._last_error}
-                self._funnel_cache = None
-                self._restore_default_serve_route()
+                return self._stop_serve_web_route()
+            return True, None
 
+        current = self.funnel_status(force=True)
+        if not current.get("available"):
+            return False, current.get("error") or "Tailscale Funnelの状態を確認できません。"
+        if current.get("active") and current.get("target") == "remote":
+            ok, stdout, stderr = self._run_cli(["funnel", "reset"])
+            if not ok:
+                return False, self._cli_error(stderr or stdout)
+            self._funnel_cache = None
+            self._restore_default_serve_route()
+        return True, None
+
+    def disable(self) -> dict[str, Any]:
+        if not self.auth_store.is_enabled():
+            return {"ok": False, "status": self.status(), "error": "外部Webアクセスは有効になっていません。"}
+        mcp_enabled = self.mcp_auth_store.is_enabled()
+        if not mcp_enabled:
+            stopped, error = self._stop_public_route()
+            if not stopped:
+                self._last_error = error
+                return {"ok": False, "status": self.status(), "error": error}
         self.auth_store.disable()
-        self._stop_remote_server()
+        if not mcp_enabled:
+            self._stop_remote_server()
+        self._last_error = None
+        return {"ok": True, "status": self.status()}
+
+    def disable_mcp(self) -> dict[str, Any]:
+        if not self.mcp_auth_store.is_enabled():
+            return {"ok": False, "status": self.status(), "error": "Remote MCPは有効になっていません。"}
+        web_enabled = self.auth_store.is_enabled()
+        if not web_enabled:
+            stopped, error = self._stop_public_route()
+            if not stopped:
+                self._last_error = error
+                return {"ok": False, "status": self.status(), "error": error}
+        self.mcp_auth_store.disable()
+        self._reset_mcp_oauth()
+        if not web_enabled:
+            self._stop_remote_server()
         self._last_error = None
         return {"ok": True, "status": self.status()}
 
     def start_on_launch(self) -> dict[str, Any]:
-        if not self.auth_store.is_enabled():
+        if not self._any_enabled():
             return self.status()
         if not self._start_remote_server():
             return self.status()
@@ -679,7 +765,7 @@ class RemoteAccessManager:
 
     def shutdown(self) -> None:
         with self._lock:
-            enabled = self.auth_store.is_enabled()
+            enabled = self._any_enabled()
             mode = self._configured_web_mode()
         if enabled:
             if mode == WEB_MODE_SERVE:
@@ -692,7 +778,9 @@ class RemoteAccessManager:
         self._stop_remote_server()
 
     def status(self) -> dict[str, Any]:
-        enabled = self.auth_store.is_enabled()
+        web_enabled = self.auth_store.is_enabled()
+        mcp_enabled = self.mcp_auth_store.is_enabled()
+        enabled = web_enabled or mcp_enabled
         web_mode = self._configured_web_mode()
         if enabled:
             remote = self._web_status(web_mode)
@@ -716,6 +804,7 @@ class RemoteAccessManager:
             "mode": web_mode if enabled else "tailscale",
             "web_mode": web_mode,
             "auth": self.auth_store.status(),
+            "mcp_auth": self.mcp_auth_store.status(),
             "remote_server": bool(self._thread and self._thread.is_alive()),
             "mcp_url": configured_mcp_url,
             "remote": remote,

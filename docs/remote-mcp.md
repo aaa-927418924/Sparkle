@@ -4,7 +4,7 @@ SparkleのLocal MCPとRemote MCPは同じ`build_server`、`ToolService`、読み
 
 ## 認証と公開URL
 
-Remote MCPはOAuth 2.1 Authorization Code + PKCEをResource Serverと同じプロセスで提供します。WebクライアントがOAuth認証を開始すると、Sparkleの既存リモートアクセスキーを入力する読み取り許可画面が表示されます。OAuthのauthorization code、access token、refresh tokenはメモリ上だけに保持し、ログや`remote-auth.json`へ平文保存しません。
+Remote MCPはOAuth 2.1 Authorization Code + PKCEをResource Serverと同じプロセスで提供します。WebクライアントがOAuth認証を開始すると、Sparkle設定画面で発行したMCP専用アクセスキーを入力する読み取り許可画面が表示されます。OAuthのauthorization code、access token、refresh tokenはメモリ上だけに保持し、ログや`mcp-auth.json`へ平文保存しません。スマホ・Web画面用の`remote-auth.json`とは別の認証系統です。
 
 MCPの公開URLは、外部から見える`/mcp`まで含めて環境変数で指定します。
 
@@ -12,7 +12,13 @@ MCPの公開URLは、外部から見える`/mcp`まで含めて環境変数で�
 $env:SPARKLE_MCP_PUBLIC_URL = "https://your-sparkle-host.example/mcp"
 ```
 
-既存GUIの「外部Webアクセス」を有効にすると、同じリモートWeb gatewayの`/mcp`が使えます。Funnel/HTTPSで公開したURLに`/mcp`を付けてください。`RemoteAccessManager.status()`にも`mcp_url`を返します。
+既存GUIの「外部Webアクセス」と設定画面の「Remote MCP」を有効にすると、同じリモートWeb gatewayの`/mcp`が使えます。Funnel/HTTPSで公開したURLに`/mcp`を付けてください。Web用とMCP用のどちらか一方だけを有効にしても動作し、両方を有効にした場合も同じ公開URLを共有できます。`RemoteAccessManager.status()`にも`mcp_url`を返します。
+
+## MCP専用アクセスキー
+
+デスクトップアプリの設定 → 外部Webアクセス → Remote MCPで「Remote MCPを有効にする」を押すと、MCP専用アクセスキーが一度だけ表示されます。ChatGPT Web、Claude Web、Claude DesktopのRemote ConnectorのOAuth画面には、このMCP専用キーを入力してください。スマホアプリ/Web画面に使うWeb公開用アクセスキーは入力しません。
+
+キーを紛失した場合は「MCPアクセスキーを再発行」を押します。再発行または「接続をすべて解除」を実行すると、Remote MCPのOAuthクライアント・認証コード・アクセストークン・リフレッシュトークンが破棄され、MCPクライアントは再認証が必要になります。Web画面のログインセッションは影響を受けません。
 
 `SPARKLE_MCP_TOKEN`を設定した場合は、OAuthを使わずにBearer Tokenでも接続できます。これはローカル検証・固定Token運用向けです。16文字未満のTokenは拒否します。
 
@@ -50,13 +56,13 @@ $env:SPARKLE_MCP_PUBLIC_URL = "https://your-sparkle-host.example/mcp"
 
 ### Remote Connectorを使う方法
 
-Claude Desktopのアカウント側Remote Connectorを使う場合は、Claude Webと同じ公開URLが必要です。Claude側の`Customize` → `Connectors` → `Add custom connector`で`https://.../mcp`を登録し、OAuth画面でSparkleアクセスキーを入力します。
+Claude Desktopのアカウント側Remote Connectorを使う場合は、Claude Webと同じ公開URLが必要です。Claude側の`Customize` → `Connectors` → `Add custom connector`で`https://.../mcp`を登録し、OAuth画面でMCP専用アクセスキーを入力します。
 
 Remote ConnectorはClaudeのクラウドからSparkleへ接続するため、`localhost`やTailnet内だけのTailscale Serve URLでは到達できません。公開HTTPSのFunnel、または同等の公開リバースプロキシが必要です。
 
 ## Claude Web
 
-`Customize` → `Connectors` → `+` → `Add custom connector`から、公開MCP URL（`/mcp`まで）を登録します。初回接続時にOAuthの認証画面が開くので、Sparkleのリモートアクセスキーを入力して読み取り接続を許可します。
+`Customize` → `Connectors` → `+` → `Add custom connector`から、公開MCP URL（`/mcp`まで）を登録します。初回接続時にOAuthの認証画面が開くので、SparkleのMCP専用アクセスキーを入力して読み取り接続を許可します。
 
 Claude WebのRemote ConnectorはAnthropicのクラウドから接続されるため、ローカルPCから見えるだけのURLでは動作しません。
 

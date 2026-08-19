@@ -34,6 +34,23 @@ def _pkce(verifier: str) -> str:
 
 
 class RemoteMcpTests(unittest.TestCase):
+    def test_remote_gateway_uses_mcp_store_separate_from_web_store(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            web_store = AuthStore(Path(directory) / "remote-auth.json")
+            mcp_store = AuthStore(Path(directory) / "mcp-auth.json")
+            web_key = web_store.enable()
+            mcp_key = mcp_store.enable()
+            gateway = RemoteGateway(
+                FastAPI(),
+                web_store,
+                mcp_auth_store=mcp_store,
+            )
+
+            self.assertIs(gateway.mcp_auth_store, mcp_store)
+            self.assertIs(gateway.mcp_runtime.auth_store, mcp_store)
+            self.assertTrue(gateway.mcp_runtime.auth_store.validate_access_key(mcp_key))
+            self.assertFalse(gateway.mcp_runtime.auth_store.validate_access_key(web_key))
+
     def test_remote_gateway_keeps_mcp_lifespan_and_route(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             db_path = Path(directory) / "clips.db"

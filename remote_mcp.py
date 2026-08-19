@@ -6,10 +6,10 @@ Streamable HTTP transport and the small OAuth resource/authorization server
 needed by web MCP clients.
 
 The OAuth implementation is intentionally read-only and single-user for this
-initial release.  It uses the existing remote access key as the user login,
-keeps short-lived OAuth state in memory, and never stores plaintext tokens.
-Per-user identity and an external identity provider can replace this layer
-later without changing the MCP tools.
+initial release. It uses a dedicated MCP access key as the user login, keeps
+short-lived OAuth state in memory, and never stores plaintext tokens. Per-user
+identity and an external identity provider can replace this layer later
+without changing the MCP tools.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Mount, Route
 
 from mcp_server import build_server
-from remote_auth import AuthStore
+from remote_auth import AuthStore, get_mcp_auth_store
 
 
 LOGGER = logging.getLogger("sparkle_mcp.remote")
@@ -386,7 +386,7 @@ class RemoteMcpOAuth:
             raise OAuthInputError("認証試行が多すぎます。5分後に再試行してください。")
         if not self.auth_store.validate_access_key(access_key):
             self._login_limiter.failed(attempt_key)
-            raise OAuthInputError("Sparkleのアクセスキーが正しくありません。")
+            raise OAuthInputError("MCP公開用アクセスキーが正しくありません。")
         self._login_limiter.succeeded(attempt_key)
 
         code = secrets.token_urlsafe(32)
@@ -482,6 +482,17 @@ class RemoteMcpOAuth:
             self._access_tokens.pop(token_hash, None)
             self._refresh_tokens.pop(token_hash, None)
 
+    def revoke_all(self) -> None:
+        """Invalidate every in-memory OAuth client, grant, and pending request."""
+
+        with self._lock:
+            self._clients.clear()
+            self._pending.clear()
+            self._codes.clear()
+            self._refresh_tokens.clear()
+            self._access_tokens.clear()
+            self._login_limiter = _LoginRateLimiter()
+
     async def verify_token(self, token: str) -> Optional[AccessToken]:
         with self._lock:
             self._purge_locked()
@@ -506,7 +517,7 @@ class RemoteMcpOAuth:
 {safe_error}<form method="post" action="/oauth/approve">
 <input type="hidden" name="request_id" value="{html.escape(pending.request_id)}">
 <input type="hidden" name="form_token" value="{html.escape(pending.form_token)}">
-<label for="access_key">Sparkleアクセスキー</label><input id="access_key" name="access_key" type="password" autocomplete="current-password" required>
+<label for="access_key">MCP公開用アクセスキー</label><input id="access_key" name="access_key" type="password" autocomplete="current-password" required>
 <button type="submit">読み取り接続を許可</button></form></body></html>"""
         return HTMLResponse(body, headers=_no_store_headers())
 
@@ -629,7 +640,7 @@ class RemoteMcpRuntime:
         if static_token is not None and static_token and len(static_token) < 16:
             raise ValueError("SPARKLE_MCP_TOKENは16文字以上で指定してください。")
         self.issuer_url = _issuer_from_resource(self.public_url)
-        self.auth_store = auth_store or AuthStore()
+        self.auth_store = auth_store or get_mcp_auth_store()
         self.oauth = RemoteMcpOAuth(self.auth_store, self.issuer_url, self.public_url)
         self.token_verifier = SparkleTokenVerifier(self.oauth, static_token)
         auth = AuthSettings(
@@ -696,6 +707,11 @@ class RemoteMcpRuntime:
 
     def handles_path(self, path: str) -> bool:
         return path in OAUTH_PATHS
+
+    def revoke_all(self) -> None:
+        """Invalidate OAuth state without affecting Web sessions."""
+
+        self.oauth.revoke_all()
 
 
 def build_remote_mcp_runtime(

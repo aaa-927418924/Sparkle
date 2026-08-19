@@ -160,7 +160,10 @@
   }
 
   function focusPageIfNeeded(force = false) {
-    if (typeof document.hasFocus === "function" && document.hasFocus()) return;
+    // `window.focus()` can update the DOM focus state before WebView2 has
+    // focused its native control. Pointer entry must therefore retry it even
+    // when document.hasFocus() already reports true.
+    if (!force && typeof document.hasFocus === "function" && document.hasFocus()) return;
 
     const now = Date.now();
     if (!force && now - focusAttemptedAt < FOCUS_RETRY_MS) return;

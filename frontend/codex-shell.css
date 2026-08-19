@@ -987,6 +987,9 @@ html.page-transition-enter-back #mainContent {
   align-items: stretch;
   gap: 4px;
   overflow-y: hidden;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
   border-radius: 0;
 }
 

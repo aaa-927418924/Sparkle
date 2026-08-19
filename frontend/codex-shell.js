@@ -605,22 +605,9 @@
     return !isSmallSidebarGap(event, sidebar);
   }
 
-  function startWindowDrag(event) {
-    const api = window.pywebview?.api;
-    if (!api) return;
-
-    // With the native Windows caption enabled, the OS title bar owns window
-    // moving. Dragging in-app regions would fight the caption drag, so the
-    // sidebar/header drag handlers are disabled in that mode.
-    if (document.documentElement.classList.contains("native-titlebar")) return;
-
-    event.preventDefault();
-    event.stopImmediatePropagation();
-
+  function startWindowDragFallback(api, startScreenX, startScreenY) {
     if (typeof api.begin_window_drag !== "function" || typeof api.move_window !== "function") return;
 
-    const startScreenX = event.screenX;
-    const startScreenY = event.screenY;
     const drag = { api, geometry: null, startScreenX, startScreenY };
     activeDrag = drag;
 
@@ -657,6 +644,41 @@
         );
       }
     }).catch(cleanup);
+  }
+
+  function startWindowDrag(event) {
+    const api = window.pywebview?.api;
+    if (!api) return;
+
+    // With the native Windows caption enabled, the OS title bar owns window
+    // moving. Dragging in-app regions would fight the caption drag, so the
+    // sidebar/header drag handlers are disabled in that mode.
+    if (document.documentElement.classList.contains("native-titlebar")) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    const startScreenX = event.screenX;
+    const startScreenY = event.screenY;
+
+    // Let Windows own the pointer loop. The previous implementation moved the
+    // window from WebView mousemove events, which stops receiving events as
+    // soon as the window leaves the pointer's original position.
+    if (typeof api.begin_native_drag === "function") {
+      try {
+        Promise.resolve(api.begin_native_drag(startScreenX, startScreenY)).then((started) => {
+          if (started !== false || activeDrag !== null) return;
+          startWindowDragFallback(api, startScreenX, startScreenY);
+        }).catch(() => {
+          if (activeDrag === null) startWindowDragFallback(api, startScreenX, startScreenY);
+        });
+      } catch {
+        startWindowDragFallback(api, startScreenX, startScreenY);
+      }
+      return;
+    }
+
+    startWindowDragFallback(api, startScreenX, startScreenY);
   }
 
   function installWindowDrag() {

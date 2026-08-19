@@ -21,6 +21,7 @@
   const AXIS_RATIO = 1.2;
   const LINE_DELTA_PX = 16;
   const FOCUS_RETRY_MS = 250;
+  const FOCUS_RECOVERY_DELAYS_MS = [0, 50, 150, 350];
   let installed = false;
   let focusAttemptedAt = 0;
   let accumulatedDelta = 0;
@@ -209,7 +210,12 @@
   }
 
   function installFocusRecovery() {
-    focusPageIfNeeded(true);
+    // pywebview exposes its JS bridge before WebView2 has completely settled
+    // the new document's input target. Retry briefly after boot so stationary
+    // pointers do not have to generate pointerover/pointermove to recover it.
+    for (const delay of FOCUS_RECOVERY_DELAYS_MS) {
+      window.setTimeout(() => focusPageIfNeeded(true), delay);
+    }
     document.addEventListener("pointerover", () => focusPageIfNeeded(true), {
       capture: true,
       passive: true,

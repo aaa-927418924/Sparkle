@@ -144,13 +144,13 @@ function renderTemplateSlots() {
     "aria-label",
     visibleTemplates.length ? `保存テンプレート（${visibleTemplates.length}件）` : "保存テンプレート"
   );
-  visibleTemplates.forEach((template, index) => {
+  visibleTemplates.forEach((template) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "template-slot";
-    button.textContent = String(index + 1);
+    button.textContent = template.title;
     button.title = template.title;
-    button.setAttribute("aria-label", `テンプレート${index + 1}: ${template.title}`);
+    button.setAttribute("aria-label", `テンプレート「${template.title}」を適用`);
     button.addEventListener("click", () => applyTemplate(template));
     els.templateSlots.appendChild(button);
   });

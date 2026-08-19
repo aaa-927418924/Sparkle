@@ -8,10 +8,12 @@
     { path: "/Projects", nav: "projects" },
   ];
   const TRANSITION_KEY = "sparkle.pageTransition";
+  const SWIPE_LOCK_KEY = "sparkle.pageSwipeLockUntil";
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   const SWIPE_THRESHOLD = 96;
   const SWIPE_WINDOW_MS = 220;
   const SWIPE_COOLDOWN_MS = 500;
+  const SWIPE_GESTURE_LOCK_MS = 1000;
   const AXIS_RATIO = 1.2;
   const LINE_DELTA_PX = 16;
   let installed = false;
@@ -19,6 +21,7 @@
   let accumulatedSign = 0;
   let accumulationStartedAt = 0;
   let cooldownUntil = 0;
+  let swipeLockUntil = 0;
 
   function normalizePath(pathname) {
     const value = String(pathname || "/").replace(/\/+$/, "");
@@ -30,10 +33,71 @@
     return ROUTES.findIndex((route) => route.path === path);
   }
 
+  function getSwipeContext() {
+    const path = normalizePath(window.location.pathname);
+    if (path === "/Note") {
+      return {
+        type: "back",
+        targetPath: "/Notes",
+        backElementId: "backLink",
+      };
+    }
+
+    if (path === "/Projects" && new URLSearchParams(window.location.search).has("id")) {
+      return {
+        type: "back",
+        targetPath: "/Projects",
+        backElementId: "backToList",
+        sameDocument: true,
+      };
+    }
+
+    const currentIndex = routeIndex(path);
+    return currentIndex < 0 ? null : { type: "route", currentIndex };
+  }
+
   function resetAccumulator() {
     accumulatedDelta = 0;
     accumulatedSign = 0;
     accumulationStartedAt = 0;
+  }
+
+  function restoreSwipeLock() {
+    try {
+      const storedUntil = Number(sessionStorage.getItem(SWIPE_LOCK_KEY));
+      swipeLockUntil = Number.isFinite(storedUntil) && storedUntil > Date.now() ? storedUntil : 0;
+      if (!swipeLockUntil) sessionStorage.removeItem(SWIPE_LOCK_KEY);
+    } catch {
+      swipeLockUntil = 0;
+    }
+  }
+
+  function lockSwipeGesture(now = Date.now()) {
+    swipeLockUntil = now + SWIPE_GESTURE_LOCK_MS;
+    try {
+      sessionStorage.setItem(SWIPE_LOCK_KEY, String(swipeLockUntil));
+    } catch {
+      // The in-memory lock still protects the current document.
+    }
+  }
+
+  function isSwipeLocked(now = Date.now()) {
+    if (now < swipeLockUntil) {
+      // Trackpad inertia can continue after the document navigation. Extend
+      // the quiet period whenever another horizontal event from that tail
+      // arrives, including on the destination document.
+      lockSwipeGesture(now);
+      return true;
+    }
+    if (swipeLockUntil) {
+      swipeLockUntil = 0;
+      try {
+        sessionStorage.removeItem(SWIPE_LOCK_KEY);
+      } catch {
+        // Ignore storage cleanup failures.
+      }
+    }
+    return false;
   }
 
   function markTransition(targetPath, direction) {
@@ -114,8 +178,30 @@
     return { x: event.deltaX * unit, y: event.deltaY * unit };
   }
 
-  function navigateBySwipe(deltaSign) {
-    const currentIndex = routeIndex();
+  function navigateBySwipe(deltaSign, context) {
+    if (!context) return;
+
+    if (context.type === "back") {
+      lockSwipeGesture();
+      if (context.sameDocument) {
+        const backButton = document.getElementById(context.backElementId);
+        if (backButton) {
+          backButton.click();
+          return;
+        }
+      } else {
+        markTransition(context.targetPath, "back");
+        const backLink = document.getElementById(context.backElementId);
+        if (backLink) {
+          backLink.click();
+          return;
+        }
+      }
+      window.location.assign(context.targetPath);
+      return;
+    }
+
+    const currentIndex = context.currentIndex;
     if (currentIndex < 0) return;
 
     // A negative deltaX is a physical left swipe in Chromium's wheel model.
@@ -123,6 +209,7 @@
     if (targetIndex < 0 || targetIndex >= ROUTES.length) return;
 
     const target = ROUTES[targetIndex];
+    lockSwipeGesture();
     markTransition(target.path, targetIndex > currentIndex ? "forward" : "back");
     window.location.assign(target.path);
   }
@@ -135,7 +222,7 @@
       event.shiftKey ||
       event.altKey ||
       !(event.target instanceof Element) ||
-      routeIndex() < 0 ||
+      !getSwipeContext() ||
       isIgnoredTarget(event.target)
     ) {
       resetAccumulator();
@@ -150,6 +237,10 @@
 
     const { x, y } = normalizeWheelDelta(event);
     if (!x || Math.abs(x) <= Math.abs(y) * AXIS_RATIO) {
+      resetAccumulator();
+      return;
+    }
+    if (isSwipeLocked(now)) {
       resetAccumulator();
       return;
     }
@@ -168,14 +259,18 @@
 
     if (Math.abs(accumulatedDelta) < SWIPE_THRESHOLD) return;
 
-    const currentIndex = routeIndex();
-    const targetIndex = currentIndex + (sign < 0 ? 1 : -1);
+    const context = getSwipeContext();
     resetAccumulator();
     cooldownUntil = now + SWIPE_COOLDOWN_MS;
-    if (targetIndex < 0 || targetIndex >= ROUTES.length) return;
+    if (!context) return;
+
+    if (context.type === "route") {
+      const targetIndex = context.currentIndex + (sign < 0 ? 1 : -1);
+      if (targetIndex < 0 || targetIndex >= ROUTES.length) return;
+    }
 
     if (event.cancelable) event.preventDefault();
-    navigateBySwipe(sign);
+    navigateBySwipe(sign, context);
   }
 
   function handleSidebarClick(event) {
@@ -221,6 +316,7 @@
   function boot() {
     if (installed || !window.pywebview?.api) return;
     installed = true;
+    restoreSwipeLock();
     consumeTransition();
     document.addEventListener("wheel", handleWheel, {
       capture: true,

@@ -1,0 +1,4 @@
+# Optional dependency set for the Claude Desktop / future Remote MCP server.
+# Kept separate from the GUI requirements so the existing desktop build does
+# not gain a new runtime dependency until MCP packaging is explicitly enabled.
+mcp>=2,<3

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "sparkle": {
+      "command": "C:\\Users\\PC_User.DESKTOP-N70PB5O\\Documents\\OpenCode\\Sparkle\\.venv313\\Scripts\\python.exe",
+      "args": [
+        "C:\\Users\\PC_User.DESKTOP-N70PB5O\\Documents\\OpenCode\\Sparkle\\mcp_server.py"
+      ]
+    }
+  }
+}

@@ -73,6 +73,29 @@ class ProjectAssistantTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_project_context_excludes_current_project_but_keeps_attached_items(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name, description) VALUES (?, ?)", ("現在のプロジェクト", "概要"))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.execute(
+                "INSERT INTO clips(url, title, project_id) VALUES (?, ?, ?)",
+                ("https://example.com/clip", "添付クリップ", project_id),
+            )
+            connection.execute("INSERT INTO tasks(title, project_id) VALUES (?, ?)", ("添付タスク", project_id))
+            connection.execute("INSERT INTO notes(title, body, project_id) VALUES (?, ?, ?)", ("添付メモ", "本文", project_id))
+            connection.commit()
+
+            context = assistant._project_context(connection, project_id)
+
+            self.assertNotIn(f"project:{project_id}", {item.key for item in context.items})
+            self.assertNotIn("現在のプロジェクト", context.prompt)
+            self.assertIn("添付クリップ", context.prompt)
+            self.assertIn("添付タスク", context.prompt)
+            self.assertIn("添付メモ", context.prompt)
+        finally:
+            connection.close()
+
     def test_model_sources_are_limited_to_project_context(self):
         connection = make_connection()
         try:

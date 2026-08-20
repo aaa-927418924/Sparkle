@@ -128,6 +128,15 @@
     } catch {
       // The async native/browser fallbacks below may still succeed.
     }
+
+    // The Ask AI composer is a normal textarea. Let WebView2 finish its
+    // native copy action for this control while retaining the native bridge
+    // fallback for hosts where the default clipboard owner is unavailable.
+    if (event.target?.id === "projectAssistantMessage") {
+      void copyText(value);
+      return;
+    }
+
     event.preventDefault();
     void copyText(value);
   }, true);

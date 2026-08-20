@@ -102,6 +102,41 @@ class ProjectAssistantTests(unittest.TestCase):
                 )
             self.assertEqual(result.answer, "対象クリップを参照しました。")
             self.assertEqual([(source.kind, source.id) for source in result.sources], [("clip", clip_id)])
+            self.assertEqual(result.sources[0].href, "https://example.com")
+            history = assistant.get_project_assistant_history(connection, project_id)
+            self.assertEqual(history.messages[-1].sources[0].href, "https://example.com")
+        finally:
+            connection.close()
+
+    def test_local_clip_does_not_expose_a_file_path_as_source_link(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("対象",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.execute(
+                "INSERT INTO clips(url, title, clip_type, project_id) VALUES (?, ?, ?, ?)",
+                ("local://C:/Users/example/secret.mov", "ローカル素材", "local", project_id),
+            )
+            connection.commit()
+            context = assistant._project_context(connection, project_id)
+            clip = next(item for item in context.items if item.kind == "clip")
+            self.assertEqual(clip.href, "")
+        finally:
+            connection.close()
+
+    def test_note_source_targets_the_note_editor(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("対象",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.execute(
+                "INSERT INTO notes(title, body, project_id) VALUES (?, ?, ?)",
+                ("対象メモ", "本文", project_id),
+            )
+            connection.commit()
+            context = assistant._project_context(connection, project_id)
+            note = next(item for item in context.items if item.kind == "note")
+            self.assertEqual(note.href, f"/Note?id={note.id}")
         finally:
             connection.close()
 

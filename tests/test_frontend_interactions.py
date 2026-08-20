@@ -18,11 +18,24 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertNotIn("このプロジェクトについて質問や依頼を入力してください。変更操作は実行前に確認します。", html + js)
         self.assertIn(">Ask AI<", html)
         self.assertNotIn(">専属AI<", html)
+        self.assertIn("project-assistant-source-history-20260821-v3", html)
+        self.assertIn('class="project-assistant-actions" role="dialog"', html)
+        self.assertIn('aria-describedby="projectAssistantActionHelp"', html)
         self.assertIn('event.key !== "Enter" || event.shiftKey || event.isComposing', js)
+        self.assertIn("function safeSourceHref(value)", js)
+        self.assertIn('link.className = "project-assistant-source-link"', js)
+        self.assertIn('text.className = "project-assistant-source-label"', js)
+        self.assertIn('link.target = "_blank"', js)
+        self.assertIn("appendSources(bubble, message.sources)", js)
+        self.assertIn("removeResolvedAction", js)
+        self.assertIn("card.remove()", js)
         drawer_css = css[css.index("/* Project assistant drawer") :]
         dialog_start = drawer_css.index(".project-assistant-dialog {")
         dialog_end = drawer_css.index(".project-assistant-header {", dialog_start)
         dialog_css = drawer_css[dialog_start:dialog_end]
+        action_start = drawer_css.index(".project-assistant-actions {")
+        action_end = drawer_css.index(".project-assistant-actions .modal-sub", action_start)
+        action_css = drawer_css[action_start:action_end]
         self.assertIn("right: 0;", drawer_css)
         self.assertIn("background: transparent;", drawer_css)
         self.assertIn("transform: none;", dialog_css)
@@ -31,6 +44,10 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertNotIn("translateX(100%)", drawer_css)
         self.assertNotIn("project-assistant-modal.is-open", drawer_css)
         self.assertNotIn("requestAnimationFrame", js)
+        self.assertIn("position: absolute;", action_css)
+        self.assertIn("bottom: 156px;", action_css)
+        self.assertIn("overflow-y: auto;", action_css)
+        self.assertIn("text-overflow: ellipsis;", drawer_css)
 
     def test_pointer_focus_recovery_does_not_steal_editor_focus(self):
         source = (ROOT / "frontend" / "page-transition.js").read_text(encoding="utf-8")

@@ -151,6 +151,7 @@ class ProjectAssistantHistoryMessage(BaseModel):
     model: Optional[str] = None
     scope: Literal["project", "all"] = "project"
     context_item_count: int = 0
+    sources: list[ProjectAssistantSource] = Field(default_factory=list)
     created_at: str
 
 
@@ -493,6 +494,20 @@ def _clean_text(value: Any, limit: int = 4_000) -> str:
     return text.strip()[:limit]
 
 
+def _clip_source_href(url: Any, clip_type: Any = None) -> str:
+    """Return only a safe web URL for a clip's direct source button."""
+
+    raw_url = str(url or "").strip()
+    if not raw_url or (clip_type or "url") == "local" or raw_url.lower().startswith("local://"):
+        return ""
+    parsed = urllib.parse.urlsplit(raw_url)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return ""
+    if parsed.username or parsed.password:
+        return ""
+    return raw_url
+
+
 @dataclass
 class _ContextItem:
     kind: str
@@ -580,7 +595,7 @@ def _project_context(db: Connection, project_id: int) -> _ProjectContext:
                 int(clip["id"]),
                 clip_title,
                 clip_text,
-                f"/Home?clip_id={int(clip['id'])}",
+                _clip_source_href(clip["url"], clip["clip_type"]),
             )
         )
 
@@ -719,7 +734,7 @@ def _all_context(db: Connection, project_id: int) -> _ProjectContext:
                         f"参照先: {location or '（参照先なし）'}",
                     ]
                 ),
-                f"/Home?clip_id={clip_id}",
+                _clip_source_href(clip["url"], clip["clip_type"]),
             )
         )
 
@@ -1247,7 +1262,13 @@ def _save_assistant_history(
     model: str,
     scope: str,
     context_item_count: int,
+    sources: list[ProjectAssistantSource],
 ) -> None:
+    sources_json = json.dumps(
+        [source.model_dump(mode="json") for source in sources],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
     db.execute(
         "INSERT INTO project_assistant_messages "
         "(project_id, role, content, provider, model, scope, context_item_count) "
@@ -1256,10 +1277,28 @@ def _save_assistant_history(
     )
     db.execute(
         "INSERT INTO project_assistant_messages "
-        "(project_id, role, content, provider, model, scope, context_item_count) "
-        "VALUES (?, 'assistant', ?, ?, ?, ?, ?)",
-        (project_id, _clean_text(answer, 12_000), provider, model, scope, context_item_count),
+        "(project_id, role, content, provider, model, scope, context_item_count, sources_json) "
+        "VALUES (?, 'assistant', ?, ?, ?, ?, ?, ?)",
+        (project_id, _clean_text(answer, 12_000), provider, model, scope, context_item_count, sources_json),
     )
+
+
+def _history_sources(value: Any) -> list[ProjectAssistantSource]:
+    try:
+        parsed = json.loads(value or "[]")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    sources: list[ProjectAssistantSource] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        try:
+            sources.append(ProjectAssistantSource.model_validate(item))
+        except Exception:
+            continue
+    return sources
 
 
 def get_project_assistant_history(
@@ -1272,7 +1311,7 @@ def get_project_assistant_history(
         raise ProjectAssistantError(404, "プロジェクトが見つかりません。")
     safe_limit = max(1, min(int(limit), 200))
     rows = db.execute(
-        "SELECT id, role, content, provider, model, scope, context_item_count, created_at "
+        "SELECT id, role, content, provider, model, scope, context_item_count, sources_json, created_at "
         "FROM project_assistant_messages WHERE project_id = ? ORDER BY id DESC LIMIT ?",
         (project_id, safe_limit),
     ).fetchall()
@@ -1285,6 +1324,7 @@ def get_project_assistant_history(
             model=row["model"],
             scope=row["scope"] if row["scope"] in {"project", "all"} else "project",
             context_item_count=int(row["context_item_count"] or 0),
+            sources=_history_sources(row["sources_json"]) if row["role"] == "assistant" else [],
             created_at=row["created_at"],
         )
         for row in reversed(rows)
@@ -1550,6 +1590,7 @@ def ask_project_assistant(
         provider_status.model,
         payload.scope,
         len(context.items),
+        sources,
     )
     db.commit()
     return ProjectAssistantOut(

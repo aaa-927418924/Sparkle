@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle — プロジェクト</title>
-    <link rel="stylesheet" href="style.css?v=project-assistant-instant-20260821-v1" />
+    <link rel="stylesheet" href="style.css?v=project-assistant-source-history-20260821-v3" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
     <script>
       document.documentElement.setAttribute("data-theme", "dark");
@@ -265,9 +265,9 @@
         </div>
 
         <div id="projectAssistantMessages" class="project-assistant-messages" aria-live="polite" aria-relevant="additions"></div>
-        <section id="projectAssistantActions" class="project-assistant-actions" aria-labelledby="projectAssistantActionsTitle" hidden>
+        <section id="projectAssistantActions" class="project-assistant-actions" role="dialog" aria-labelledby="projectAssistantActionsTitle" aria-describedby="projectAssistantActionHelp" tabindex="-1" hidden>
           <h3 id="projectAssistantActionsTitle" class="modal-sub">変更操作の確認</h3>
-          <p class="project-assistant-action-help">AIが提案した変更です。実行前に許可を選択してください。</p>
+          <p id="projectAssistantActionHelp" class="project-assistant-action-help">AIが提案した変更です。実行前に許可を選択してください。</p>
           <div id="projectAssistantActionList" class="project-assistant-action-list"></div>
         </section>
 
@@ -361,7 +361,7 @@
 
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
     <script src="projects.js?v=projects-controls-20260803-batch-duplicate-v1"></script>
-    <script src="project-assistant.js?v=project-assistant-instant-20260821-v1"></script>
+    <script src="project-assistant.js?v=project-assistant-source-history-20260821-v3"></script>
     <script src="codex-shell.js?v=codex-shell-20260810-update-notice-v3"></script>
     <script src="page-transition.js?v=page-swipe-20260821-focus-safe-v1"></script>
   </body>

@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS project_assistant_messages (
     model              TEXT,
     scope              TEXT NOT NULL DEFAULT 'project' CHECK(scope IN ('project', 'all')),
     context_item_count INTEGER NOT NULL DEFAULT 0,
+    sources_json       TEXT NOT NULL DEFAULT '[]',
     created_at         TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -302,6 +303,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
             model              TEXT,
             scope              TEXT NOT NULL DEFAULT 'project' CHECK(scope IN ('project', 'all')),
             context_item_count INTEGER NOT NULL DEFAULT 0,
+            sources_json       TEXT NOT NULL DEFAULT '[]',
             created_at         TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS ai_action_permissions (
@@ -322,6 +324,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_project_assistant_proposals_project
             ON project_assistant_action_proposals(project_id, created_at);
     """)
+
+    assistant_message_cols = {
+        row["name"] for row in conn.execute("PRAGMA table_info(project_assistant_messages)").fetchall()
+    }
+    if "sources_json" not in assistant_message_cols:
+        conn.execute(
+            "ALTER TABLE project_assistant_messages "
+            "ADD COLUMN sources_json TEXT NOT NULL DEFAULT '[]'"
+        )
 
     # The legacy command-palette search tables are intentionally left in place
     # when present, but are no longer created or refreshed. Keeping existing

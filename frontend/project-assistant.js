@@ -187,6 +187,19 @@
     return bubble;
   }
 
+  function safeSourceHref(value) {
+    if (typeof value !== "string") return "";
+    const href = value.trim();
+    if (!href) return "";
+    if (href.startsWith("/")) return href;
+    try {
+      const parsed = new URL(href, window.location.origin);
+      return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.href : "";
+    } catch {
+      return "";
+    }
+  }
+
   function appendSources(container, sources) {
     const safeSources = Array.isArray(sources) ? sources : [];
     if (!safeSources.length) return;
@@ -196,13 +209,32 @@
     label.textContent = "参照した項目";
     section.append(label);
     for (const source of safeSources) {
-      const link = document.createElement("a");
-      link.className = "project-assistant-source";
-      link.href = typeof source.href === "string" && source.href.startsWith("/") ? source.href : "#";
       const kindLabels = { project: "プロジェクト", clip: "クリップ", note: "メモ", task: "タスク" };
-      link.textContent = `${kindLabels[source.kind] || "項目"}: ${source.title || "（無題）"}`;
-      if (source.excerpt) link.title = source.excerpt;
-      section.append(link);
+      const sourceLabel = `${kindLabels[source.kind] || "項目"}: ${source.title || "（無題）"}`;
+      const item = document.createElement("div");
+      item.className = "project-assistant-source";
+      const text = document.createElement("span");
+      text.className = "project-assistant-source-label";
+      text.textContent = sourceLabel;
+      if (source.excerpt) item.title = source.excerpt;
+      item.append(text);
+      const href = safeSourceHref(source.href);
+      if (href) {
+        const link = document.createElement("a");
+        link.className = "project-assistant-source-link";
+        link.href = href;
+        link.textContent = "開く";
+        link.title = `${sourceLabel}を開く`;
+        link.setAttribute("aria-label", `${sourceLabel}を開く`);
+        try {
+          if (new URL(href, window.location.origin).origin !== window.location.origin) {
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+          }
+        } catch {}
+        item.append(link);
+      }
+      section.append(item);
     }
     container.append(section);
   }
@@ -227,8 +259,27 @@
         scope.className = "project-assistant-message-scope";
         scope.textContent = `参照範囲: ${scopeLabels[message.scope] || "プロジェクト内"}`;
         bubble.querySelector(".project-assistant-message-meta")?.append(" · ", scope);
+        appendSources(bubble, message.sources);
       }
     }
+  }
+
+  function closeActionDialog(restoreFocus = true) {
+    if (!els.actions || !els.actionList) return;
+    els.actions.hidden = true;
+    els.actionList.replaceChildren();
+    if (restoreFocus && state.open && !els.form.hidden && !els.message.disabled) {
+      els.message.focus({ preventScroll: true });
+    }
+  }
+
+  function removeResolvedAction(card) {
+    card.remove();
+    if (els.actionList?.children.length) {
+      els.actionList.querySelector("button:not([disabled])")?.focus({ preventScroll: true });
+      return;
+    }
+    closeActionDialog();
   }
 
   function renderActionPlans(actions) {
@@ -264,6 +315,9 @@
         controls.append(button);
       }
     }
+    if (!els.actions.hidden) {
+      els.actionList?.querySelector("button:not([disabled])")?.focus({ preventScroll: true });
+    }
   }
 
   async function decideAction(plan, decision, card, status, controls) {
@@ -279,6 +333,7 @@
       if (!response.ok) throw new Error(data.detail || "変更操作を実行できませんでした。");
       status.textContent = data.message || (data.status === "denied" ? "今回は実行しませんでした。" : "実行しました。");
       card.classList.add(`is-${data.status || "executed"}`);
+      removeResolvedAction(card);
       window.loadAll?.({ silent: true });
     } catch (error) {
       status.textContent = error.message || "変更操作を実行できませんでした。";
@@ -294,8 +349,7 @@
     setLayoutInert(true);
     els.modal.hidden = false;
     els.message.value = "";
-    els.actions.hidden = true;
-    els.actionList.replaceChildren();
+    closeActionDialog(false);
     els.form.hidden = true;
     els.setup.hidden = true;
     updateScopeCopy();
@@ -315,6 +369,7 @@
     state.requestId += 1;
     state.controller?.abort();
     state.controller = null;
+    closeActionDialog(false);
     els.modal.hidden = true;
     setLayoutInert(false);
     const target = state.returnFocus;

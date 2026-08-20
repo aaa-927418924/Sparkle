@@ -180,6 +180,49 @@ class CommandPaletteTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_segmented_query_with_synonyms_finds_clip_missing_literal_word(self):
+        connection = make_connection()
+        try:
+            connection.execute(
+                "INSERT INTO clips(url, title, comment) VALUES (?, ?, ?)",
+                ("https://example.com/track", "MONTAGEM AETERNA", "AMVで使えそう 曲"),
+            )
+            connection.execute(
+                "INSERT INTO clips(url, title, comment) VALUES (?, ?, ?)",
+                ("https://example.com/unrelated", "雑談クリップ", "日常の話"),
+            )
+            connection.commit()
+
+            for query in ("AMVで使えそうなBGM", "AMV BGM"):
+                response = search_command_palette(
+                    connection,
+                    CommandPaletteSearchRequest(query=query, use_ai=False),
+                )
+                self.assertGreaterEqual(response.total, 1, f"query={query}")
+                self.assertEqual(response.results[0].entity_type, "clip")
+                self.assertEqual(response.results[0].title, "MONTAGEM AETERNA")
+        finally:
+            connection.close()
+
+    def test_pure_japanese_query_segments_on_particles(self):
+        connection = make_connection()
+        try:
+            connection.execute(
+                "INSERT INTO clips(url, title, comment) VALUES (?, ?, ?)",
+                ("https://example.com/edit", "編集の参考クリップ", "映像編集 参考"),
+            )
+            connection.commit()
+
+            response = search_command_palette(
+                connection,
+                CommandPaletteSearchRequest(query="映像編集の参考", use_ai=False),
+            )
+
+            self.assertGreaterEqual(response.total, 1)
+            self.assertEqual(response.results[0].title, "編集の参考クリップ")
+        finally:
+            connection.close()
+
     def test_source_updates_mark_the_index_dirty(self):
         connection = make_connection()
         try:

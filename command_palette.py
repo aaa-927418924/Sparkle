@@ -222,6 +222,81 @@ _DUE_TRIGGER = re.compile(
     re.IGNORECASE,
 )
 
+# Queries are broken into Latin words and Japanese segments separated by
+# particles.  The Latin words are treated as strong anchors (AND across them,
+# with synonym expansion); the Japanese segments only boost ranking when Latin
+# anchors exist, so grammar such as "で使えそうな" never hides results.
+_ENGLISH_STOPWORDS = frozenset(
+    "a an the of for and or to in on at by with as is are was were be do does did "
+    "from into that this these those it its you your we our they their i he she them "
+    "me my not no so but if then than too very just also can will would should could "
+    "may might must about after before between during without within under over out "
+    "up down off".split()
+)
+_JAPANESE_NOISE = frozenset(
+    "よう もの こと ため とき 中 的 な ん みたい すぎ たち くらい ぐらい など から まで".split()
+)
+_ASCII_WORD_RE = re.compile(r"[a-z0-9][a-z0-9\-]*")
+_PARTICLE_SPLIT_RE = re.compile(r"(?:で|に|の|な|を|へ|と|や|から|まで|など|って|とか)")
+
+# Deterministic synonym expansion.  The palette data stores labels like
+# "AMVで使えそう" and tags like "曲" rather than the literal word "BGM", so
+# exact substring matching alone returns nothing for natural queries.  Each
+# group is symmetric: every member maps to the whole group.
+_SYNONYM_GROUPS: tuple[frozenset[str], ...] = (
+    frozenset({"bgm", "曲", "音楽", "楽曲", "サウンド", "ミュージック", "音源", "music", "歌"}),
+    frozenset({"amv", "edit", "edits", "編集", "エディット", "動画編集", "映像編集", "gmv"}),
+    frozenset({"動画", "映像", "video", "videos", "ビデオ", "movie"}),
+    frozenset({"クリップ", "clip", "clips", "資料", "リンク", "ブックマーク"}),
+    frozenset({"メモ", "ノート", "note", "notes"}),
+    frozenset({"タスク", "task", "tasks", "todo", "作業", "やること"}),
+    frozenset({"プロジェクト", "project", "projects"}),
+)
+_TERM_SYNONYMS: dict[str, frozenset[str]] = {
+    member: group
+    for group in _SYNONYM_GROUPS
+    for member in group
+}
+
+
+def _term_variants(term: str) -> list[str]:
+    variants = _TERM_SYNONYMS.get(term, ())
+    return sorted({term, *variants})
+
+
+def _query_slots(text_query: str) -> tuple[list[str], list[str]]:
+    """Return (required terms, optional Japanese boost terms)."""
+    normalized = _normalize(text_query)
+    if not normalized:
+        return [], []
+    ascii_words = [
+        word
+        for word in _ASCII_WORD_RE.findall(normalized)
+        if len(word) >= 2 and word not in _ENGLISH_STOPWORDS
+    ]
+    segments: list[str] = []
+    for segment in _PARTICLE_SPLIT_RE.split(normalized):
+        if not segment:
+            continue
+        segments.extend(part for part in re.split(r"\s+", segment) if part)
+    japanese = [segment for segment in segments if not segment.isascii()]
+
+    def strong(segment: str) -> bool:
+        return len(segment) >= 2 and segment not in _JAPANESE_NOISE
+
+    if ascii_words:
+        required = list(dict.fromkeys(ascii_words))
+        optional = list(
+            dict.fromkeys(
+                segment for segment in japanese if strong(segment) and segment not in required
+            )
+        )
+        return required, optional
+    strong_segments = [segment for segment in japanese if strong(segment)]
+    if strong_segments:
+        return list(dict.fromkeys(strong_segments)), []
+    return [normalized], []
+
 
 def _heuristic_intent(query: str) -> SearchIntent:
     raw = unicodedata.normalize("NFKC", (query or "")[:MAX_QUERY_LENGTH]).strip()
@@ -748,14 +823,25 @@ def _terms(value: str) -> list[str]:
     normalized = _normalize(value)
     if not normalized:
         return []
-    parts = [part for part in re.split(r"\s+", normalized) if len(part) >= 1]
+    parts: list[str] = []
+    for segment in _PARTICLE_SPLIT_RE.split(normalized):
+        if not segment:
+            continue
+        if segment.isascii():
+            parts.extend(word for word in re.split(r"\s+", segment) if word)
+        else:
+            parts.extend(part for part in re.split(r"\s+", segment) if part)
     return list(dict.fromkeys(parts))
 
 
-def _fts_scores(conn: sqlite3.Connection, text_query: str, fts_available: bool) -> dict[tuple[str, int], float]:
-    if not fts_available or not text_query:
+def _fts_scores(
+    conn: sqlite3.Connection,
+    required_terms: list[str],
+    fts_available: bool,
+) -> dict[tuple[str, int], float]:
+    if not fts_available or not required_terms:
         return {}
-    query = " AND ".join(f'"{term.replace(chr(34), chr(34) * 2)}"' for term in _terms(text_query))
+    query = " AND ".join(f'"{term.replace(chr(34), chr(34) * 2)}"' for term in required_terms)
     if not query:
         return {}
     try:
@@ -833,17 +919,25 @@ def search_command_palette(
             params.extend((wildcard, wildcard))
 
     text_query = intent.text_query.strip()
-    terms = _terms(text_query)
-    for term in terms:
-        where.append("(LOWER(title) LIKE ? OR LOWER(content) LIKE ?)")
-        wildcard = f"%{term}%"
-        params.extend((wildcard, wildcard))
+    required_terms, optional_terms = _query_slots(text_query)
+    for term in required_terms:
+        variants = _term_variants(term)
+        where.append(
+            "("
+            + " OR ".join(
+                "(LOWER(title) LIKE ? OR LOWER(content) LIKE ?)" for _ in variants
+            )
+            + ")"
+        )
+        for variant in variants:
+            wildcard = f"%{_normalize(variant)}%"
+            params.extend((wildcard, wildcard))
 
     rows = conn.execute(
         "SELECT * FROM search_documents WHERE " + " AND ".join(where),
         params,
     ).fetchall()
-    fts_scores = _fts_scores(conn, text_query, fts_available)
+    fts_scores = _fts_scores(conn, required_terms, fts_available)
 
     ranked: list[tuple[float, sqlite3.Row]] = []
     normalized_query = _normalize(text_query)
@@ -857,6 +951,9 @@ def search_command_palette(
             score += 90.0
         if normalized_query and normalized_query in content:
             score += 30.0
+        for term in optional_terms:
+            if term in title or term in content:
+                score += 20.0
         if row["due_date"] and intent.due_from:
             score += 8.0
         ranked.append((score, row))

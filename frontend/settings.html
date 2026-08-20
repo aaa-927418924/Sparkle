@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle — 設定</title>
-    <link rel="stylesheet" href="style.css?v=settings-remote-mcp-routes-20260820-v2" />
+    <link rel="stylesheet" href="style.css?v=settings-remote-mcp-routes-20260820-v3" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
     <script>document.documentElement.setAttribute("data-theme", "dark");
       try {
@@ -107,7 +107,7 @@
               <h3 class="modal-sub">外部Webアクセス</h3>
               <p class="file-save-desc">
                 AndroidなどTailscaleに接続できる端末にはServe、Tailscaleアプリを入れられない端末にはFunnelを使えます。
-                Web入口とRemote MCPは別ポート・別アクセスキーで管理するため、Serve（443）とMCP用Funnel（8443）を同時に利用できます。
+                Web入口とRemote MCPは別アクセスキーで管理します。Funnel Webでは443を共有し、Serve Web / AndroidではWebを443、MCPを8443へ分離します。
               </p>
               <div class="setting-row column remote-access-mode-row">
                 <label for="remoteAccessMode">Web公開方式</label>
@@ -119,7 +119,7 @@
                   <button id="remoteAccessModeApply" class="modal-btn ghost" type="button">方式を適用</button>
                 </div>
                 <span id="remoteAccessModeHint" class="file-save-desc">
-                  Funnel Webは443番、Serve Web / Androidは443番、Remote MCPは別のFunnel 8443番を使用します。
+                  Funnel WebではWebとMCPが443番、Serve Web / AndroidではWebが443番、MCP用Funnelが8443番を使用します。
                 </span>
               </div>
               <div id="remoteAccessStatus" class="ai-export-status" role="status" aria-live="polite">
@@ -150,7 +150,7 @@
               <div class="remote-mcp-settings">
                 <h3 class="modal-sub">Remote MCP</h3>
                 <p class="file-save-desc">
-                  ChatGPT WebやClaude Webなどから読み取り専用Toolを使うための公開入口です。スマホ・Web画面用とは別のMCP専用アクセスキーを発行し、専用Funnel（HTTPS 8443）を使うため、両方を同時に利用できます。
+                  ChatGPT WebやClaude Webなどから読み取り専用Toolを使うための公開入口です。スマホ・Web画面用とは別のMCP専用アクセスキーを発行します。Funnel WebではHTTPS 443を共有し、Serve Web / AndroidではMCPをHTTPS 8443へ分離します。
                 </p>
                 <div id="remoteMcpStatus" class="ai-export-status" role="status" aria-live="polite">
                   状態を確認しています…
@@ -256,6 +256,6 @@
 
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260810-update-notice-v3"></script>
-    <script src="remote-access.js?v=remote-access-20260820-v4"></script>
+    <script src="remote-access.js?v=remote-access-20260820-v5"></script>
   </body>
 </html>

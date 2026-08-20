@@ -19,7 +19,7 @@ from mcp.client.streamable_http import streamable_http_client
 
 from remote_auth import AuthStore
 from remote_gateway import RemoteGateway
-from remote_mcp import build_remote_mcp_runtime
+from remote_mcp import _normalize_public_url, build_remote_mcp_runtime
 from tests.test_mcp_readonly import seed_database
 
 
@@ -34,6 +34,62 @@ def _pkce(verifier: str) -> str:
 
 
 class RemoteMcpTests(unittest.TestCase):
+    def test_https_default_port_is_canonicalized_for_oauth_resource(self) -> None:
+        self.assertEqual(
+            _normalize_public_url(
+                "https://sparkle.example.ts.net:443/mcp",
+                "https://fallback.example/mcp",
+            ),
+            "https://sparkle.example.ts.net/mcp",
+        )
+        self.assertEqual(
+            _normalize_public_url(
+                "https://sparkle.example.ts.net/mcp",
+                "https://fallback.example/mcp",
+            ),
+            "https://sparkle.example.ts.net/mcp",
+        )
+        self.assertEqual(
+            _normalize_public_url(
+                "https://sparkle.example.ts.net:8443/mcp",
+                "https://fallback.example/mcp",
+            ),
+            "https://sparkle.example.ts.net:8443/mcp",
+        )
+
+    def test_oauth_accepts_explicit_and_omitted_https_default_port(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = build_remote_mcp_runtime(
+                db_path=str(Path(directory) / "clips.db"),
+                auth_store=AuthStore(Path(directory) / "mcp-auth.json"),
+                host="127.0.0.1",
+                port=8001,
+                public_url="https://sparkle.example.ts.net:443/mcp",
+            )
+            client = runtime.oauth.register_client(
+                {
+                    "client_name": "default-port-test",
+                    "redirect_uris": ["http://127.0.0.1:9876/callback"],
+                    "token_endpoint_auth_method": "none",
+                }
+            )
+            base_params = {
+                "response_type": "code",
+                "client_id": client["client_id"],
+                "redirect_uri": "http://127.0.0.1:9876/callback",
+                "code_challenge": "test-challenge",
+                "code_challenge_method": "S256",
+                "scope": "sparkle.read",
+            }
+            for resource in (
+                "https://sparkle.example.ts.net/mcp",
+                "https://sparkle.example.ts.net:443/mcp",
+            ):
+                pending, _ = runtime.oauth.authorization_request(
+                    {**base_params, "resource": resource}
+                )
+                self.assertEqual(pending.resource, "https://sparkle.example.ts.net/mcp")
+
     def test_remote_gateway_uses_mcp_store_separate_from_web_store(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             web_store = AuthStore(Path(directory) / "remote-auth.json")

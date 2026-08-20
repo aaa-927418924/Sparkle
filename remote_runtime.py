@@ -164,7 +164,11 @@ def _has_any_route_config(value: Any) -> bool:
 
 
 def _normalize_mcp_public_url(value: Optional[str]) -> Optional[str]:
-    """Normalize the configured MCP URL for the dedicated Funnel port."""
+    """Normalize the configured MCP URL without inventing a route port.
+
+    Funnel Web uses the default HTTPS port 443. Serve Web mode uses the
+    explicit 8443 URL, so a configured non-default port must be preserved.
+    """
     raw = str(value or "").strip().rstrip("/")
     if not raw:
         return None
@@ -172,16 +176,7 @@ def _normalize_mcp_public_url(value: Optional[str]) -> Optional[str]:
         parsed = urlsplit(raw)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             return raw
-        # The new split-route layout reserves 8443 for the public MCP Funnel.
-        # Existing settings often omitted the port, so make that case safe
-        # without overriding an explicitly configured local/test port.
-        if parsed.port is None:
-            hostname = parsed.hostname or ""
-            if ":" in hostname and not hostname.startswith("["):
-                hostname = f"[{hostname}]"
-            netloc = f"{hostname}:{MCP_FUNNEL_HTTPS_PORT}"
-        else:
-            netloc = parsed.netloc
+        netloc = parsed.netloc
         return urlunsplit((parsed.scheme, netloc, "/mcp", "", ""))
     except ValueError:
         return raw
@@ -369,9 +364,27 @@ class RemoteAccessManager:
         # HTTPS 443 and proxies the main application directly.
         return self._status_for_target("serve", self.main_target, ANDROID_WEB_HTTPS_PORT)
 
+    def _mcp_route_port(self, mode: Optional[str] = None) -> int:
+        """Return the active MCP HTTPS port for the selected Web mode.
+
+        Funnel Web already proxies the authenticated remote gateway on 443,
+        so the initial Remote MCP flow shares that public route. When Web is
+        switched to Serve, 443 must point at the desktop app and MCP moves to
+        the separate public Funnel on 8443.
+        """
+        selected = mode or self._configured_web_mode()
+        return ANDROID_WEB_HTTPS_PORT if selected == WEB_MODE_FUNNEL else MCP_FUNNEL_HTTPS_PORT
+
+    def _mcp_route_is_shared(self, mode: Optional[str] = None) -> bool:
+        return (
+            self.mcp_auth_store.is_enabled()
+            and self.auth_store.is_enabled()
+            and (mode or self._configured_web_mode()) == WEB_MODE_FUNNEL
+        )
+
     def _mcp_route_status(self) -> dict[str, Any]:
-        """Return the dedicated MCP route on Funnel HTTPS 8443."""
-        return self._status_for_target("funnel", REMOTE_TARGET, MCP_FUNNEL_HTTPS_PORT)
+        """Return the MCP route on Funnel HTTPS 443 or 8443 as appropriate."""
+        return self._status_for_target("funnel", REMOTE_TARGET, self._mcp_route_port())
 
     def _web_route_status(self, mode: Optional[str] = None) -> dict[str, Any]:
         """Return the Android/Web route without inspecting the MCP port."""
@@ -504,7 +517,27 @@ class RemoteAccessManager:
         return False, last_error or "Tailscaleの公開ルートを停止できませんでした。"
 
     def _configured_mcp_url(self) -> Optional[str]:
-        return _normalize_mcp_public_url(os.environ.get("SPARKLE_MCP_PUBLIC_URL"))
+        configured = _normalize_mcp_public_url(os.environ.get("SPARKLE_MCP_PUBLIC_URL"))
+        if not configured:
+            return None
+        try:
+            parsed = urlsplit(configured)
+            route_port = self._mcp_route_port()
+            configured_port = parsed.port
+            route_switch_ports = {ANDROID_WEB_HTTPS_PORT, MCP_FUNNEL_HTTPS_PORT}
+            if configured_port is None or configured_port in route_switch_ports:
+                hostname = parsed.hostname or ""
+                if ":" in hostname and not hostname.startswith("["):
+                    hostname = f"[{hostname}]"
+                netloc = hostname
+                if route_port != ANDROID_WEB_HTTPS_PORT:
+                    netloc = f"{hostname}:{route_port}"
+                configured = urlunsplit(
+                    (parsed.scheme, netloc, "/mcp", "", "")
+                )
+        except ValueError:
+            pass
+        return configured
 
     def _tailscale_dns_name(self) -> Optional[str]:
         """Read this node's MagicDNS name without changing Tailscale state."""
@@ -532,7 +565,9 @@ class RemoteAccessManager:
             return f"{public_url.rstrip('/')}/mcp"
         dns_name = self._tailscale_dns_name()
         if dns_name:
-            return f"https://{dns_name}:{MCP_FUNNEL_HTTPS_PORT}/mcp"
+            port = self._mcp_route_port()
+            suffix = "" if port == 443 else f":{port}"
+            return f"https://{dns_name}{suffix}/mcp"
         return None
 
     def _start_remote_server(self) -> bool:
@@ -645,11 +680,15 @@ class RemoteAccessManager:
         )
 
     def _start_mcp_route(self) -> dict[str, Any]:
+        port = self._mcp_route_port()
+        label = "Remote MCP向けTailscale Funnel"
+        if port == ANDROID_WEB_HTTPS_PORT and self.auth_store.is_enabled():
+            label = "Remote MCP共有Funnel"
         return self._start_route(
             "funnel",
             REMOTE_TARGET,
-            MCP_FUNNEL_HTTPS_PORT,
-            "Remote MCP向けTailscale Funnel",
+            port,
+            label,
         )
 
     def _start_web_route(self) -> dict[str, Any]:
@@ -667,6 +706,9 @@ class RemoteAccessManager:
             mcp_result = self._start_mcp_route()
             if not mcp_result.get("ok"):
                 return mcp_result
+            legacy_ok, legacy_error = self._stop_legacy_mcp_route()
+            if not legacy_ok:
+                return {"ok": False, "status": self.status(), "error": legacy_error}
         return {"ok": True, "status": self.status()}
 
     def enable(self) -> dict[str, Any]:
@@ -740,11 +782,42 @@ class RemoteAccessManager:
         previous = self._configured_web_mode()
         if previous == normalized:
             return {"ok": True, "status": self.status()}
+
+        mcp_enabled = self.mcp_auth_store.is_enabled()
+        previous_mcp_port = self._mcp_route_port(previous)
+        next_mcp_port = self._mcp_route_port(normalized)
+        if mcp_enabled and previous_mcp_port != next_mcp_port:
+            # A Funnel Web route on 443 is shared by Web and MCP. Moving to
+            # Serve must leave that route for the Web app and start MCP on
+            # 8443; moving back removes the old 8443 route first.
+            if not self._mcp_route_is_shared(previous):
+                current = self._port_status(previous_mcp_port)
+                if current.get("active"):
+                    stopped, error = self._stop_route(
+                        "funnel",
+                        REMOTE_TARGET,
+                        previous_mcp_port,
+                        current,
+                    )
+                    if not stopped:
+                        self._last_error = error
+                        return {"ok": False, "status": self.status(), "error": error}
+
+            # The MCP OAuth metadata contains the public resource URL. Restart
+            # the gateway when its public port changes so discovery cannot keep
+            # advertising the previous route.
+            self._stop_remote_server()
+
         self.auth_store.set_remote_mode(normalized)
-        if not self.auth_store.is_enabled():
-            self._last_error = None
-            return {"ok": True, "status": self.status()}
-        result = self._start_web_route()
+        if self.auth_store.is_enabled() or mcp_enabled:
+            if not self._start_remote_server():
+                return {"ok": False, "status": self.status(), "error": self._last_error}
+
+        result = {"ok": True}
+        if self.auth_store.is_enabled():
+            result = self._start_web_route()
+        if result.get("ok") and mcp_enabled:
+            result = self._start_mcp_route()
         self._last_error = result.get("error") if not result.get("ok") else None
         return {
             "ok": bool(result.get("ok")),
@@ -777,6 +850,8 @@ class RemoteAccessManager:
         return {"ok": True, "status": self.status()}
 
     def _stop_public_route(self) -> tuple[bool, Optional[str]]:
+        if self._mcp_route_is_shared():
+            return True, None
         current = self._port_status(ANDROID_WEB_HTTPS_PORT)
         if not current.get("available"):
             return False, current.get("error") or "Tailscaleの状態を確認できません。"
@@ -789,13 +864,33 @@ class RemoteAccessManager:
         return self._stop_route(preferred, target, ANDROID_WEB_HTTPS_PORT, current)
 
     def _stop_mcp_route(self) -> tuple[bool, Optional[str]]:
-        current = self._port_status(MCP_FUNNEL_HTTPS_PORT)
+        if self._mcp_route_is_shared():
+            return True, None
+        port = self._mcp_route_port()
+        current = self._port_status(port)
         if not current.get("available"):
             return False, current.get("error") or "Tailscaleの状態を確認できません。"
         if not current.get("active"):
             return True, None
         if current.get("target") != "remote":
-            return False, "TailscaleのMCP用HTTPS 8443番ポートに別の設定があります。先にその設定を解除してください。"
+            return False, f"TailscaleのMCP用HTTPS {port}番ポートに別の設定があります。先にその設定を解除してください。"
+        return self._stop_route(
+            "funnel",
+            REMOTE_TARGET,
+            port,
+            current,
+        )
+
+    def _stop_legacy_mcp_route(self) -> tuple[bool, Optional[str]]:
+        """Remove the old 8443 MCP route after switching Funnel Web to 443."""
+        if self._mcp_route_port() != ANDROID_WEB_HTTPS_PORT:
+            return True, None
+        current = self._port_status(MCP_FUNNEL_HTTPS_PORT)
+        if not current.get("available"):
+            # Cleanup is best-effort; the active 443 route is already valid.
+            return True, None
+        if not current.get("active") or current.get("target") != "remote":
+            return True, None
         return self._stop_route(
             "funnel",
             REMOTE_TARGET,
@@ -845,10 +940,20 @@ class RemoteAccessManager:
         with self._lock:
             web_enabled = self.auth_store.is_enabled()
             mcp_enabled = self.mcp_auth_store.is_enabled()
-        if web_enabled:
-            self._stop_public_route()
-        if mcp_enabled:
-            self._stop_mcp_route()
+        if web_enabled and mcp_enabled and self._mcp_route_is_shared():
+            current = self._port_status(ANDROID_WEB_HTTPS_PORT)
+            if current.get("active"):
+                self._stop_route(
+                    "funnel",
+                    REMOTE_TARGET,
+                    ANDROID_WEB_HTTPS_PORT,
+                    current,
+                )
+        else:
+            if web_enabled:
+                self._stop_public_route()
+            if mcp_enabled:
+                self._stop_mcp_route()
         self._stop_remote_server()
 
     def status(self) -> dict[str, Any]:

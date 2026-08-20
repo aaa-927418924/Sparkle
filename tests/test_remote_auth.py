@@ -232,13 +232,13 @@ class RemoteAuthStoreTests(unittest.TestCase):
         self.assertEqual(run_cli.call_count, 1)
         self.assertEqual(run_cli.call_args.args[0], ["funnel", "--bg", "--https=443", "--yes", REMOTE_TARGET])
 
-    def test_mcp_route_uses_independent_funnel_port(self):
+    def test_mcp_route_uses_funnel_web_443_by_default(self):
         inactive = {"available": True, "active": False, "target": None, "public_url": None}
         active = {
             "available": True,
             "active": True,
             "target": "remote",
-            "public_url": f"https://sparkle.example.ts.net:{MCP_FUNNEL_HTTPS_PORT}",
+            "public_url": "https://sparkle.example.ts.net",
         }
         with tempfile.TemporaryDirectory() as directory:
             manager = RemoteAccessManager(
@@ -253,10 +253,34 @@ class RemoteAuthStoreTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(
             run_cli.call_args.args[0],
+            ["funnel", "--bg", f"--https={ANDROID_WEB_HTTPS_PORT}", "--yes", REMOTE_TARGET],
+        )
+
+    def test_mcp_route_uses_8443_when_serve_web_mode_is_selected(self):
+        inactive = {"available": True, "active": False, "target": None, "public_url": None}
+        active = {
+            "available": True,
+            "active": True,
+            "target": "remote",
+            "public_url": f"https://sparkle.example.ts.net:{MCP_FUNNEL_HTTPS_PORT}",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            web_store = AuthStore(Path(directory) / "remote-auth.json")
+            web_store.set_remote_mode("serve")
+            manager = RemoteAccessManager(auth_store=web_store)
+            with (
+                patch.object(manager, "_port_status", return_value=inactive),
+                patch.object(manager, "_status_for_target", return_value=active),
+                patch.object(manager, "_run_cli", return_value=(True, "", "")) as run_cli,
+            ):
+                result = manager._start_mcp_route()
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            run_cli.call_args.args[0],
             ["funnel", "--bg", f"--https={MCP_FUNNEL_HTTPS_PORT}", "--yes", REMOTE_TARGET],
         )
 
-    def test_mcp_url_without_port_is_normalized_to_8443(self):
+    def test_mcp_url_without_port_uses_funnel_web_443(self):
         with tempfile.TemporaryDirectory() as directory:
             manager = RemoteAccessManager(
                 auth_store=AuthStore(Path(directory) / "remote-auth.json")
@@ -264,6 +288,42 @@ class RemoteAuthStoreTests(unittest.TestCase):
             with patch.dict(os.environ, {"SPARKLE_MCP_PUBLIC_URL": "https://sparkle.example.ts.net/mcp"}):
                 self.assertEqual(
                     manager._mcp_public_url({}),
+                    "https://sparkle.example.ts.net/mcp",
+                )
+
+    def test_mcp_url_without_port_moves_to_8443_for_serve_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            web_store = AuthStore(Path(directory) / "remote-auth.json")
+            web_store.set_remote_mode("serve")
+            manager = RemoteAccessManager(auth_store=web_store)
+            with patch.dict(os.environ, {"SPARKLE_MCP_PUBLIC_URL": "https://sparkle.example.ts.net/mcp"}):
+                self.assertEqual(
+                    manager._mcp_public_url({}),
+                    "https://sparkle.example.ts.net:8443/mcp",
+                )
+
+    def test_mcp_configured_route_port_follows_web_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            funnel_manager = RemoteAccessManager(
+                auth_store=AuthStore(Path(directory) / "funnel-auth.json")
+            )
+            serve_store = AuthStore(Path(directory) / "serve-auth.json")
+            serve_store.set_remote_mode("serve")
+            serve_manager = RemoteAccessManager(auth_store=serve_store)
+            with patch.dict(
+                os.environ,
+                {"SPARKLE_MCP_PUBLIC_URL": "https://sparkle.example.ts.net:8443/mcp"},
+            ):
+                self.assertEqual(
+                    funnel_manager._mcp_public_url({}),
+                    "https://sparkle.example.ts.net/mcp",
+                )
+            with patch.dict(
+                os.environ,
+                {"SPARKLE_MCP_PUBLIC_URL": "https://sparkle.example.ts.net:443/mcp"},
+            ):
+                self.assertEqual(
+                    serve_manager._mcp_public_url({}),
                     "https://sparkle.example.ts.net:8443/mcp",
                 )
 

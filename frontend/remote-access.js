@@ -117,7 +117,7 @@
     }
 
     if (active) {
-      setMcpStatus("Remote MCPは有効です。専用Funnel（HTTPS 8443）と別のMCPアクセスキーを使用します。", "success");
+      setMcpStatus("Remote MCPは有効です。公開方式に応じたFunnel（Funnel Webは443、Serve Webは8443）とMCP専用アクセスキーを使用します。", "success");
     } else if (statusError) {
       setMcpStatus("設定は保存されていますが、Remote MCPに接続できません：" + statusError, "warning");
     } else if (!route.available) {

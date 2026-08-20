@@ -72,6 +72,7 @@ class CommandPaletteSearchOut(BaseModel):
     intent: SearchIntent
     total: int
     results: list[CommandPaletteResultOut]
+    device: Optional[str] = None
 
 
 class CommandPaletteStatusOut(BaseModel):
@@ -79,6 +80,8 @@ class CommandPaletteStatusOut(BaseModel):
     backend: str
     configured: bool
     available: bool
+    device: Optional[str] = None
+    model_loaded: bool = False
     message: str
 
 
@@ -197,6 +200,27 @@ def _local_date() -> date:
 
 def _normalize(value: str) -> str:
     return unicodedata.normalize("NFKC", value or "").strip().casefold()
+
+
+# The 350M model is reliable at picking entity types and free text but tends to
+# fabricate "false" for absent filters on plain title searches, which would hide
+# every row that does not carry the flag (e.g. is_done is NULL on clips).  These
+# triggers make boolean/date filters from the model conditional on the raw query
+# actually mentioning the corresponding concern, mirroring the heuristic.
+_DONE_TRIGGER = re.compile(
+    r"(?:未完了|進行中|未実施|未着手|残(?:り|っている)|完了済み|完了した|終わった|完了|"
+    r"done|completed|pending|incomplete|todo|open)",
+    re.IGNORECASE,
+)
+_FAVORITE_TRIGGER = re.compile(
+    r"(?:お気に入り|favorite|favourites?|star(?:red)?|ブックマーク)",
+    re.IGNORECASE,
+)
+_DUE_TRIGGER = re.compile(
+    r"(?:今日|本日|明日|明後日|きょう|あした|今週|来週|先週|today|tomorrow|"
+    r"this week|next week|last week|overdue|期限切れ|期限超過|期限が過ぎた)",
+    re.IGNORECASE,
+)
 
 
 def _heuristic_intent(query: str) -> SearchIntent:
@@ -387,6 +411,11 @@ class _LocalIntentParser:
                         "entity_types must contain only singular values from "
                         "[\"clip\",\"note\",\"task\",\"project\"]. "
                         "Use null for absent filters and an integer from 1 to 50 for limit. "
+                        "If the query is a plain title or keyword search without an explicit "
+                        "status, favorite, or date request, is_done, is_favorite, due_from, "
+                        "and due_to MUST be null. Never default is_done or is_favorite to "
+                        "false unless the query explicitly asks for incomplete items or "
+                        "non-favorites. "
                         "Schema keys: entity_types, text_query, is_done, is_favorite, "
                         "due_from, due_to, project_name, category, tag, limit. "
                         "Example for 未完了タスク: "
@@ -503,17 +532,65 @@ _LOCAL_INTENT_PARSER = _LocalIntentParser()
 _INDEX_LOCK = threading.Lock()
 
 
-def _merge_intents(heuristic: SearchIntent, model_intent: SearchIntent) -> SearchIntent:
+def preload_intent_parser() -> None:
+    """Warm up the local model in the background so the first search is fast."""
+
+    def _run() -> None:
+        try:
+            _LOCAL_INTENT_PARSER._load()
+        except Exception:
+            pass
+
+    thread = threading.Thread(
+        target=_run,
+        name="command-palette-preload",
+        daemon=True,
+    )
+    thread.start()
+
+
+def _reported_device() -> Optional[str]:
+    """Return the device the local parser runs on, without forcing a load."""
+    with _LOCAL_INTENT_PARSER._lock:
+        device = _LOCAL_INTENT_PARSER._device
+        if device:
+            return device
+        attempted = _LOCAL_INTENT_PARSER._attempted
+    if attempted or importlib.util.find_spec("torch") is None:
+        return None
+    try:
+        import torch
+    except Exception:
+        return None
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def _merge_intents(
+    query: str,
+    heuristic: SearchIntent,
+    model_intent: SearchIntent,
+) -> SearchIntent:
+    raw = unicodedata.normalize("NFKC", query or "")[:MAX_QUERY_LENGTH]
     explicit_entities = heuristic.entity_types != list(ENTITY_TYPES)
     entity_types = heuristic.entity_types if explicit_entities else model_intent.entity_types
     values = model_intent.model_dump()
     values["entity_types"] = entity_types or list(ENTITY_TYPES)
     if heuristic.text_query:
         values["text_query"] = heuristic.text_query
+    gates = {
+        "is_done": _DONE_TRIGGER,
+        "is_favorite": _FAVORITE_TRIGGER,
+        "due_from": _DUE_TRIGGER,
+        "due_to": _DUE_TRIGGER,
+    }
     for field in ("is_done", "is_favorite", "due_from", "due_to"):
-        value = getattr(heuristic, field)
-        if value is not None:
-            values[field] = value
+        heuristic_value = getattr(heuristic, field)
+        if heuristic_value is not None:
+            values[field] = heuristic_value
+        elif gates[field].search(raw):
+            values[field] = getattr(model_intent, field)
+        else:
+            values[field] = None
     return SearchIntent.model_validate(values)
 
 
@@ -522,7 +599,7 @@ def parse_query(query: str, use_ai: bool = True) -> tuple[SearchIntent, str]:
     if use_ai:
         model_intent = _LOCAL_INTENT_PARSER.parse(query)
         if model_intent is not None:
-            return _merge_intents(heuristic, model_intent), "lfm2.5-350m"
+            return _merge_intents(query, heuristic, model_intent), "lfm2.5-350m"
     return heuristic, "heuristic"
 
 
@@ -721,6 +798,7 @@ def search_command_palette(
 ) -> CommandPaletteSearchOut:
     fts_available = _ensure_fresh_index(conn)
     intent, parser = parse_query(request.query, use_ai=request.use_ai)
+    device = _reported_device() if parser == "lfm2.5-350m" else None
     entity_types = [item for item in intent.entity_types if item in ENTITY_TYPES]
     if request.entity_types:
         entity_types = [item for item in request.entity_types if item in ENTITY_TYPES]
@@ -813,6 +891,7 @@ def search_command_palette(
         intent=intent,
         total=len(ranked),
         results=results,
+        device=device,
     )
 
 
@@ -837,6 +916,10 @@ def get_command_palette_status() -> CommandPaletteStatusOut:
         importlib.util.find_spec("gguf") is not None
         and importlib.util.find_spec("accelerate") is not None
     )
+    device: Optional[str] = None
+    with _LOCAL_INTENT_PARSER._lock:
+        model_loaded = _LOCAL_INTENT_PARSER._model is not None
+        device = _LOCAL_INTENT_PARSER._device or device
     available = (
         configured
         and source_exists
@@ -868,5 +951,7 @@ def get_command_palette_status() -> CommandPaletteStatusOut:
         backend="transformers-gguf" if gguf_file else "transformers",
         configured=configured,
         available=available,
+        device=device,
+        model_loaded=model_loaded,
         message=message,
     )

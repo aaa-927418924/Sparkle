@@ -5,7 +5,9 @@ from pathlib import Path
 
 from command_palette import (
     CommandPaletteSearchRequest,
+    SearchIntent,
     _heuristic_intent,
+    _merge_intents,
     _model_payload_to_intent,
     _resolve_model_files,
     search_command_palette,
@@ -117,6 +119,64 @@ class CommandPaletteTests(unittest.TestCase):
             )
 
             self.assertEqual([item.entity_type for item in response.results], ["task"])
+        finally:
+            connection.close()
+
+    def test_merge_intents_drops_model_fabricated_false_filters(self):
+        query = "IP as Logo Skill"
+        heuristic = _heuristic_intent(query)
+        model_intent = SearchIntent(
+            entity_types=["clip", "note", "task", "project"],
+            text_query="IP as Logo Skill",
+            is_done=False,
+            is_favorite=False,
+            due_from=None,
+            due_to=None,
+            limit=20,
+        )
+
+        merged = _merge_intents(query, heuristic, model_intent)
+
+        self.assertIsNone(merged.is_done)
+        self.assertIsNone(merged.is_favorite)
+        self.assertEqual(merged.text_query, "IP as Logo Skill")
+        self.assertEqual(merged.entity_types, list(model_intent.entity_types))
+
+    def test_merge_intents_keeps_done_filter_when_query_mentions_status(self):
+        query = "未完了のタスク"
+        heuristic = _heuristic_intent(query)
+        model_intent = SearchIntent(
+            entity_types=["task"],
+            text_query="タスク",
+            is_done=False,
+            is_favorite=None,
+            due_from=None,
+            due_to=None,
+            limit=20,
+        )
+
+        merged = _merge_intents(query, heuristic, model_intent)
+
+        self.assertFalse(merged.is_done)
+        self.assertEqual(merged.entity_types, ["task"])
+
+    def test_exact_clip_title_search_finds_clip_without_status_filter(self):
+        connection = make_connection()
+        try:
+            connection.execute(
+                "INSERT INTO clips(url, title) VALUES (?, ?)",
+                ("https://example.com/skill", "IP as Logo Skill"),
+            )
+            connection.commit()
+
+            response = search_command_palette(
+                connection,
+                CommandPaletteSearchRequest(query="IP as Logo Skill", use_ai=False),
+            )
+
+            self.assertGreaterEqual(response.total, 1)
+            self.assertEqual(response.results[0].entity_type, "clip")
+            self.assertEqual(response.results[0].title, "IP as Logo Skill")
         finally:
             connection.close()
 

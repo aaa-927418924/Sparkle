@@ -25,7 +25,15 @@ try {
 
     $OutputDirectory = Split-Path -Parent $OutputPath
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-    Compress-Archive -Path (Join-Path $StagePath "manifest.json"), (Join-Path $StagePath "icon.png"), (Join-Path $StagePath "server") -DestinationPath $OutputPath -Force
+    # Windows PowerShell 5.1's Compress-Archive only accepts a .zip destination,
+    # while the MCPB bundle is a zip archive with a .mcpb extension. Stage the
+    # archive as .zip and rename it to the requested extension.
+    $ZipPath = [System.IO.Path]::ChangeExtension($OutputPath, ".zip")
+    Compress-Archive -Path (Join-Path $StagePath "manifest.json"), (Join-Path $StagePath "icon.png"), (Join-Path $StagePath "server") -DestinationPath $ZipPath -Force
+    if ($OutputPath -ine $ZipPath) {
+        Remove-Item -LiteralPath $OutputPath -Force -ErrorAction SilentlyContinue
+        Rename-Item -LiteralPath $ZipPath -NewName ([System.IO.Path]::GetFileName($OutputPath)) -Force
+    }
     Write-Output "Created $OutputPath"
 }
 finally {

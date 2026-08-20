@@ -377,3 +377,6 @@ def _startup() -> None:
         app.state.data_initialized = False
         return
     _initialize_application_data()
+    from command_palette import preload_intent_parser
+
+    preload_intent_parser()

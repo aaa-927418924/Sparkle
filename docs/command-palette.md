@@ -16,6 +16,14 @@
    <python.exe> -m pip install -r requirements-ai.txt
    ```
 
+   NVIDIA GPUがある場合は、CUDA版torchを導入すると解析がGPU上で動作します。Windows向けcu130ビルドの例:
+
+   ```powershell
+   <python.exe> -m pip install torch==2.13.0+cu130 --index-url https://download.pytorch.org/whl/cu130
+   ```
+
+   `GET /command-palette/status` の `device` が `cuda` になればGPU動作です。検索レスポンスの `device` でも確認できます。
+
 2. Hugging Face形式のモデルディレクトリ、またはGGUFを次のいずれかへ配置します。
 
    - `%APPDATA%\Sparkle\models\LFM2.5-350M`
@@ -23,6 +31,6 @@
 
    GGUFを使う場合は、同じディレクトリに公式 `LiquidAI/LFM2.5-350M` の `config.json`、`tokenizer.json`、`tokenizer_config.json`、`chat_template.jinja`、`generation_config.json` を配置します。GGUFの重みはそのまま使い、Transformersが起動時にPyTorch用の重みへ展開します。
 
-3. アプリを再起動します。モデルは `local_files_only=True` で読み込むため、検索時にネットワークから自動取得しません。
+3. アプリを再起動します。モデルは `local_files_only=True` で読み込むため、検索時にネットワークから自動取得しません。初回のモデル読み込みはアプリ起動時にバックグラウンドで行われるため、最初の検索がモデル読み込みで待たされることはありません。
 
 モデルが未配置、メタデータ不足、または任意依存が未導入の場合も、コマンドパレット自体は通常検索として動作します。設定状態は `GET /command-palette/status` で確認できます。

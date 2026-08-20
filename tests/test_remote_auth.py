@@ -4,14 +4,15 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from remote_auth import AuthStore, InvalidAccessKey
 from remote_runtime import (
-    ANDROID_WEB_HTTPS_PORT,
+    MAIN_TARGET,
     MCP_FUNNEL_HTTPS_PORT,
     REMOTE_TARGET,
     RemoteAccessManager,
+    SERVE_WEB_HTTPS_PORT,
     _find_public_url,
 )
 
@@ -161,11 +162,11 @@ class RemoteAuthStoreTests(unittest.TestCase):
     def test_serve_web_status_selects_android_port_when_mcp_route_also_exists(self):
         status = {
             "Web": {
-                "sparkle.example.ts.net:443": {
-                    "Handlers": {"/": {"Proxy": "http://127.0.0.1:8000"}},
-                },
                 f"sparkle.example.ts.net:{MCP_FUNNEL_HTTPS_PORT}": {
                     "Handlers": {"/": {"Proxy": REMOTE_TARGET}},
+                },
+                "sparkle.example.ts.net:8443": {
+                    "Handlers": {"/": {"Proxy": "http://127.0.0.1:8000"}},
                 },
             }
         }
@@ -180,9 +181,9 @@ class RemoteAuthStoreTests(unittest.TestCase):
             ):
                 result = manager._serve_web_status()
         self.assertEqual(result["target"], "main")
-        self.assertEqual(result["public_url"], "https://sparkle.example.ts.net")
+        self.assertEqual(result["public_url"], "https://sparkle.example.ts.net:8443")
 
-    def test_serve_web_route_uses_443_and_main_app(self):
+    def test_serve_web_route_uses_8443_and_main_app(self):
         inactive = {
             "available": True,
             "active": False,
@@ -208,7 +209,7 @@ class RemoteAuthStoreTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(
             run_cli.call_args.args[0],
-            ["serve", "--bg", f"--https={ANDROID_WEB_HTTPS_PORT}", "--yes", "http://127.0.0.1:8000"],
+            ["serve", "--bg", "--https=8443", "--yes", "http://127.0.0.1:8000"],
         )
 
     def test_funnel_web_route_uses_443_without_global_reset(self):
@@ -253,16 +254,16 @@ class RemoteAuthStoreTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(
             run_cli.call_args.args[0],
-            ["funnel", "--bg", f"--https={ANDROID_WEB_HTTPS_PORT}", "--yes", REMOTE_TARGET],
+            ["funnel", "--bg", f"--https={MCP_FUNNEL_HTTPS_PORT}", "--yes", REMOTE_TARGET],
         )
 
-    def test_mcp_route_uses_8443_when_serve_web_mode_is_selected(self):
+    def test_mcp_route_uses_443_when_serve_web_mode_is_selected(self):
         inactive = {"available": True, "active": False, "target": None, "public_url": None}
         active = {
             "available": True,
             "active": True,
             "target": "remote",
-            "public_url": f"https://sparkle.example.ts.net:{MCP_FUNNEL_HTTPS_PORT}",
+            "public_url": "https://sparkle.example.ts.net",
         }
         with tempfile.TemporaryDirectory() as directory:
             web_store = AuthStore(Path(directory) / "remote-auth.json")
@@ -291,7 +292,7 @@ class RemoteAuthStoreTests(unittest.TestCase):
                     "https://sparkle.example.ts.net/mcp",
                 )
 
-    def test_mcp_url_without_port_moves_to_8443_for_serve_mode(self):
+    def test_mcp_url_without_port_stays_default_for_serve_mode(self):
         with tempfile.TemporaryDirectory() as directory:
             web_store = AuthStore(Path(directory) / "remote-auth.json")
             web_store.set_remote_mode("serve")
@@ -299,10 +300,10 @@ class RemoteAuthStoreTests(unittest.TestCase):
             with patch.dict(os.environ, {"SPARKLE_MCP_PUBLIC_URL": "https://sparkle.example.ts.net/mcp"}):
                 self.assertEqual(
                     manager._mcp_public_url({}),
-                    "https://sparkle.example.ts.net:8443/mcp",
+                    "https://sparkle.example.ts.net/mcp",
                 )
 
-    def test_mcp_configured_route_port_follows_web_mode(self):
+    def test_legacy_mcp_configured_port_is_normalized_in_both_web_modes(self):
         with tempfile.TemporaryDirectory() as directory:
             funnel_manager = RemoteAccessManager(
                 auth_store=AuthStore(Path(directory) / "funnel-auth.json")
@@ -324,7 +325,7 @@ class RemoteAuthStoreTests(unittest.TestCase):
             ):
                 self.assertEqual(
                     serve_manager._mcp_public_url({}),
-                    "https://sparkle.example.ts.net:8443/mcp",
+                    "https://sparkle.example.ts.net/mcp",
                 )
 
     def test_status_reports_web_and_mcp_routes_separately(self):
@@ -342,13 +343,13 @@ class RemoteAuthStoreTests(unittest.TestCase):
                 "available": True,
                 "active": True,
                 "target": "main",
-                "public_url": "https://sparkle.example.ts.net",
+                "public_url": "https://sparkle.example.ts.net:8443",
             }
             mcp_route = {
                 "available": True,
                 "active": True,
                 "target": "remote",
-                "public_url": f"https://sparkle.example.ts.net:{MCP_FUNNEL_HTTPS_PORT}",
+                "public_url": "https://sparkle.example.ts.net",
             }
             with (
                 patch.object(manager, "_web_status", return_value=web_route),
@@ -359,7 +360,7 @@ class RemoteAuthStoreTests(unittest.TestCase):
         self.assertEqual(status["android"], web_route)
         self.assertEqual(status["mcp_route"], mcp_route)
         self.assertEqual(status["remote"], mcp_route)
-        self.assertEqual(status["mcp_url"], f"https://sparkle.example.ts.net:{MCP_FUNNEL_HTTPS_PORT}/mcp")
+        self.assertEqual(status["mcp_url"], "https://sparkle.example.ts.net/mcp")
 
     def test_switching_from_shared_funnel_to_serve_stops_443_before_starting_routes(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -385,11 +386,11 @@ class RemoteAuthStoreTests(unittest.TestCase):
         self.assertEqual(web_store.get_remote_mode(), "serve")
         stop_web.assert_called_once_with(force=True)
         stop_mcp.assert_not_called()
-        stop_server.assert_called_once()
+        stop_server.assert_not_called()
         start_server.assert_called_once()
         start_routes.assert_called_once()
 
-    def test_switching_from_serve_to_funnel_stops_serve_and_mcp_routes(self):
+    def test_switching_from_serve_to_funnel_stops_only_the_serve_web_route(self):
         with tempfile.TemporaryDirectory() as directory:
             web_store = AuthStore(Path(directory) / "remote-auth.json")
             mcp_store = AuthStore(Path(directory) / "mcp-auth.json")
@@ -400,15 +401,8 @@ class RemoteAuthStoreTests(unittest.TestCase):
                 auth_store=web_store,
                 mcp_auth_store=mcp_store,
             )
-            current_mcp = {
-                "available": True,
-                "active": True,
-                "target": "remote",
-                "public_url": f"https://sparkle.example.ts.net:{MCP_FUNNEL_HTTPS_PORT}",
-            }
             with (
                 patch.object(manager, "_stop_public_route", return_value=(True, None)) as stop_web,
-                patch.object(manager, "_port_status", return_value=current_mcp),
                 patch.object(manager, "_stop_route", return_value=(True, None)) as stop_route,
                 patch.object(manager, "_stop_remote_server") as stop_server,
                 patch.object(manager, "_start_remote_server", return_value=True),
@@ -420,13 +414,8 @@ class RemoteAuthStoreTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(web_store.get_remote_mode(), "funnel")
         stop_web.assert_called_once_with(force=True)
-        stop_route.assert_called_once_with(
-            "funnel",
-            REMOTE_TARGET,
-            MCP_FUNNEL_HTTPS_PORT,
-            current_mcp,
-        )
-        stop_server.assert_called_once()
+        stop_route.assert_not_called()
+        stop_server.assert_not_called()
 
     def test_reapplying_serve_mode_restarts_missing_routes(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -444,6 +433,72 @@ class RemoteAuthStoreTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         start_server.assert_called_once()
         start_routes.assert_called_once()
+
+    def test_start_enabled_routes_removes_legacy_serve_and_mcp_ports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            web_store = AuthStore(Path(directory) / "remote-auth.json")
+            mcp_store = AuthStore(Path(directory) / "mcp-auth.json")
+            web_store.enable()
+            web_store.set_remote_mode("serve")
+            mcp_store.enable()
+            manager = RemoteAccessManager(
+                auth_store=web_store,
+                mcp_auth_store=mcp_store,
+            )
+            legacy_web = {
+                "available": True,
+                "active": True,
+                "target": "main",
+                "public_url": "https://sparkle.example.ts.net",
+            }
+            legacy_mcp = {
+                "available": True,
+                "active": True,
+                "target": "remote",
+                "public_url": "https://sparkle.example.ts.net:8443",
+            }
+            with (
+                patch.object(manager, "_port_status", side_effect=[legacy_web, legacy_mcp]),
+                patch.object(manager, "_stop_route", return_value=(True, None)) as stop_route,
+                patch.object(manager, "_start_web_route", return_value={"ok": True}),
+                patch.object(manager, "_start_mcp_route", return_value={"ok": True}),
+                patch.object(manager, "status", return_value={}),
+            ):
+                result = manager._start_enabled_routes()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            stop_route.call_args_list,
+            [
+                call("serve", MAIN_TARGET, MCP_FUNNEL_HTTPS_PORT, legacy_web),
+                call("funnel", REMOTE_TARGET, SERVE_WEB_HTTPS_PORT, legacy_mcp),
+            ],
+        )
+
+    def test_legacy_serve_443_remote_route_is_kept_for_new_mcp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            web_store = AuthStore(Path(directory) / "remote-auth.json")
+            mcp_store = AuthStore(Path(directory) / "mcp-auth.json")
+            web_store.set_remote_mode("serve")
+            mcp_store.enable()
+            manager = RemoteAccessManager(
+                auth_store=web_store,
+                mcp_auth_store=mcp_store,
+            )
+            current = {
+                "available": True,
+                "active": True,
+                "target": "remote",
+                "public_url": "https://sparkle.example.ts.net",
+            }
+            with (
+                patch.object(manager, "_port_status", return_value=current),
+                patch.object(manager, "_stop_route") as stop_route,
+            ):
+                result = manager._stop_legacy_serve_web_route()
+
+        self.assertTrue(result[0])
+        stop_route.assert_not_called()
 
     def test_trusted_session_survives_store_reload_without_plaintext(self):
         with tempfile.TemporaryDirectory() as directory:

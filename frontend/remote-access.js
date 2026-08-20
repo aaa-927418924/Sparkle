@@ -39,7 +39,7 @@
     serve: {
       name: "Serve Web（Android）",
       description: "AndroidなどTailscaleに接続した端末からだけアクセスできます。",
-      confirmation: "Android向けのTailscale Serve入口をHTTPS 443番ポートに作成します。続行しますか？",
+      confirmation: "Android向けのTailscale Serve入口をHTTPS 8443番ポートに作成します。Remote MCPは公開Funnelの443番を使用します。続行しますか？",
     },
   };
 
@@ -117,7 +117,7 @@
     }
 
     if (active) {
-      setMcpStatus("Remote MCPは有効です。公開方式に応じたFunnel（Funnel Webは443、Serve Webは8443）とMCP専用アクセスキーを使用します。", "success");
+      setMcpStatus("Remote MCPは有効です。どちらの公開方式でもMCPは公開Funnelの443番（ポート番号なしURL）を使用します。", "success");
     } else if (statusError) {
       setMcpStatus("設定は保存されていますが、Remote MCPに接続できません：" + statusError, "warning");
     } else if (!route.available) {

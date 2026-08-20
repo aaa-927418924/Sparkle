@@ -14,7 +14,7 @@ $env:SPARKLE_MCP_PUBLIC_URL = "https://your-sparkle-host.example/mcp"
 
 既存GUIの「外部Webアクセス」と設定画面の「Remote MCP」を有効にすると、Funnel Webモードでは同じリモートWeb gatewayの`/mcp`がHTTPS 443番で使えます。Web用とMCP用のアクセスキーは別です。ChatGPT Web、Claude Web、Claude DesktopのRemote Connectorには、設定画面に表示された`https://.../mcp`を指定してください。`RemoteAccessManager.status()`にも`web_route`、`mcp_route`、`mcp_url`を返します。
 
-Web公開方式をServeにすると、Android/Tailscale接続端末は443番のServeから利用し、Remote MCPだけが8443番のFunnelで外部公開されます。この場合のMCP URLは`https://...:8443/mcp`です。FunnelとServeは同じポートを共有できないため、方式切り替え時にMCPの公開ポートも切り替わります。
+Web公開方式をServeにすると、Android/Tailscale接続端末は8443番のServeから利用し、Remote MCPは443番のFunnelで外部公開されます。この場合もMCP URLは`https://.../mcp`（ポート番号なし）です。FunnelとServeは同じポートを共有できないため、Serve側のWebを8443番へ分離しています。Androidの接続URLには`:8443`を付けてください。
 
 ## MCP専用アクセスキー
 
@@ -58,7 +58,7 @@ $env:SPARKLE_MCP_PUBLIC_URL = "https://your-sparkle-host.example/mcp"
 
 ### Remote Connectorを使う方法
 
-Claude Desktopのアカウント側Remote Connectorを使う場合は、Claude Webと同じ公開URLが必要です。Funnel Webモードでは`https://.../mcp`、Serve Webモードでは`https://...:8443/mcp`を登録し、OAuth画面でMCP専用アクセスキーを入力します。
+Claude Desktopのアカウント側Remote Connectorを使う場合は、Claude Webと同じ公開URLが必要です。Funnel Webモード、Serve Webモードのどちらでも`https://.../mcp`を登録し、OAuth画面でMCP専用アクセスキーを入力します。Serve WebのAndroid接続先は`https://...:8443`です。
 
 Remote ConnectorはClaudeのクラウドからSparkleへ接続するため、`localhost`やTailnet内だけのTailscale Serve URLでは到達できません。公開HTTPSのFunnel、または同等の公開リバースプロキシが必要です。
 
@@ -70,7 +70,7 @@ Claude WebのRemote ConnectorはAnthropicのクラウドから接続されるた
 
 ## ChatGPT Web
 
-ChatGPTのDeveloper Mode / Custom MCP Appが利用できるプラン・ワークスペースで、設定画面に表示されたRemote MCP URL（Funnel Webモードでは`https://.../mcp`）を登録します。OAuthの動的Client Registration、Authorization Code + PKCE、Refresh Tokenを実装済みです。利用可能なメニュー名やFull MCPの可否はChatGPTのプランとワークスペース設定に依存します。
+ChatGPTのDeveloper Mode / Custom MCP Appが利用できるプラン・ワークスペースで、設定画面に表示されたRemote MCP URL（どちらのWeb公開方式でも`https://.../mcp`）を登録します。OAuthの動的Client Registration、Authorization Code + PKCE、Refresh Tokenを実装済みです。利用可能なメニュー名やFull MCPの可否はChatGPTのプランとワークスペース設定に依存します。
 
 OpenAIの仕様上、ChatGPT WebはローカルMCPへ直接接続しません。公開HTTPSを使わない場合はOpenAIが提供するSecure MCP Tunnel等の対応経路が別途必要です。
 
@@ -95,7 +95,7 @@ $env:SPARKLE_MCP_TOKEN = "0123456789abcdef-local-test-token"
 ## 運用上の注意
 
 - Remote公開時はHTTPSを必須にする。
-- `SPARKLE_MCP_PUBLIC_URL`は外部から実際に見えるMCP URLに合わせる。Funnel Webでは`https://ホスト/mcp`、Serve Webでは`https://ホスト:8443/mcp`を指定する。HTTPSの`:443`有無はOAuthで正規化される。
+- `SPARKLE_MCP_PUBLIC_URL`は外部から実際に見えるMCP URLに合わせる。Funnel Web、Serve Webともに`https://ホスト/mcp`を指定する。HTTPSの`:443`有無や旧Serve用`:8443`は実行中のルートに合わせて正規化される。
 - リモートアクセスキー、固定Bearer Token、OAuthコードをログへ出さない。
 - 固定Tokenを変更する場合はプロセスを再起動する。
 - 現在のOAuth ClientとTokenはプロセス再起動で失効する。再接続時にOAuthをやり直す。

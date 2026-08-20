@@ -107,7 +107,7 @@
               <h3 class="modal-sub">外部Webアクセス</h3>
               <p class="file-save-desc">
                 AndroidなどTailscaleに接続できる端末にはServe、Tailscaleアプリを入れられない端末にはFunnelを使えます。
-                Web入口とRemote MCPは別アクセスキーで管理します。Funnel Webでは443を共有し、Serve Web / AndroidではWebを443、MCPを8443へ分離します。
+                Web入口とRemote MCPは別アクセスキーで管理します。Funnel Webでは443を共有し、Serve Web / AndroidではWebをServe 8443、MCPを公開Funnel 443へ分離します。
               </p>
               <div class="setting-row column remote-access-mode-row">
                 <label for="remoteAccessMode">Web公開方式</label>
@@ -119,7 +119,7 @@
                   <button id="remoteAccessModeApply" class="modal-btn ghost" type="button">方式を適用</button>
                 </div>
                 <span id="remoteAccessModeHint" class="file-save-desc">
-                  Funnel WebではWebとMCPが443番、Serve Web / AndroidではWebが443番、MCP用Funnelが8443番を使用します。
+                  Funnel WebではWebとMCPが443番、Serve Web / AndroidではWebがServe 8443番、MCP用Funnelが443番を使用します。Android接続URLには:8443を付けます。
                 </span>
               </div>
               <div id="remoteAccessStatus" class="ai-export-status" role="status" aria-live="polite">
@@ -150,7 +150,7 @@
               <div class="remote-mcp-settings">
                 <h3 class="modal-sub">Remote MCP</h3>
                 <p class="file-save-desc">
-                  ChatGPT WebやClaude Webなどから読み取り専用Toolを使うための公開入口です。スマホ・Web画面用とは別のMCP専用アクセスキーを発行します。Funnel WebではHTTPS 443を共有し、Serve Web / AndroidではMCPをHTTPS 8443へ分離します。
+                  ChatGPT WebやClaude Webなどから読み取り専用Toolを使うための公開入口です。スマホ・Web画面用とは別のMCP専用アクセスキーを発行します。MCPは常に公開FunnelのHTTPS 443を使用するため、Serve Web / Androidでもポート番号なしのURLを利用できます。
                 </p>
                 <div id="remoteMcpStatus" class="ai-export-status" role="status" aria-live="polite">
                   状態を確認しています…
@@ -256,6 +256,6 @@
 
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260810-update-notice-v3"></script>
-    <script src="remote-access.js?v=remote-access-20260820-v5"></script>
+    <script src="remote-access.js?v=remote-access-20260820-v6"></script>
   </body>
 </html>

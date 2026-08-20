@@ -105,8 +105,10 @@ Sparkle desktop application itself.
 Funnel Web exposes the authenticated remote gateway through Tailscale Funnel
 on HTTPS port `443`. In this mode, the Web UI and Remote MCP share that
 gateway but use separate access keys. Serve Web / Android uses Tailscale Serve
-on HTTPS port `443` and proxies the main app inside the tailnet; when that mode
-is selected, Remote MCP moves to the separate Funnel on HTTPS port `8443`.
+on private HTTPS port `8443` and proxies the main app inside the tailnet;
+Remote MCP remains on the separate public Funnel HTTPS port `443`, so its URL
+does not need a port suffix. Android clients should use the Serve URL with
+`:8443`.
 Sparkle displays the active route in Settings.
 See the [Tailscale Serve documentation](https://tailscale.com/docs/features/tailscale-serve)
 and [Tailscale Funnel documentation](https://tailscale.com/docs/features/tailscale-funnel)

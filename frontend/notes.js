@@ -700,7 +700,33 @@ window.setInterval(refreshNotesInBackground, 1000);
 els.batchDuplicateBtn.addEventListener("click", batchDuplicateSelected);
 els.batchDelBtn.addEventListener("click", batchDeleteSelected);
 
-loadAll().catch((e) => {
+function focusCommandPaletteTask() {
+  const rawId = new URLSearchParams(window.location.search).get("task_id");
+  const taskId = Number(rawId);
+  if (!Number.isInteger(taskId) || taskId <= 0) return;
+  if (state.status !== "all") {
+    state.status = "all";
+    renderStatusTabs();
+    renderTasks();
+    renderNotes();
+  }
+  requestAnimationFrame(() => {
+    const item = els.taskList.querySelector(`.task-item[data-id="${taskId}"]`);
+    if (!item) return;
+    item.scrollIntoView({ behavior: "smooth", block: "center" });
+    item.classList.add("command-palette-target");
+    item.tabIndex = -1;
+    item.focus({ preventScroll: true });
+    window.setTimeout(() => {
+      item.classList.remove("command-palette-target");
+      item.removeAttribute("tabindex");
+    }, 1800);
+  });
+}
+
+loadAll().then(() => {
+  focusCommandPaletteTask();
+}).catch((e) => {
   els.memoEmpty.hidden = false;
   els.memoEmpty.querySelector(".empty-msg").textContent = "バックエンドに接続できません";
   els.memoEmpty.querySelector(".empty-sub").textContent =

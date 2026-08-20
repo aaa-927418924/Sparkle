@@ -268,7 +268,7 @@
   ].join(",");
   const openState = new WeakMap();
   const returnFocus = new WeakMap();
-  const modalSelector = ".modal, .md-cheatsheet, .app-confirm-popover";
+  const modalSelector = ".modal, .md-cheatsheet, .app-confirm-popover, .command-palette";
 
   function focusables(modal) {
     return [...modal.querySelectorAll(focusableSelector)].filter((element) => {

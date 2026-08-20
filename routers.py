@@ -33,6 +33,13 @@ from starlette.background import BackgroundTask
 from sqlite3 import Connection
 
 from crud import get_or_create_category, get_or_create_tag
+from command_palette import (
+    CommandPaletteSearchOut,
+    CommandPaletteSearchRequest,
+    CommandPaletteStatusOut,
+    get_command_palette_status,
+    search_command_palette,
+)
 from db import DB_PATH, get_connection, init_db
 from ai_export import (
     clear_exported_files,
@@ -302,6 +309,19 @@ def get_db() -> Connection:
         yield conn
     finally:
         conn.close()
+
+
+@router.get("/command-palette/status", response_model=CommandPaletteStatusOut)
+def command_palette_status():
+    return get_command_palette_status()
+
+
+@router.post("/command-palette/search", response_model=CommandPaletteSearchOut)
+def command_palette_search(
+    payload: CommandPaletteSearchRequest,
+    db: Connection = Depends(get_db),
+):
+    return search_command_palette(db, payload)
 
 
 def _fetch_tags(conn: Connection, clip_id: int) -> List[TagOut]:

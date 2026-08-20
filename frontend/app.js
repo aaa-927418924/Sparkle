@@ -2144,8 +2144,22 @@ function updateFileSaveDesc(v) {
       : "アップロードしたファイルの場所をそのまま参照します。";
 }
 
+function focusCommandPaletteClip() {
+  const rawId = new URLSearchParams(window.location.search).get("clip_id");
+  const clipId = Number(rawId);
+  if (!Number.isInteger(clipId) || clipId <= 0) return;
+  requestAnimationFrame(() => {
+    const card = els.grid.querySelector(`.card[data-id="${clipId}"]`);
+    if (!card) return;
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    card.classList.add("command-palette-target");
+    window.setTimeout(() => card.classList.remove("command-palette-target"), 1800);
+  });
+}
+
 loadAll()
   .then(() => loadFileSaveMethod())
+  .then(() => focusCommandPaletteClip())
   .catch((e) => {
   els.grid.innerHTML = "";
   els.empty.hidden = false;

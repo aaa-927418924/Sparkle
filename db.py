@@ -30,6 +30,10 @@ class TrackedConnection(sqlite3.Connection):
     @staticmethod
     def _is_write(sql: str) -> bool:
         statement = sql.lstrip().upper()
+        # The command-palette index is derived data. Rebuilding it must not
+        # trigger a second AI export of the user's actual content.
+        if statement.startswith(_WRITE_SQL_PREFIXES) and "SEARCH_" in statement:
+            return False
         return statement.startswith(_WRITE_SQL_PREFIXES)
 
     def execute(self, sql, parameters=()):
@@ -257,6 +261,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_project_clips_clip ON project_clips(clip_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_project_notes_note ON project_notes(note_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_task_notes_note ON task_notes(note_id)")
+
+    # Keep the denormalized command-palette search schema idempotent and
+    # migration-safe. The module is imported lazily to avoid a db/module
+    # import cycle during application startup.
+    from command_palette import ensure_search_schema
+
+    ensure_search_schema(conn)
 
 
 if __name__ == "__main__":

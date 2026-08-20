@@ -1,0 +1,7 @@
+# Optional dependencies for the local natural-language parser.
+# The command palette still works with SQLite/heuristic search when these are
+# not installed. Install them into the same Python environment as Sparkle.
+torch>=2.2
+transformers>=4.56
+safetensors>=0.5
+huggingface_hub>=0.30

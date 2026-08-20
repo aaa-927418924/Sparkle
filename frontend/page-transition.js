@@ -178,9 +178,20 @@
     }, 360);
   }
 
+  function isTextEditingTarget(target) {
+    return target instanceof Element && (
+      target.matches("input, textarea, select, [contenteditable=\"true\"]") ||
+      target.isContentEditable === true
+    );
+  }
+
   function focusPageIfNeeded(force = false) {
-    // DOM focus and the native WebView2 control focus are separate. Pointer
-    // entry must therefore retry both even when document.hasFocus() is true.
+    // Never steal focus from a text editor. Doing so while the pointer moves
+    // makes WebView2 repaint the control and can interrupt selection/copy.
+    if (isTextEditingTarget(document.activeElement)) return;
+
+    // DOM focus and the native WebView2 control focus are separate. Recovery
+    // is still needed after navigation or when the native control loses focus.
     if (!force && typeof document.hasFocus === "function" && document.hasFocus()) return;
 
     const now = Date.now();
@@ -202,11 +213,18 @@
     for (const delay of FOCUS_RECOVERY_DELAYS_MS) {
       window.setTimeout(() => focusPageIfNeeded(true), delay);
     }
-    document.addEventListener("pointerover", () => focusPageIfNeeded(true), {
+    const recoverFocusFromPointer = (event) => {
+      // Pointer movement over an editor must remain inert. In particular, do
+      // not pass the PointerEvent itself as the `force` argument.
+      if (isTextEditingTarget(document.activeElement) || isTextEditingTarget(event.target)) return;
+      focusPageIfNeeded(false);
+    };
+
+    document.addEventListener("pointerover", recoverFocusFromPointer, {
       capture: true,
       passive: true,
     });
-    document.addEventListener("pointermove", focusPageIfNeeded, {
+    document.addEventListener("pointermove", recoverFocusFromPointer, {
       capture: true,
       passive: true,
     });

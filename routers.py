@@ -49,16 +49,25 @@ from maintenance import (
     run_maintenance,
 )
 from project_assistant import (
+    AIActionPermissionsOut,
     AIProviderUpdate,
     AIProvidersOut,
     AISettingsUpdate,
     ProjectAssistantError,
+    ProjectAssistantActionDecisionRequest,
+    ProjectAssistantActionResult,
+    ProjectAssistantHistoryOut,
     ProjectAssistantOut,
     ProjectAssistantRequest,
     ask_project_assistant,
+    clear_project_assistant_history,
     configure_ai_provider,
     delete_ai_provider,
+    execute_project_assistant_action,
+    get_ai_action_permissions,
     get_ai_provider_settings,
+    get_project_assistant_history,
+    reset_ai_action_permission,
     set_active_ai_provider,
 )
 from schemas import (
@@ -967,6 +976,38 @@ def project_assistant(
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
+@router.get("/projects/{project_id}/assistant/history", response_model=ProjectAssistantHistoryOut)
+def project_assistant_history(
+    project_id: int,
+    limit: int = Query(100, ge=1, le=200),
+    db: Connection = Depends(get_db),
+):
+    try:
+        return get_project_assistant_history(db, project_id, limit)
+    except ProjectAssistantError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.delete("/projects/{project_id}/assistant/history", status_code=204)
+def delete_project_assistant_history(project_id: int, db: Connection = Depends(get_db)):
+    try:
+        clear_project_assistant_history(db, project_id)
+    except ProjectAssistantError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.post("/projects/{project_id}/assistant/actions", response_model=ProjectAssistantActionResult)
+def decide_project_assistant_action(
+    project_id: int,
+    payload: ProjectAssistantActionDecisionRequest,
+    db: Connection = Depends(get_db),
+):
+    try:
+        return execute_project_assistant_action(db, project_id, payload)
+    except ProjectAssistantError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
 def _cascade_project_done(db: Connection, project_id: int, row) -> None:
     """Mark the project done and cascade completion to its undone tasks and notes."""
     undone_tasks = db.execute(
@@ -1699,6 +1740,19 @@ def update_ai_settings(
 ):
     try:
         return set_active_ai_provider(db, payload.active_provider)
+    except ProjectAssistantError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get("/ai/action-permissions", response_model=AIActionPermissionsOut)
+def list_ai_action_permissions(db: Connection = Depends(get_db)):
+    return get_ai_action_permissions(db)
+
+
+@router.delete("/ai/action-permissions/{operation}", response_model=AIActionPermissionsOut)
+def remove_ai_action_permission(operation: str, db: Connection = Depends(get_db)):
+    try:
+        return reset_ai_action_permission(db, operation)
     except ProjectAssistantError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 

@@ -7,6 +7,44 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendInteractionTests(unittest.TestCase):
+    def test_project_assistant_drawer_uses_fast_transparent_toggle_composer(self):
+        html = (ROOT / "frontend" / "projects.html").read_text(encoding="utf-8")
+        js = (ROOT / "frontend" / "project-assistant.js").read_text(encoding="utf-8")
+        css = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+
+        self.assertIn('type="checkbox" role="switch"', html)
+        self.assertNotIn('<select id="projectAssistantScope"', html)
+        self.assertNotIn("projectAssistantSubmit", html)
+        self.assertNotIn("このプロジェクトについて質問や依頼を入力してください。変更操作は実行前に確認します。", html + js)
+        self.assertIn(">Ask AI<", html)
+        self.assertNotIn(">専属AI<", html)
+        self.assertIn('event.key !== "Enter" || event.shiftKey || event.isComposing', js)
+        drawer_css = css[css.index("/* Project assistant drawer") :]
+        dialog_start = drawer_css.index(".project-assistant-dialog {")
+        dialog_end = drawer_css.index(".project-assistant-header {", dialog_start)
+        dialog_css = drawer_css[dialog_start:dialog_end]
+        self.assertIn("right: 0;", drawer_css)
+        self.assertIn("background: transparent;", drawer_css)
+        self.assertIn("transform: none;", dialog_css)
+        self.assertIn("transition: none;", dialog_css)
+        self.assertNotIn("transition-property: transform", dialog_css)
+        self.assertNotIn("translateX(100%)", drawer_css)
+        self.assertNotIn("project-assistant-modal.is-open", drawer_css)
+        self.assertNotIn("requestAnimationFrame", js)
+
+    def test_pointer_focus_recovery_does_not_steal_editor_focus(self):
+        source = (ROOT / "frontend" / "page-transition.js").read_text(encoding="utf-8")
+
+        self.assertIn("function isTextEditingTarget(target)", source)
+        self.assertIn("isTextEditingTarget(document.activeElement)", source)
+        self.assertIn("isTextEditingTarget(event.target)", source)
+        self.assertIn('document.addEventListener("pointermove", recoverFocusFromPointer', source)
+        self.assertNotIn('document.addEventListener("pointermove", focusPageIfNeeded', source)
+        self.assertIn("focusPageIfNeeded(false)", source)
+        for page in ("index.html", "notes.html", "note-editor.html", "projects.html"):
+            html = (ROOT / "frontend" / page).read_text(encoding="utf-8")
+            self.assertIn("page-transition.js?v=page-swipe-20260821-focus-safe-v1", html)
+
     def test_native_window_drag_is_preferred_with_legacy_fallback(self):
         source = (ROOT / "frontend" / "codex-shell.js").read_text(encoding="utf-8")
 

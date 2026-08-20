@@ -214,7 +214,7 @@
 
           <section class="settings-col settings-ai-provider-col" aria-labelledby="projectAssistantSettingsTitle">
             <h3 id="projectAssistantSettingsTitle" class="modal-sub">プロジェクト専属AI</h3>
-            <p class="file-save-desc">プロジェクトのクリップ・メモ・タスクを参照して、プロジェクト内の質問に回答します。質問した内容だけが選択中のAIプロバイダーへ送信されます。</p>
+            <p class="file-save-desc">プロジェクトのクリップ・メモ・タスクを参照して、プロジェクト内の質問に回答します。参照範囲は専属AI画面で「プロジェクト内」または「全て」から選べます。</p>
             <p class="file-save-desc">APIキーはWindows資格情報マネージャーに保存し、データベース・バックアップ・AI向けエクスポートには含めません。</p>
             <div class="setting-row column ai-active-provider-row">
               <label for="aiActiveProvider">使用するAIプロバイダー</label>
@@ -260,6 +260,26 @@
                 </div>
                 <p id="aiProviderMessage-openai" class="ai-export-status" role="status" aria-live="polite"></p>
               </article>
+              <article class="ai-provider-card" data-ai-provider="ollama">
+                <div class="ai-provider-card-header"><h4>Ollama</h4><span id="aiProviderStatus-ollama" class="ai-provider-status">未設定</span></div>
+                <label class="modal-label" for="aiProviderBaseUrl-ollama">Base URL</label>
+                <input id="aiProviderBaseUrl-ollama" class="modal-input" type="url" autocomplete="url" placeholder="http://サーバーPC:11434" spellcheck="false" />
+                <label class="modal-label" for="aiProviderKey-ollama">APIキー（任意）</label>
+                <input id="aiProviderKey-ollama" class="modal-input" type="password" autocomplete="new-password" placeholder="認証が必要な場合のみ" />
+                <label class="modal-label" for="aiProviderModel-ollama">モデル名</label>
+                <input id="aiProviderModel-ollama" class="modal-input" type="text" autocomplete="off" spellcheck="false" placeholder="llama3.2" />
+                <p class="file-save-desc">OllamaのOpenAI互換API（/v1/chat/completions）を利用します。サーバーPCのファイアウォール設定も確認してください。</p>
+                <div class="settings-data-actions ai-provider-actions">
+                  <button class="modal-btn" type="button" data-ai-save="ollama">保存</button>
+                  <button class="modal-btn ghost" type="button" data-ai-delete="ollama">設定を削除</button>
+                </div>
+                <p id="aiProviderMessage-ollama" class="ai-export-status" role="status" aria-live="polite"></p>
+              </article>
+            </div>
+            <div class="ai-action-permissions" aria-labelledby="aiActionPermissionsTitle">
+              <h4 id="aiActionPermissionsTitle" class="modal-sub">AIによる変更操作の許可</h4>
+              <p class="file-save-desc">「常に許可」はアプリ全体でその操作に適用されます。ここからいつでも解除できます。</p>
+              <div id="aiActionPermissions" class="ai-action-permission-list" aria-live="polite">状態を確認中…</div>
             </div>
           </section>
 
@@ -306,7 +326,7 @@
     </div>
 
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
-    <script src="ai-provider-settings.js?v=ai-provider-settings-20260820-v1"></script>
+    <script src="ai-provider-settings.js?v=ai-provider-settings-20260820-v2"></script>
     <script src="codex-shell.js?v=codex-shell-20260810-update-notice-v3"></script>
     <script src="remote-access.js?v=remote-access-20260820-v6"></script>
   </body>

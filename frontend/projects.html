@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle — プロジェクト</title>
-    <link rel="stylesheet" href="style.css?v=editor-tall-20260803-v1" />
+    <link rel="stylesheet" href="style.css?v=project-assistant-instant-20260821-v1" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
     <script>
       document.documentElement.setAttribute("data-theme", "dark");
@@ -78,7 +78,7 @@
               <span class="toggle-label">完了</span>
             </label>
             <button id="projectAssistantBtn" class="modal-btn ghost project-assistant-trigger" type="button" aria-describedby="projectAssistantAvailability">
-              専属AI
+              Ask AI
               <span id="projectAssistantAvailability" class="project-assistant-trigger-state">未設定</span>
             </button>
             <button id="detailEditBtn" class="modal-btn ghost" type="button">編集</button>
@@ -233,15 +233,28 @@
       </div>
     </div>
 
-    <!-- プロジェクト専属AIモーダル -->
+    <!-- プロジェクト専属AIサイドバー -->
     <div id="projectAssistantModal" class="modal project-assistant-modal" hidden>
-      <div class="modal-box project-assistant-dialog" role="dialog" aria-modal="true" aria-labelledby="projectAssistantTitle" aria-describedby="projectAssistantDescription" tabindex="-1">
+      <div class="project-assistant-backdrop" data-project-assistant-close aria-hidden="true"></div>
+      <aside class="modal-box project-assistant-dialog" role="dialog" aria-modal="true" aria-labelledby="projectAssistantTitle" aria-describedby="projectAssistantDescription projectAssistantPrivacy" tabindex="-1">
         <div class="project-assistant-header">
           <div>
             <p class="project-assistant-kicker">PROJECT ASSISTANT</p>
-            <h2 id="projectAssistantTitle" class="modal-title">専属AI</h2>
+            <h2 id="projectAssistantTitle" class="modal-title">Ask AI</h2>
           </div>
           <button id="projectAssistantClose" class="modal-btn ghost" type="button">閉じる</button>
+        </div>
+        <div class="project-assistant-toolbar">
+          <div class="project-assistant-scope-toggle">
+            <span id="projectAssistantScopeLabel" class="project-assistant-scope-label">参照範囲</span>
+            <span id="projectAssistantScopeProject" class="project-assistant-scope-option">プロジェクト内</span>
+            <label class="project-assistant-switch" title="参照範囲を切り替える">
+              <input id="projectAssistantScope" type="checkbox" role="switch" aria-labelledby="projectAssistantScopeLabel projectAssistantScopeProject projectAssistantScopeAll">
+              <span class="project-assistant-switch-track" aria-hidden="true"></span>
+            </label>
+            <span id="projectAssistantScopeAll" class="project-assistant-scope-option">全て</span>
+          </div>
+          <button id="projectAssistantClearHistory" class="modal-btn ghost" type="button">履歴を消去</button>
         </div>
         <p id="projectAssistantDescription" class="project-assistant-description">このプロジェクトに紐づくクリップ・メモ・タスクだけを参照して回答します。</p>
         <p id="projectAssistantPrivacy" class="project-assistant-privacy">質問すると、プロジェクトの内容が設定したAIプロバイダーへ送信されます。ローカルファイルの絶対パスは送信しません。</p>
@@ -251,12 +264,18 @@
           <a class="back-link" href="/Settings">設定でAPIキーを登録する →</a>
         </div>
 
+        <div id="projectAssistantMessages" class="project-assistant-messages" aria-live="polite" aria-relevant="additions"></div>
+        <section id="projectAssistantActions" class="project-assistant-actions" aria-labelledby="projectAssistantActionsTitle" hidden>
+          <h3 id="projectAssistantActionsTitle" class="modal-sub">変更操作の確認</h3>
+          <p class="project-assistant-action-help">AIが提案した変更です。実行前に許可を選択してください。</p>
+          <div id="projectAssistantActionList" class="project-assistant-action-list"></div>
+        </section>
+
         <form id="projectAssistantForm" class="project-assistant-form">
-          <label class="modal-label" for="projectAssistantMessage">質問</label>
-          <textarea id="projectAssistantMessage" class="modal-input project-assistant-message" rows="4" maxlength="2000" placeholder="このプロジェクトについて質問してください…" autocomplete="off"></textarea>
+          <label class="modal-label" for="projectAssistantMessage">質問・依頼</label>
+          <textarea id="projectAssistantMessage" class="modal-input project-assistant-message" rows="3" maxlength="2000" placeholder="このプロジェクトについて質問・依頼してください…" autocomplete="off"></textarea>
           <div class="project-assistant-form-actions">
             <span id="projectAssistantStatus" class="project-assistant-status" role="status" aria-live="polite" aria-atomic="true"></span>
-            <button id="projectAssistantSubmit" class="modal-btn" type="submit">質問する</button>
           </div>
         </form>
 
@@ -342,8 +361,8 @@
 
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
     <script src="projects.js?v=projects-controls-20260803-batch-duplicate-v1"></script>
-    <script src="project-assistant.js?v=project-assistant-20260820-v1"></script>
+    <script src="project-assistant.js?v=project-assistant-instant-20260821-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260810-update-notice-v3"></script>
-    <script src="page-transition.js?v=page-swipe-20260819-v12"></script>
+    <script src="page-transition.js?v=page-swipe-20260821-focus-safe-v1"></script>
   </body>
 </html>

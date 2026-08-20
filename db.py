@@ -155,11 +155,42 @@ CREATE TABLE IF NOT EXISTS task_notes (
     PRIMARY KEY (task_id, note_id)
 );
 
+CREATE TABLE IF NOT EXISTS project_assistant_messages (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id         INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    role               TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+    content            TEXT NOT NULL,
+    provider           TEXT,
+    model              TEXT,
+    scope              TEXT NOT NULL DEFAULT 'project' CHECK(scope IN ('project', 'all')),
+    context_item_count INTEGER NOT NULL DEFAULT 0,
+    created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ai_action_permissions (
+    operation   TEXT PRIMARY KEY,
+    mode        TEXT NOT NULL CHECK(mode = 'always'),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS project_assistant_action_proposals (
+    id          TEXT PRIMARY KEY,
+    project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    operation   TEXT NOT NULL,
+    action_json TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_clips_category ON clips(category_id);
 CREATE INDEX IF NOT EXISTS idx_clip_tags_tag  ON clip_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_clip    ON tasks(clip_id);
 CREATE INDEX IF NOT EXISTS idx_note_clips_note ON note_clips(note_id);
 CREATE INDEX IF NOT EXISTS idx_note_clips_clip ON note_clips(clip_id);
+CREATE INDEX IF NOT EXISTS idx_project_assistant_messages_project
+    ON project_assistant_messages(project_id, id);
+CREATE INDEX IF NOT EXISTS idx_project_assistant_proposals_project
+    ON project_assistant_action_proposals(project_id, created_at);
 """
 
 
@@ -261,6 +292,36 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_project_clips_clip ON project_clips(clip_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_project_notes_note ON project_notes(note_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_task_notes_note ON task_notes(note_id)")
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS project_assistant_messages (
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id         INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            role               TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+            content            TEXT NOT NULL,
+            provider           TEXT,
+            model              TEXT,
+            scope              TEXT NOT NULL DEFAULT 'project' CHECK(scope IN ('project', 'all')),
+            context_item_count INTEGER NOT NULL DEFAULT 0,
+            created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS ai_action_permissions (
+            operation   TEXT PRIMARY KEY,
+            mode        TEXT NOT NULL CHECK(mode = 'always'),
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS project_assistant_action_proposals (
+            id          TEXT PRIMARY KEY,
+            project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            operation   TEXT NOT NULL,
+            action_json TEXT NOT NULL,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            resolved_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_project_assistant_messages_project
+            ON project_assistant_messages(project_id, id);
+        CREATE INDEX IF NOT EXISTS idx_project_assistant_proposals_project
+            ON project_assistant_action_proposals(project_id, created_at);
+    """)
 
     # The legacy command-palette search tables are intentionally left in place
     # when present, but are no longer created or refreshed. Keeping existing

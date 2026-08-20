@@ -2,12 +2,13 @@
   "use strict";
 
   const API = window.location.origin;
-  const providerNames = { deepseek: "DeepSeek", gemini: "Gemini", openai: "OpenAI" };
+  const providerNames = { deepseek: "DeepSeek", gemini: "Gemini", openai: "OpenAI", ollama: "Ollama" };
   let state = null;
 
   const $ = (id) => document.getElementById(id);
   const activeSelect = $("aiActiveProvider");
   const activeStatus = $("aiActiveProviderStatus");
+  const actionPermissions = $("aiActionPermissions");
 
   async function readResponse(response) {
     let data = {};
@@ -38,7 +39,7 @@
     activeSelect.replaceChildren();
     const placeholder = document.createElement("option");
     placeholder.value = "";
-    placeholder.textContent = state.available ? "APIキーを保存してください" : "資格情報マネージャーを利用できません";
+    placeholder.textContent = state.available ? "設定済みのプロバイダーを選択" : "資格情報マネージャーを利用できません";
     activeSelect.append(placeholder);
 
     for (const provider of state.providers || []) {
@@ -55,6 +56,8 @@
       }
       const model = $(`aiProviderModel-${provider.id}`);
       if (model && !model.matches(":focus")) model.value = provider.model || provider.default_model || "";
+      const baseUrl = $(`aiProviderBaseUrl-${provider.id}`);
+      if (baseUrl && !baseUrl.matches(":focus")) baseUrl.value = provider.base_url || "";
       const save = document.querySelector(`[data-ai-save="${provider.id}"]`);
       const remove = document.querySelector(`[data-ai-delete="${provider.id}"]`);
       if (save) save.disabled = !state.available;
@@ -67,6 +70,41 @@
       : (state.availability_message || "状態を確認できません。");
   }
 
+  function renderActionPermissions(data) {
+    if (!actionPermissions) return;
+    actionPermissions.replaceChildren();
+    for (const permission of data?.permissions || []) {
+      const row = document.createElement("div");
+      row.className = "ai-action-permission-row";
+      const label = document.createElement("span");
+      label.textContent = permission.label || permission.operation;
+      const status = document.createElement("span");
+      status.className = "ai-provider-status";
+      status.textContent = permission.always_allowed ? "常に許可" : "実行時に確認";
+      row.append(label, status);
+      if (permission.always_allowed) {
+        const button = document.createElement("button");
+        button.className = "modal-btn ghost";
+        button.type = "button";
+        button.textContent = "常に許可を解除";
+        button.dataset.aiPermissionDelete = permission.operation;
+        row.append(button);
+      }
+      actionPermissions.append(row);
+    }
+    if (!actionPermissions.children.length) actionPermissions.textContent = "許可状態を取得できませんでした。";
+  }
+
+  async function loadActionPermissions() {
+    if (!actionPermissions) return;
+    try {
+      const response = await fetch(`${API}/ai/action-permissions`, { headers: { Accept: "application/json" } });
+      renderActionPermissions(await readResponse(response));
+    } catch {
+      actionPermissions.textContent = "許可状態を確認できません。";
+    }
+  }
+
   async function load() {
     try {
       const response = await fetch(`${API}/ai/providers`, { headers: { Accept: "application/json" } });
@@ -75,13 +113,20 @@
       state = { available: false, availability_message: "AIプロバイダーの状態を確認できません。", providers: [] };
     }
     render();
+    loadActionPermissions();
   }
 
   async function saveProvider(providerId) {
     const keyInput = $(`aiProviderKey-${providerId}`);
     const modelInput = $(`aiProviderModel-${providerId}`);
+    const baseUrlInput = $(`aiProviderBaseUrl-${providerId}`);
     const current = (state?.providers || []).find((provider) => provider.id === providerId);
-    if (current && !current.configured && !keyInput.value.trim()) {
+    if (providerId === "ollama" && !baseUrlInput?.value.trim()) {
+      setMessage(providerId, "OllamaのBase URLを入力してください。", true);
+      baseUrlInput?.focus();
+      return;
+    }
+    if (providerId !== "ollama" && current && !current.configured && !keyInput.value.trim()) {
       setMessage(providerId, "APIキーを入力してください。", true);
       keyInput.focus();
       return;
@@ -90,6 +135,7 @@
     setMessage(providerId, "保存しています…");
     try {
       const body = { model: modelInput.value.trim() };
+      if (providerId === "ollama") body.base_url = baseUrlInput.value.trim();
       if (keyInput.value.trim()) body.api_key = keyInput.value.trim();
       state = await readResponse(await fetch(`${API}/ai/providers/${providerId}`, {
         method: "PUT",
@@ -110,7 +156,7 @@
 
   async function deleteProvider(providerId) {
     const name = providerNames[providerId] || "このプロバイダー";
-    if (!window.confirm(`${name}のAPIキーを削除します。よろしいですか？`)) return;
+    if (!window.confirm(`${name}の設定を削除します。続けますか？`)) return;
     setCardBusy(providerId, true);
     setMessage(providerId, "削除しています…");
     try {
@@ -126,6 +172,17 @@
     } finally {
       setCardBusy(providerId, false);
       render();
+    }
+  }
+
+  async function deleteActionPermission(operation) {
+    try {
+      renderActionPermissions(await readResponse(await fetch(`${API}/ai/action-permissions/${operation}`, {
+        method: "DELETE",
+        headers: { Accept: "application/json" },
+      })));
+    } catch (error) {
+      if (actionPermissions) actionPermissions.textContent = error.message || "許可を解除できませんでした。";
     }
   }
 
@@ -153,6 +210,10 @@
   });
   document.querySelectorAll("[data-ai-delete]").forEach((button) => {
     button.addEventListener("click", () => deleteProvider(button.dataset.aiDelete));
+  });
+  actionPermissions?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-ai-permission-delete]");
+    if (button) deleteActionPermission(button.dataset.aiPermissionDelete);
   });
   activeSelect?.addEventListener("change", changeActiveProvider);
   load();

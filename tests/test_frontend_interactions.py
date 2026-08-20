@@ -18,7 +18,7 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertNotIn("このプロジェクトについて質問や依頼を入力してください。変更操作は実行前に確認します。", html + js)
         self.assertIn(">Ask AI<", html)
         self.assertNotIn(">専属AI<", html)
-        self.assertIn("project-assistant-source-history-20260821-v3", html)
+        self.assertIn("project-assistant-source-history-20260821-v4", html)
         self.assertIn('class="project-assistant-actions" role="dialog"', html)
         self.assertIn('aria-describedby="projectAssistantActionHelp"', html)
         self.assertIn('event.key !== "Enter" || event.shiftKey || event.isComposing', js)
@@ -61,6 +61,24 @@ class FrontendInteractionTests(unittest.TestCase):
         for page in ("index.html", "notes.html", "note-editor.html", "projects.html"):
             html = (ROOT / "frontend" / page).read_text(encoding="utf-8")
             self.assertIn("page-transition.js?v=page-swipe-20260821-focus-safe-v1", html)
+
+    def test_clipboard_copy_is_available_for_assistant_history_and_text_boxes(self):
+        shell = (ROOT / "frontend" / "codex-shell.js").read_text(encoding="utf-8")
+        assistant = (ROOT / "frontend" / "project-assistant.js").read_text(encoding="utf-8")
+        css = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+        native = (ROOT / "app_entry.py").read_text(encoding="utf-8")
+
+        self.assertIn('document.addEventListener("copy"', shell)
+        self.assertIn("window.sparkleCopyText = copyText", shell)
+        self.assertIn("copy_text_to_clipboard", shell)
+        self.assertIn('className = "project-assistant-message-copy"', assistant)
+        self.assertIn('role === "user" ? "ユーザー側テキスト" : "回答テキスト"', assistant)
+        self.assertIn("user-select: text;", css)
+        self.assertIn("def _copy_text_to_windows_clipboard", native)
+        self.assertIn("def copy_text_to_clipboard", native)
+        for page in ("index.html", "notes.html", "note-editor.html", "projects.html"):
+            html = (ROOT / "frontend" / page).read_text(encoding="utf-8")
+            self.assertIn("codex-shell.js?v=codex-shell-20260821-clipboard-v1", html)
 
     def test_native_window_drag_is_preferred_with_legacy_fallback(self):
         source = (ROOT / "frontend" / "codex-shell.js").read_text(encoding="utf-8")

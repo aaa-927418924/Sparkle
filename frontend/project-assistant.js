@@ -175,13 +175,49 @@
     const bubble = document.createElement("article");
     bubble.className = `project-assistant-message-bubble is-${role}${options.generating ? " is-generating" : ""}${options.error ? " is-error" : ""}`;
     bubble.dataset.role = role;
+    const copyValue = String(content ?? "");
     const meta = document.createElement("div");
     meta.className = "project-assistant-message-meta";
     meta.textContent = role === "user" ? "あなた" : (options.provider || "専属AI");
     const body = document.createElement("div");
     body.className = "project-assistant-message-content";
-    body.textContent = content;
+    body.textContent = copyValue;
     bubble.append(meta, body);
+
+    if (!options.generating) {
+      const tools = document.createElement("div");
+      tools.className = "project-assistant-message-tools";
+      const copyButton = document.createElement("button");
+      copyButton.type = "button";
+      copyButton.className = "project-assistant-message-copy";
+      copyButton.textContent = "コピー";
+      copyButton.setAttribute(
+        "aria-label",
+        `${role === "user" ? "ユーザー側テキスト" : "回答テキスト"}をコピー`,
+      );
+      let resetTimer = null;
+      copyButton.addEventListener("click", async () => {
+        copyButton.disabled = true;
+        let copied = false;
+        try {
+          copied = typeof window.sparkleCopyText === "function"
+            ? await window.sparkleCopyText(copyValue)
+            : false;
+        } catch {
+          copied = false;
+        }
+        copyButton.textContent = copied ? "コピーしました" : "コピー失敗";
+        clearTimeout(resetTimer);
+        resetTimer = window.setTimeout(() => {
+          copyButton.textContent = "コピー";
+          copyButton.disabled = false;
+        }, 1400);
+        if (!copied) copyButton.disabled = false;
+      });
+      tools.append(copyButton);
+      bubble.append(tools);
+    }
+
     els.messages?.append(bubble);
     if (els.messages) els.messages.scrollTop = els.messages.scrollHeight;
     return bubble;

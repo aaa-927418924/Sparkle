@@ -39,6 +39,101 @@
 })();
 
 (() => {
+  // WebView2/pywebview can lose the native selection owner while the pointer
+  // moves. Keep Ctrl/Cmd+C working by copying the selected text through the
+  // Windows clipboard API first, then use browser fallbacks in previews.
+  function getSelectedText(event) {
+    const target = event?.target;
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      const start = Number(target.selectionStart);
+      const end = Number(target.selectionEnd);
+      if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+        return target.value.slice(start, end);
+      }
+      return "";
+    }
+
+    return window.getSelection?.()?.toString() || "";
+  }
+
+  async function copyText(text) {
+    const value = String(text ?? "");
+    if (!value) return false;
+
+    const nativeApi = window.pywebview?.api;
+    if (typeof nativeApi?.copy_text_to_clipboard === "function") {
+      try {
+        if (await nativeApi.copy_text_to_clipboard(value)) return true;
+      } catch {
+        // Browser fallbacks keep browser previews and restricted hosts usable.
+      }
+    }
+
+    if (typeof navigator.clipboard?.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(value);
+        return true;
+      } catch {
+        // Continue to the synchronous execCommand fallback.
+      }
+    }
+
+    const active = document.activeElement;
+    const start = active && "selectionStart" in active ? active.selectionStart : null;
+    const end = active && "selectionEnd" in active ? active.selectionEnd : null;
+    const selection = window.getSelection?.();
+    const ranges = selection ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange()) : [];
+    const helper = document.createElement("textarea");
+    helper.value = value;
+    helper.setAttribute("readonly", "");
+    helper.setAttribute("aria-hidden", "true");
+    helper.style.position = "fixed";
+    helper.style.left = "-9999px";
+    helper.style.top = "0";
+    helper.style.opacity = "0";
+    document.body.appendChild(helper);
+    helper.focus({ preventScroll: true });
+    helper.select();
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch {
+      copied = false;
+    }
+    helper.remove();
+
+    if (active && typeof active.focus === "function") {
+      active.focus({ preventScroll: true });
+      if (start != null && end != null && "selectionStart" in active) {
+        active.selectionStart = start;
+        active.selectionEnd = end;
+      }
+    } else if (selection && ranges.length) {
+      selection.removeAllRanges();
+      ranges.forEach((range) => selection.addRange(range));
+    }
+    return copied;
+  }
+
+  window.sparkleCopyText = copyText;
+
+  document.addEventListener("copy", (event) => {
+    const value = getSelectedText(event);
+    if (!value) return;
+
+    // Set clipboardData synchronously so the browser has a valid payload even
+    // when the native bridge is temporarily unavailable.
+    try {
+      event.clipboardData?.setData("text/plain", value);
+    } catch {
+      // The async native/browser fallbacks below may still succeed.
+    }
+    event.preventDefault();
+    void copyText(value);
+  }, true);
+})();
+
+(() => {
   // The migration, initial setup, and extension guide share the onboarding
   // window profile. The native API keeps the profile editable while leaving
   // the window freely resizable (there is no aspect-ratio lock).

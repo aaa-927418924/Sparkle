@@ -60,6 +60,28 @@ PROVIDERS = (
 )
 PROVIDER_MAP = {provider.id: provider for provider in PROVIDERS}
 
+GEMINI_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "answer": {"type": "string"},
+        "source_ids": {"type": "array", "items": {"type": "string"}},
+        "actions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "operation": {"type": "string"},
+                    "clip_ids": {"type": "array", "items": {"type": "integer"}},
+                    "note_id": {"type": "integer"},
+                    "title": {"type": "string"},
+                    "body": {"type": "string"},
+                },
+            },
+        },
+    },
+    "required": ["answer", "source_ids", "actions"],
+}
+
 
 class AIProviderUpdate(BaseModel):
     """Non-secret provider settings and an optional replacement credential."""
@@ -944,16 +966,45 @@ def _call_provider(
     elif spec.id == "gemini":
         model_path = model if model.startswith("models/") else f"models/{model}"
         encoded_model = urllib.parse.quote(model_path, safe="/-_.")
-        body = _request_json(
-            spec,
-            f"https://generativelanguage.googleapis.com/v1beta/{encoded_model}:generateContent",
-            {"x-goog-api-key": api_key},
-            {
-                "systemInstruction": {"parts": [{"text": system_prompt}]},
-                "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
-                "generationConfig": {"maxOutputTokens": 1_200, "temperature": 0.2},
+        endpoint = f"https://generativelanguage.googleapis.com/v1beta/{encoded_model}:generateContent"
+        base_payload = {
+            "systemInstruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+        }
+        structured_payload = {
+            **base_payload,
+            "generationConfig": {
+                "maxOutputTokens": 1_200,
+                "temperature": 0.2,
+                "responseFormat": {
+                    "text": {
+                        "mimeType": "application/json",
+                        "schema": GEMINI_RESPONSE_SCHEMA,
+                    }
+                },
             },
-        )
+        }
+        try:
+            body = _request_json(
+                spec,
+                endpoint,
+                {"x-goog-api-key": api_key},
+                structured_payload,
+            )
+        except ProviderRequestError as exc:
+            if exc.provider_status not in {400, 422}:
+                raise
+            # Some Gemini models/API versions reject structured output. Keep
+            # the provider usable and let the shared tolerant parser recover.
+            body = _request_json(
+                spec,
+                endpoint,
+                {"x-goog-api-key": api_key},
+                {
+                    **base_payload,
+                    "generationConfig": {"maxOutputTokens": 1_200, "temperature": 0.2},
+                },
+            )
         text = _gemini_text(body)
     elif spec.id == "openai":
         body = _request_json(
@@ -1039,6 +1090,51 @@ def _normalize_model_text(value: Any) -> str:
     return text.strip()
 
 
+_JSON_ESCAPE_CHARS = frozenset('"\\/bfnrt')
+_HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
+
+
+def _repair_json_escape_aliases(value: str) -> str:
+    """Treat a yen sign used as a backslash in JSON-like model output as JSON."""
+
+    repaired: list[str] = []
+    in_string = False
+    escaped = False
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if in_string:
+            if escaped:
+                repaired.append(char)
+                escaped = False
+            elif char == "\\":
+                repaired.append(char)
+                escaped = True
+            elif char == "¥":
+                next_char = value[index + 1] if index + 1 < len(value) else ""
+                valid_escape = next_char in _JSON_ESCAPE_CHARS
+                if next_char == "u":
+                    valid_escape = index + 5 < len(value) and all(
+                        item in _HEX_DIGITS for item in value[index + 2 : index + 6]
+                    )
+                if valid_escape:
+                    repaired.append("\\")
+                    escaped = True
+                else:
+                    repaired.append(char)
+            elif char == '"':
+                repaired.append(char)
+                in_string = False
+            else:
+                repaired.append(char)
+        else:
+            repaired.append(char)
+            if char == '"':
+                in_string = True
+        index += 1
+    return "".join(repaired)
+
+
 def _repair_json_string_newlines(value: str) -> str:
     """Escape literal line breaks that small models put inside JSON strings."""
 
@@ -1075,19 +1171,78 @@ def _repair_json_string_newlines(value: str) -> str:
 
 
 def _try_parse_json(value: str) -> Any:
-    candidates = [value]
-    for repaired in (
-        value.replace("¥r¥n", "\\n").replace("¥n", "\\n").replace("¥r", "\\r"),
-        _repair_json_string_newlines(value),
-    ):
-        if repaired not in candidates:
-            candidates.append(repaired)
+    candidates: list[str] = []
+
+    def add_candidate(candidate: str) -> None:
+        if candidate not in candidates:
+            candidates.append(candidate)
+
+    escaped_aliases = _repair_json_escape_aliases(value)
+    add_candidate(value)
+    add_candidate(escaped_aliases)
+    add_candidate(value.replace("¥r¥n", "\\n").replace("¥n", "\\n").replace("¥r", "\\r"))
+    add_candidate(_repair_json_string_newlines(value))
+    add_candidate(_repair_json_string_newlines(escaped_aliases))
+    add_candidate(escaped_aliases.replace("\\r\\n", "\\n"))
     for candidate in candidates:
         try:
             return json.loads(candidate)
         except json.JSONDecodeError:
             continue
     return None
+
+
+def _drop_incomplete_json_escape(value: str) -> str:
+    if value.endswith("\\"):
+        return value[:-1]
+    incomplete_unicode = re.search(r"\\u[0-9a-fA-F]{0,3}$", value)
+    if incomplete_unicode:
+        return value[: incomplete_unicode.start()]
+    return value
+
+
+def _decode_json_string_fragment(value: str) -> str:
+    normalized = _repair_json_escape_aliases(_drop_incomplete_json_escape(value))
+    parsed = _try_parse_json(f'"{normalized}"')
+    if isinstance(parsed, str):
+        return _normalize_model_text(parsed)
+    return _normalize_model_text(normalized)
+
+
+def _extract_json_string_field(raw: str, field: str) -> Optional[str]:
+    candidate = _repair_json_escape_aliases(_strip_model_thinking(raw))
+    match = re.search(rf'"{re.escape(field)}"\s*:\s*"', candidate, flags=re.IGNORECASE)
+    if not match:
+        return None
+    start = match.end()
+    index = start
+    escaped = False
+    while index < len(candidate):
+        char = candidate[index]
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == '"':
+            return _decode_json_string_fragment(candidate[start:index])
+        index += 1
+    return _decode_json_string_fragment(candidate[start:])
+
+
+def _extract_json_string_array(raw: str, fields: tuple[str, ...]) -> list[str]:
+    candidate = _repair_json_escape_aliases(_strip_model_thinking(raw))
+    field_pattern = "|".join(re.escape(field) for field in fields)
+    match = re.search(rf'"(?:{field_pattern})"\s*:\s*\[', candidate, flags=re.IGNORECASE)
+    if not match:
+        return []
+    tail = candidate[match.end() :]
+    closing = tail.find("]")
+    if closing >= 0:
+        tail = tail[:closing]
+    values: list[str] = []
+    for item in re.finditer(r'"((?:\\.|[^"\\])*)"', tail, flags=re.DOTALL):
+        values.append(_decode_json_string_fragment(item.group(1)))
+    return values
 
 
 def _parse_model_json(raw: str) -> Any:
@@ -1105,6 +1260,14 @@ def _parse_model_json(raw: str) -> Any:
         parsed = _try_parse_json(candidate[start : end + 1])
         if parsed is not None:
             return parsed
+    partial_answer = _extract_json_string_field(candidate, "answer")
+    if partial_answer:
+        return {
+            "answer": partial_answer,
+            "source_ids": _extract_json_string_array(candidate, ("source_ids", "sourceIds", "sources")),
+            # Never execute write operations from an incomplete provider response.
+            "actions": [],
+        }
     return None
 
 
@@ -1187,7 +1350,10 @@ def _parse_model_answer(
         return answer, _sources_from_text(answer, context), []
 
     answer = _normalize_model_text(raw_answer)[:12_000]
-    sources = _sources_from_values(parsed.get("source_ids", parsed.get("sources", [])), context)
+    sources = _sources_from_values(
+        parsed.get("source_ids", parsed.get("sourceIds", parsed.get("sources", []))),
+        context,
+    )
     seen_sources = {f"{source.kind}:{source.id}" for source in sources}
     for source in _sources_from_text(answer, context):
         key = f"{source.kind}:{source.id}"

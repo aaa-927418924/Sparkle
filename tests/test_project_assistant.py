@@ -199,6 +199,70 @@ class ProjectAssistantTests(unittest.TestCase):
         self.assertNotIn("response_format", calls[1])
         self.assertEqual(calls[0]["options"]["temperature"], 0)
 
+    def test_gemini_requests_structured_json_and_retries_without_schema(self):
+        calls = []
+
+        def request_json(provider, url, headers, payload):
+            calls.append(payload)
+            if len(calls) == 1:
+                raise assistant.ProviderRequestError(502, "unsupported", provider_status=400)
+            return {"candidates": [{"content": {"parts": [{"text": '{"answer":"Gemini answer"}'}]}}]}
+
+        with patch.object(assistant, "_request_json", side_effect=request_json):
+            answer = assistant._call_provider(
+                assistant.PROVIDER_MAP["gemini"],
+                "secret-key",
+                "system",
+                "user",
+                "gemini-3.1-flash-lite",
+            )
+
+        self.assertEqual(answer, '{"answer":"Gemini answer"}')
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(
+            calls[0]["generationConfig"]["responseFormat"],
+            {"text": {"mimeType": "application/json", "schema": assistant.GEMINI_RESPONSE_SCHEMA}},
+        )
+        self.assertNotIn("responseFormat", calls[1]["generationConfig"])
+
+    def test_gemini_escaped_and_truncated_json_is_unwrapped(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("鳴潮AMV",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.execute(
+                "INSERT INTO clips(url, title, project_id) VALUES (?, ?, ?)",
+                ("https://example.com/133", "Wuthering Waves - NOBATIDÃO | [GMV/EDIT]", project_id),
+            )
+            clip_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.commit()
+            context = assistant._project_context(connection, project_id)
+
+            escaped_json = (
+                '{"answer":"鳴潮のAMVです¥ud83d¥udc95¥n'
+                '¥"Wuthering Waves¥"を参照しました。",'
+                f'"source_ids":["clip:{clip_id}"],"actions":[]}}'
+            )
+            answer, sources, actions = assistant._parse_model_answer(escaped_json, context)
+            self.assertIn("💕", answer)
+            self.assertIn("\n", answer)
+            self.assertNotIn("¥u", answer)
+            self.assertNotIn('"source_ids"', answer)
+            self.assertEqual([(source.kind, source.id) for source in sources], [("clip", clip_id)])
+            self.assertEqual(actions, [])
+
+            truncated_json = (
+                '{"answer":"参照データに含まれる鳴潮クリップです¥n'
+                '- Wuthering Waves - NOBATIDÃO | [GMV/EDIT]'
+            )
+            answer, sources, actions = assistant._parse_model_answer(truncated_json, context)
+            self.assertFalse(answer.startswith("{"))
+            self.assertIn("Wuthering Waves - NOBATIDÃO", answer)
+            self.assertEqual([(source.kind, source.id) for source in sources], [("clip", clip_id)])
+            self.assertEqual(actions, [])
+        finally:
+            connection.close()
+
     def test_malformed_json_answer_is_unwrapped_and_history_is_clean(self):
         connection = make_connection()
         try:

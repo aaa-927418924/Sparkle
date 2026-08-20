@@ -430,7 +430,12 @@ def _focus_native_webview() -> bool:
 
     try:
         if bool(getattr(webview, "InvokeRequired", False)):
-            import clr  # noqa: F401 - initializes pythonnet's System namespace
+            try:
+                import clr  # noqa: F401 - initializes pythonnet's System namespace
+            except ImportError:
+                # Some test/browser hosts provide System.Action directly but do
+                # not install pythonnet's optional clr module.
+                pass
             from System import Action
 
             webview.Invoke(Action(_focus))
@@ -439,6 +444,76 @@ def _focus_native_webview() -> bool:
         return True
     except Exception:
         return False
+
+
+def _copy_text_to_windows_clipboard(text: str) -> bool:
+    """Write Unicode text to the Windows clipboard without relying on WebView focus."""
+    if os.name != "nt":
+        return False
+
+    import ctypes
+    from ctypes import wintypes
+
+    value = str(text)
+    buffer = ctypes.create_unicode_buffer(value)
+    size = ctypes.sizeof(buffer)
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    user32.OpenClipboard.restype = wintypes.BOOL
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.EmptyClipboard.restype = wintypes.BOOL
+    user32.EmptyClipboard.argtypes = []
+    user32.CloseClipboard.restype = wintypes.BOOL
+    user32.CloseClipboard.argtypes = []
+    user32.SetClipboardData.restype = wintypes.HANDLE
+    user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+
+    kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+    kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    kernel32.GlobalLock.restype = wintypes.LPVOID
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalFree.restype = wintypes.HGLOBAL
+    kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
+
+    # Another process can briefly own the clipboard. Retry so a normal copy
+    # does not fail just because a clipboard manager is updating its history.
+    for _ in range(5):
+        if user32.OpenClipboard(None):
+            break
+        time.sleep(0.03)
+    else:
+        return False
+
+    handle = None
+    try:
+        if not user32.EmptyClipboard():
+            return False
+
+        # CF_UNICODETEXT (13) expects a UTF-16LE string including its NUL.
+        handle = kernel32.GlobalAlloc(0x0002, size)  # GMEM_MOVEABLE
+        if not handle:
+            return False
+        pointer = kernel32.GlobalLock(handle)
+        if not pointer:
+            return False
+        try:
+            ctypes.memmove(pointer, ctypes.addressof(buffer), size)
+        finally:
+            kernel32.GlobalUnlock(handle)
+
+        if not user32.SetClipboardData(13, handle):  # CF_UNICODETEXT
+            return False
+
+        # Ownership transfers to the clipboard after SetClipboardData succeeds.
+        handle = None
+        return True
+    finally:
+        if handle:
+            kernel32.GlobalFree(handle)
+        user32.CloseClipboard()
 
 
 def _get_window_geometry(window, restored: bool = False):
@@ -833,6 +908,10 @@ class NativeWindowApi:
     @staticmethod
     def focus_webview() -> bool:
         return _focus_native_webview()
+
+    @staticmethod
+    def copy_text_to_clipboard(text: str) -> bool:
+        return _copy_text_to_windows_clipboard(text)
 
     @staticmethod
     def read_dropped_files():

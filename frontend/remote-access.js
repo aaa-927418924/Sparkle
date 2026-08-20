@@ -37,9 +37,9 @@
       confirmation: "インターネット上からアクセスできるFunnel Web入口を作成します。アクセスキーを知っている人だけに共有してください。続行しますか？",
     },
     serve: {
-      name: "Tailscale Serve Web",
-      description: "Tailscaleに接続した端末からだけアクセスできます。",
-      confirmation: "Tailnet内だけで使えるTailscale Serve Web入口を作成します。続行しますか？",
+      name: "Serve Web（Android）",
+      description: "AndroidなどTailscaleに接続した端末からだけアクセスできます。",
+      confirmation: "Android向けのTailscale Serve入口をHTTPS 443番ポートに作成します。続行しますか？",
     },
   };
 
@@ -48,8 +48,12 @@
     return modeInfo[value] ? value : "funnel";
   }
 
-  function getRoute(data, mode) {
-    return data.remote || data[mode] || data.funnel || {};
+  function getWebRoute(data, mode) {
+    return data.web_route || data.android || data[mode] || data.funnel || data.serve || {};
+  }
+
+  function getMcpRoute(data) {
+    return data.mcp_route || data.remote || {};
   }
 
   async function request(path, options = {}) {
@@ -93,8 +97,7 @@
 
   function renderMcp(data) {
     const auth = data?.mcp_auth || {};
-    const mode = getMode(data);
-    const route = getRoute(data, mode);
+    const route = getMcpRoute(data);
     const enabled = Boolean(auth.enabled);
     const active = Boolean(route.active && route.target === "remote");
     const statusError = data?.last_error || route.error;
@@ -114,7 +117,7 @@
     }
 
     if (active) {
-      setMcpStatus("Remote MCPは有効です。Web公開用とは別のMCPアクセスキーを使用します。", "success");
+      setMcpStatus("Remote MCPは有効です。専用Funnel（HTTPS 8443）と別のMCPアクセスキーを使用します。", "success");
     } else if (statusError) {
       setMcpStatus("設定は保存されていますが、Remote MCPに接続できません：" + statusError, "warning");
     } else if (!route.available) {
@@ -139,9 +142,10 @@
     const auth = data?.auth || {};
     const mode = getMode(data);
     const info = modeInfo[mode];
-    const route = getRoute(data, mode);
+    const route = getWebRoute(data, mode);
     const enabled = Boolean(auth.enabled);
-    const active = Boolean(route.active && route.target === "remote");
+    const expectedTarget = mode === "serve" ? "main" : "remote";
+    const active = Boolean(route.active && route.target === expectedTarget);
     const statusError = data?.last_error || route.error;
 
     if (modeSelect && modeSelect.value !== mode) modeSelect.value = mode;

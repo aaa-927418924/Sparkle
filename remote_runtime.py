@@ -11,6 +11,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import urlopen
 
 from remote_auth import AuthStore, get_mcp_auth_store
@@ -21,7 +22,11 @@ REMOTE_PORT = 8001
 MAIN_PORT = 8000
 REMOTE_TARGET = f"http://{REMOTE_HOST}:{REMOTE_PORT}"
 MAIN_TARGET = f"http://{REMOTE_HOST}:{MAIN_PORT}"
-SERVE_WEB_HTTPS_PORT = 8443
+ANDROID_WEB_HTTPS_PORT = 443
+MCP_FUNNEL_HTTPS_PORT = 8443
+# Kept as a compatibility alias for callers that used the pre-split route
+# name. Remote MCP now uses Funnel on this port, while Android Web uses 443.
+SERVE_WEB_HTTPS_PORT = MCP_FUNNEL_HTTPS_PORT
 WEB_MODE_FUNNEL = "funnel"
 WEB_MODE_SERVE = "serve"
 WEB_MODES = frozenset({WEB_MODE_FUNNEL, WEB_MODE_SERVE})
@@ -156,6 +161,30 @@ def _has_any_route_config(value: Any) -> bool:
     elif isinstance(value, list):
         return any(_has_any_route_config(child) for child in value)
     return False
+
+
+def _normalize_mcp_public_url(value: Optional[str]) -> Optional[str]:
+    """Normalize the configured MCP URL for the dedicated Funnel port."""
+    raw = str(value or "").strip().rstrip("/")
+    if not raw:
+        return None
+    try:
+        parsed = urlsplit(raw)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return raw
+        # The new split-route layout reserves 8443 for the public MCP Funnel.
+        # Existing settings often omitted the port, so make that case safe
+        # without overriding an explicitly configured local/test port.
+        if parsed.port is None:
+            hostname = parsed.hostname or ""
+            if ":" in hostname and not hostname.startswith("["):
+                hostname = f"[{hostname}]"
+            netloc = f"{hostname}:{MCP_FUNNEL_HTTPS_PORT}"
+        else:
+            netloc = parsed.netloc
+        return urlunsplit((parsed.scheme, netloc, "/mcp", "", ""))
+    except ValueError:
+        return raw
 
 
 class RemoteAccessManager:
@@ -336,17 +365,175 @@ class RemoteAccessManager:
         return self._status("serve")
 
     def _serve_web_status(self) -> dict[str, Any]:
-        return self._status_for_target("serve", REMOTE_TARGET, SERVE_WEB_HTTPS_PORT)
+        # Compatibility name: Serve Web is now the Android/tailnet route on
+        # HTTPS 443 and proxies the main application directly.
+        return self._status_for_target("serve", self.main_target, ANDROID_WEB_HTTPS_PORT)
+
+    def _mcp_route_status(self) -> dict[str, Any]:
+        """Return the dedicated MCP route on Funnel HTTPS 8443."""
+        return self._status_for_target("funnel", REMOTE_TARGET, MCP_FUNNEL_HTTPS_PORT)
+
+    def _web_route_status(self, mode: Optional[str] = None) -> dict[str, Any]:
+        """Return the Android/Web route without inspecting the MCP port."""
+        selected = mode or self._configured_web_mode()
+        if selected == WEB_MODE_SERVE:
+            return self._status_for_target("serve", self.main_target, ANDROID_WEB_HTTPS_PORT)
+        return self._status_for_target("funnel", REMOTE_TARGET, ANDROID_WEB_HTTPS_PORT)
 
     def _configured_web_mode(self) -> str:
         mode = self.auth_store.get_remote_mode()
         return mode if mode in WEB_MODES else WEB_MODE_FUNNEL
 
     def _web_status(self, mode: Optional[str] = None) -> dict[str, Any]:
-        selected = mode or self._configured_web_mode()
-        if selected == WEB_MODE_SERVE:
-            return self._serve_web_status()
-        return self.funnel_status()
+        # Keep the old method as the API-facing compatibility point. New code
+        # uses the explicit web_route/mcp_route fields in status().
+        return self._web_route_status(mode)
+
+    def _port_status(self, port: int) -> dict[str, Any]:
+        """Inspect one HTTPS port without confusing Serve with Funnel.
+
+        Tailscale versions differ in whether Serve/Funnel JSON includes the
+        other command's configuration. Query both and use the first route
+        found. The route target is what matters for conflict protection; the
+        command used to configure it is selected explicitly when starting or
+        stopping the route.
+        """
+        available_empty: Optional[dict[str, Any]] = None
+        unavailable: Optional[dict[str, Any]] = None
+        for command in ("serve", "funnel"):
+            status = self._status_for_target(command, REMOTE_TARGET, port)
+            if not status.get("available"):
+                unavailable = status
+                continue
+            if status.get("active"):
+                return status
+            if available_empty is None:
+                available_empty = status
+        return available_empty or unavailable or {
+            "available": False,
+            "active": False,
+            "target": None,
+            "public_url": None,
+            "error": "Tailscaleの状態を確認できません。",
+        }
+
+    def _start_route(
+        self,
+        command: str,
+        target: str,
+        port: int,
+        label: str,
+    ) -> dict[str, Any]:
+        """Configure one Sparkle route while leaving every other port intact."""
+        current = self._port_status(port)
+        if not current.get("available"):
+            return {"ok": False, "status": current, "error": current.get("error")}
+        if current.get("active") and current.get("target") == "other":
+            return {
+                "ok": False,
+                "status": current,
+                "error": f"TailscaleのHTTPS {port}番ポートに別の設定があります。先にその設定を解除してください。",
+            }
+
+        ok, stdout, stderr = self._run_cli(
+            [command, "--bg", f"--https={port}", "--yes", target]
+        )
+        if not ok:
+            return {
+                "ok": False,
+                "status": current,
+                "error": self._cli_error(stderr or stdout),
+            }
+
+        self._funnel_cache = None
+        verified = self._status_for_target(command, target, port)
+        if verified.get("available") and verified.get("active"):
+            if verified.get("target") != ("remote" if target == REMOTE_TARGET else "main"):
+                return {
+                    "ok": False,
+                    "status": verified,
+                    "error": f"{label}の転送先がSparkleの想定するサービスではありません。",
+                }
+        elif not verified.get("available"):
+            verified = {
+                **verified,
+                "configured": True,
+                "warning": f"{label}の設定は完了しましたが、現在の状態を確認できません。",
+            }
+        else:
+            return {
+                "ok": False,
+                "status": verified,
+                "error": f"{label}の設定後に転送先を確認できませんでした。",
+            }
+        return {"ok": True, "status": verified}
+
+    def _stop_route(
+        self,
+        preferred_command: str,
+        target: str,
+        port: int,
+        current: dict[str, Any],
+    ) -> tuple[bool, Optional[str]]:
+        """Stop only the specified Sparkle route on one HTTPS port."""
+        if not current.get("available"):
+            return False, current.get("error") or "Tailscaleの状態を確認できません。"
+        if not current.get("active"):
+            return True, None
+        expected_target = "remote" if target == REMOTE_TARGET else "main"
+        if current.get("target") != expected_target:
+            return False, f"TailscaleのHTTPS {port}番ポートに別の設定があります。先にその設定を解除してください。"
+
+        commands = [preferred_command, "funnel" if preferred_command == "serve" else "serve"]
+        last_error: Optional[str] = None
+        for command in commands:
+            ok, stdout, stderr = self._run_cli(
+                [command, f"--https={port}", "--yes", target, "off"]
+            )
+            if ok:
+                self._funnel_cache = None
+                remaining = self._port_status(port)
+                if not remaining.get("available") or not remaining.get("active"):
+                    return True, None
+                # Some Tailscale versions require the matching command when
+                # an existing route was configured by the other command.
+                if remaining.get("target") != expected_target:
+                    return True, None
+            else:
+                last_error = self._cli_error(stderr or stdout)
+        return False, last_error or "Tailscaleの公開ルートを停止できませんでした。"
+
+    def _configured_mcp_url(self) -> Optional[str]:
+        return _normalize_mcp_public_url(os.environ.get("SPARKLE_MCP_PUBLIC_URL"))
+
+    def _tailscale_dns_name(self) -> Optional[str]:
+        """Read this node's MagicDNS name without changing Tailscale state."""
+        ok, stdout, _ = self._run_cli(["status", "--json"])
+        if not ok:
+            return None
+        try:
+            parsed = json.loads(stdout) if stdout else {}
+        except json.JSONDecodeError:
+            return None
+        self_info = parsed.get("Self") if isinstance(parsed, dict) else None
+        dns_name = self_info.get("DNSName") if isinstance(self_info, dict) else None
+        if not isinstance(dns_name, str):
+            return None
+        value = dns_name.strip().rstrip(".")
+        return value or None
+
+    def _mcp_public_url(self, route: Optional[dict[str, Any]] = None) -> Optional[str]:
+        configured = self._configured_mcp_url()
+        if configured:
+            return configured
+        candidate = route or self._mcp_route_status()
+        public_url = candidate.get("public_url") if isinstance(candidate, dict) else None
+        if isinstance(public_url, str) and public_url:
+            return f"{public_url.rstrip('/')}/mcp"
+        dns_name = self._tailscale_dns_name()
+        if dns_name:
+            return f"https://{dns_name}:{MCP_FUNNEL_HTTPS_PORT}/mcp"
+        return None
 
     def _start_remote_server(self) -> bool:
         with self._lock:
@@ -361,6 +548,7 @@ class RemoteAccessManager:
                     app,
                     self.auth_store,
                     mcp_auth_store=self.mcp_auth_store,
+                    mcp_public_url=self._mcp_public_url(),
                 )
                 config = uvicorn.Config(
                     gateway,
@@ -409,165 +597,77 @@ class RemoteAccessManager:
             self._mcp_runtime = None
 
     def _prepare_serve_switch(self) -> tuple[bool, Optional[str]]:
-        serve = self._serve_status()
-        if not serve.get("available"):
-            return False, serve.get("error") or "Tailscale Serveの状態を確認できません。"
-        if not serve.get("active"):
-            return True, None
-        if serve.get("target") != "main":
-            return False, "別のTailscale Serve設定が使われています。先にその設定を解除してください。"
-        ok, stdout, stderr = self._run_cli(["serve", "reset"])
-        if not ok:
-            return False, self._cli_error(stderr or stdout)
+        # Compatibility helper retained for callers from the previous route
+        # implementation. Route changes are now port-scoped and never reset
+        # the whole Serve configuration.
+        status = self._port_status(ANDROID_WEB_HTTPS_PORT)
+        if not status.get("available"):
+            return False, status.get("error") or "Tailscaleの状態を確認できません。"
+        if status.get("active") and status.get("target") == "other":
+            return False, "TailscaleのHTTPS 443番ポートに別の設定があります。先にその設定を解除してください。"
         return True, None
 
     def _stop_serve_web_route(self) -> tuple[bool, Optional[str]]:
-        current = self._serve_web_status()
-        if not current.get("available"):
-            return False, current.get("error") or "Tailscale Serveの状態を確認できません。"
+        current = self._port_status(ANDROID_WEB_HTTPS_PORT)
         if not current.get("active"):
-            return True, None
-        if current.get("target") != "remote":
-            return False, "Tailscale Serveのポート8443に別の設定があります。先にその設定を解除してください。"
-        ok, stdout, stderr = self._run_cli(
-            [
-                "serve",
-                f"--https={SERVE_WEB_HTTPS_PORT}",
-                "--yes",
-                REMOTE_TARGET,
-                "off",
-            ]
+            return (True, None) if current.get("available") else (
+                False,
+                current.get("error") or "Tailscaleの状態を確認できません。",
+            )
+        target = REMOTE_TARGET if current.get("target") == "remote" else self.main_target
+        return self._stop_route(
+            "serve",
+            target,
+            ANDROID_WEB_HTTPS_PORT,
+            current,
         )
-        if not ok:
-            return False, self._cli_error(stderr or stdout)
-        return True, None
 
     def _restore_default_serve_route(self) -> None:
-        # Funnel uses HTTPS 443, so restore Sparkle's normal tailnet-only
-        # desktop route after Funnel has released that port.
-        serve = self._serve_status()
-        if serve.get("available") and not serve.get("active"):
-            self._run_cli(["serve", "--bg", "--https=443", "--yes", self.main_target])
+        # Kept as a no-op compatibility hook. The Android Serve route is
+        # started explicitly by _start_web_route and is never restored by a
+        # global Serve/Funnel reset.
+        return None
 
     def _start_serve_web_route(self) -> dict[str, Any]:
-        current = self._serve_web_status()
-        if not current.get("available"):
-            return {"ok": False, "status": current, "error": current.get("error")}
-        if current.get("active"):
-            if current.get("target") == "remote":
-                return {"ok": True, "status": current}
-            return {
-                "ok": False,
-                "status": current,
-                "error": "Tailscale Serveのポート8443に別の設定があります。先にその設定を解除してください。",
-            }
-
-        funnel = self.funnel_status(force=True)
-        if not funnel.get("available"):
-            return {"ok": False, "status": current, "error": funnel.get("error")}
-        if funnel.get("active"):
-            if funnel.get("target") not in {"remote", "main"}:
-                return {
-                    "ok": False,
-                    "status": current,
-                    "error": "別のTailscale Funnel設定が使われています。先にその設定を解除してください。",
-                }
-            ok, stdout, stderr = self._run_cli(["funnel", "reset"])
-            if not ok:
-                return {
-                    "ok": False,
-                    "status": current,
-                    "error": self._cli_error(stderr or stdout),
-                }
-            self._funnel_cache = None
-            self._restore_default_serve_route()
-
-        ok, stdout, stderr = self._run_cli(
-            [
-                "serve",
-                "--bg",
-                f"--https={SERVE_WEB_HTTPS_PORT}",
-                "--yes",
-                REMOTE_TARGET,
-            ]
+        return self._start_route(
+            "serve",
+            self.main_target,
+            ANDROID_WEB_HTTPS_PORT,
+            "Android向けTailscale Serve",
         )
-        if not ok:
-            return {
-                "ok": False,
-                "status": current,
-                "error": self._cli_error(stderr or stdout),
-            }
-
-        verified = self._serve_web_status()
-        if verified.get("available") and verified.get("active") and verified.get("target") != "remote":
-            return {
-                "ok": False,
-                "status": verified,
-                "error": "Tailscale Serveの転送先がSparkleのリモートWebではありません。",
-            }
-        if not verified.get("available"):
-            verified = {
-                **verified,
-                "configured": True,
-                "warning": "Tailscale Serveの設定は完了しましたが、現在の状態を確認できません。",
-            }
-        return {"ok": True, "status": verified}
 
     def _start_funnel_route(self) -> dict[str, Any]:
-        current = self.funnel_status(force=True)
-        if current.get("available") and current.get("active"):
-            if current.get("target") == "remote":
-                return {"ok": True, "status": current}
-            if current.get("target") == "main":
-                ok, stdout, stderr = self._run_cli(["funnel", "reset"])
-                if not ok:
-                    return {
-                        "ok": False,
-                        "status": current,
-                        "error": self._cli_error(stderr or stdout),
-                    }
-                self._funnel_cache = None
-            else:
-                return {
-                    "ok": False,
-                    "status": current,
-                    "error": "別のTailscale Funnel設定がすでに有効です。先にその設定を解除してください。",
-                }
-        if not current.get("available"):
-            return {"ok": False, "status": current, "error": current.get("error")}
-
-        ready, error = self._prepare_serve_switch()
-        if not ready:
-            return {"ok": False, "status": current, "error": error}
-
-        ok, stdout, stderr = self._run_cli(
-            ["funnel", "--bg", "--https=443", "--yes", REMOTE_TARGET]
+        return self._start_route(
+            "funnel",
+            REMOTE_TARGET,
+            ANDROID_WEB_HTTPS_PORT,
+            "外部Web向けTailscale Funnel",
         )
-        if not ok:
-            return {
-                "ok": False,
-                "status": current,
-                "error": self._cli_error(stderr or stdout),
-            }
-        verified = self.funnel_status(force=True)
-        if verified.get("available") and verified.get("active") and verified.get("target") != "remote":
-            return {
-                "ok": False,
-                "status": verified,
-                "error": "Funnelの転送先がSparkleのリモートWebではありません。",
-            }
-        if not verified.get("available"):
-            verified = {
-                **verified,
-                "configured": True,
-                "warning": "Funnelの有効化コマンドは成功しましたが、現在の状態を確認できません。",
-            }
-        return {"ok": True, "status": verified}
+
+    def _start_mcp_route(self) -> dict[str, Any]:
+        return self._start_route(
+            "funnel",
+            REMOTE_TARGET,
+            MCP_FUNNEL_HTTPS_PORT,
+            "Remote MCP向けTailscale Funnel",
+        )
 
     def _start_web_route(self) -> dict[str, Any]:
         if self._configured_web_mode() == WEB_MODE_SERVE:
             return self._start_serve_web_route()
         return self._start_funnel_route()
+
+    def _start_enabled_routes(self) -> dict[str, Any]:
+        """Start each enabled feature on its own Tailscale HTTPS port."""
+        if self.auth_store.is_enabled():
+            web_result = self._start_web_route()
+            if not web_result.get("ok"):
+                return web_result
+        if self.mcp_auth_store.is_enabled():
+            mcp_result = self._start_mcp_route()
+            if not mcp_result.get("ok"):
+                return mcp_result
+        return {"ok": True, "status": self.status()}
 
     def enable(self) -> dict[str, Any]:
         key = self.auth_store.enable()
@@ -578,7 +678,7 @@ class RemoteAccessManager:
                 "status": self.status(),
                 "error": self._last_error,
             }
-        result = self._start_web_route()
+        result = self._start_enabled_routes()
         if not result.get("ok"):
             self._last_error = result.get("error")
         else:
@@ -602,7 +702,7 @@ class RemoteAccessManager:
                 "status": self.status(),
                 "error": self._last_error,
             }
-        result = self._start_web_route()
+        result = self._start_enabled_routes()
         self._last_error = result.get("error") if not result.get("ok") else None
         return {
             "ok": bool(result.get("ok")),
@@ -620,7 +720,7 @@ class RemoteAccessManager:
             }
         if not self._start_remote_server():
             return {"ok": False, "status": self.status(), "error": self._last_error}
-        result = self._start_web_route()
+        result = self._start_enabled_routes()
         self._last_error = result.get("error") if not result.get("ok") else None
         return {
             "ok": bool(result.get("ok")),
@@ -640,34 +740,8 @@ class RemoteAccessManager:
         previous = self._configured_web_mode()
         if previous == normalized:
             return {"ok": True, "status": self.status()}
-
-        if self._any_enabled():
-            if previous == WEB_MODE_FUNNEL:
-                current = self.funnel_status(force=True)
-                if not current.get("available"):
-                    error = current.get("error") or "Tailscale Funnelの状態を確認できません。"
-                    self._last_error = error
-                    return {"ok": False, "status": self.status(), "error": error}
-                if current.get("active"):
-                    if current.get("target") != "remote":
-                        error = "別のTailscale Funnel設定が使われています。先にその設定を解除してください。"
-                        self._last_error = error
-                        return {"ok": False, "status": self.status(), "error": error}
-                    ok, stdout, stderr = self._run_cli(["funnel", "reset"])
-                    if not ok:
-                        error = self._cli_error(stderr or stdout)
-                        self._last_error = error
-                        return {"ok": False, "status": self.status(), "error": error}
-                    self._funnel_cache = None
-                    self._restore_default_serve_route()
-            else:
-                stopped, error = self._stop_serve_web_route()
-                if not stopped:
-                    self._last_error = error
-                    return {"ok": False, "status": self.status(), "error": error}
-
         self.auth_store.set_remote_mode(normalized)
-        if not self._any_enabled():
+        if not self.auth_store.is_enabled():
             self._last_error = None
             return {"ok": True, "status": self.status()}
         result = self._start_web_route()
@@ -703,35 +777,40 @@ class RemoteAccessManager:
         return {"ok": True, "status": self.status()}
 
     def _stop_public_route(self) -> tuple[bool, Optional[str]]:
-        mode = self._configured_web_mode()
-        if mode == WEB_MODE_SERVE:
-            current = self._serve_web_status()
-            if not current.get("available"):
-                return False, current.get("error") or "Tailscale Serveの状態を確認できません。"
-            if current.get("active"):
-                return self._stop_serve_web_route()
-            return True, None
-
-        current = self.funnel_status(force=True)
+        current = self._port_status(ANDROID_WEB_HTTPS_PORT)
         if not current.get("available"):
-            return False, current.get("error") or "Tailscale Funnelの状態を確認できません。"
-        if current.get("active") and current.get("target") == "remote":
-            ok, stdout, stderr = self._run_cli(["funnel", "reset"])
-            if not ok:
-                return False, self._cli_error(stderr or stdout)
-            self._funnel_cache = None
-            self._restore_default_serve_route()
-        return True, None
+            return False, current.get("error") or "Tailscaleの状態を確認できません。"
+        if not current.get("active"):
+            return True, None
+        if current.get("target") == "other":
+            return False, "TailscaleのHTTPS 443番ポートに別の設定があります。先にその設定を解除してください。"
+        target = REMOTE_TARGET if current.get("target") == "remote" else self.main_target
+        preferred = "serve" if self._configured_web_mode() == WEB_MODE_SERVE else "funnel"
+        return self._stop_route(preferred, target, ANDROID_WEB_HTTPS_PORT, current)
+
+    def _stop_mcp_route(self) -> tuple[bool, Optional[str]]:
+        current = self._port_status(MCP_FUNNEL_HTTPS_PORT)
+        if not current.get("available"):
+            return False, current.get("error") or "Tailscaleの状態を確認できません。"
+        if not current.get("active"):
+            return True, None
+        if current.get("target") != "remote":
+            return False, "TailscaleのMCP用HTTPS 8443番ポートに別の設定があります。先にその設定を解除してください。"
+        return self._stop_route(
+            "funnel",
+            REMOTE_TARGET,
+            MCP_FUNNEL_HTTPS_PORT,
+            current,
+        )
 
     def disable(self) -> dict[str, Any]:
         if not self.auth_store.is_enabled():
             return {"ok": False, "status": self.status(), "error": "外部Webアクセスは有効になっていません。"}
         mcp_enabled = self.mcp_auth_store.is_enabled()
-        if not mcp_enabled:
-            stopped, error = self._stop_public_route()
-            if not stopped:
-                self._last_error = error
-                return {"ok": False, "status": self.status(), "error": error}
+        stopped, error = self._stop_public_route()
+        if not stopped:
+            self._last_error = error
+            return {"ok": False, "status": self.status(), "error": error}
         self.auth_store.disable()
         if not mcp_enabled:
             self._stop_remote_server()
@@ -742,11 +821,10 @@ class RemoteAccessManager:
         if not self.mcp_auth_store.is_enabled():
             return {"ok": False, "status": self.status(), "error": "Remote MCPは有効になっていません。"}
         web_enabled = self.auth_store.is_enabled()
-        if not web_enabled:
-            stopped, error = self._stop_public_route()
-            if not stopped:
-                self._last_error = error
-                return {"ok": False, "status": self.status(), "error": error}
+        stopped, error = self._stop_mcp_route()
+        if not stopped:
+            self._last_error = error
+            return {"ok": False, "status": self.status(), "error": error}
         self.mcp_auth_store.disable()
         self._reset_mcp_oauth()
         if not web_enabled:
@@ -759,22 +837,18 @@ class RemoteAccessManager:
             return self.status()
         if not self._start_remote_server():
             return self.status()
-        result = self._start_web_route()
+        result = self._start_enabled_routes()
         self._last_error = result.get("error") if not result.get("ok") else None
         return self.status()
 
     def shutdown(self) -> None:
         with self._lock:
-            enabled = self._any_enabled()
-            mode = self._configured_web_mode()
-        if enabled:
-            if mode == WEB_MODE_SERVE:
-                self._stop_serve_web_route()
-            else:
-                current = self.funnel_status(force=True)
-                if current.get("active") and current.get("target") == "remote":
-                    self._run_cli(["funnel", "reset"])
-                    self._funnel_cache = None
+            web_enabled = self.auth_store.is_enabled()
+            mcp_enabled = self.mcp_auth_store.is_enabled()
+        if web_enabled:
+            self._stop_public_route()
+        if mcp_enabled:
+            self._stop_mcp_route()
         self._stop_remote_server()
 
     def status(self) -> dict[str, Any]:
@@ -782,33 +856,35 @@ class RemoteAccessManager:
         mcp_enabled = self.mcp_auth_store.is_enabled()
         enabled = web_enabled or mcp_enabled
         web_mode = self._configured_web_mode()
-        if enabled:
-            remote = self._web_status(web_mode)
-        else:
-            remote = {
-                "available": True,
-                "active": False,
-                "target": None,
-                "public_url": None,
-            }
         empty_route = {
-            "available": remote.get("available", True),
+            "available": True,
             "active": False,
             "target": None,
             "public_url": None,
         }
-        configured_mcp_url = os.environ.get("SPARKLE_MCP_PUBLIC_URL")
-        if not configured_mcp_url and remote.get("public_url"):
-            configured_mcp_url = f"{str(remote['public_url']).rstrip('/')}/mcp"
+        web_route = self._web_status(web_mode) if web_enabled else dict(empty_route)
+        mcp_route = self._mcp_route_status() if mcp_enabled else dict(empty_route)
+
+        # Legacy fields remain available for older settings pages. New clients
+        # should use web_route for Android/Web and mcp_route for Remote MCP.
+        remote = mcp_route if mcp_enabled else (
+            web_route if web_enabled and web_mode == WEB_MODE_FUNNEL else dict(empty_route)
+        )
+        configured_mcp_url = self._configured_mcp_url()
+        if mcp_enabled and not configured_mcp_url:
+            configured_mcp_url = self._mcp_public_url(mcp_route)
         return {
-            "mode": web_mode if enabled else "tailscale",
+            "mode": web_mode if web_enabled else "tailscale",
             "web_mode": web_mode,
             "auth": self.auth_store.status(),
             "mcp_auth": self.mcp_auth_store.status(),
             "remote_server": bool(self._thread and self._thread.is_alive()),
             "mcp_url": configured_mcp_url,
+            "web_route": web_route,
+            "android": web_route,
+            "mcp_route": mcp_route,
             "remote": remote,
-            "funnel": remote if web_mode == WEB_MODE_FUNNEL else empty_route,
-            "serve": remote if web_mode == WEB_MODE_SERVE else empty_route,
+            "funnel": web_route if web_enabled and web_mode == WEB_MODE_FUNNEL else dict(empty_route),
+            "serve": web_route if web_enabled and web_mode == WEB_MODE_SERVE else dict(empty_route),
             "last_error": self._last_error,
         }

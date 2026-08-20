@@ -205,6 +205,7 @@ class RemoteGateway:
         store: AuthStore,
         mcp_runtime: Any = None,
         mcp_auth_store: Optional[AuthStore] = None,
+        mcp_public_url: Optional[str] = None,
     ) -> None:
         self.main_app = main_app
         self.store = store
@@ -221,7 +222,7 @@ class RemoteGateway:
                     auth_store=self.mcp_auth_store,
                     host="127.0.0.1",
                     port=8001,
-                    public_url=os.environ.get("SPARKLE_MCP_PUBLIC_URL"),
+                    public_url=mcp_public_url or os.environ.get("SPARKLE_MCP_PUBLIC_URL"),
                     static_token=os.environ.get("SPARKLE_MCP_TOKEN"),
                 )
             except (ImportError, ValueError) as exc:

@@ -181,6 +181,27 @@ def remote_access_status():
         "mcp_auth": get_mcp_auth_store().status(),
         "remote_server": False,
         "mcp_url": os.environ.get("SPARKLE_MCP_PUBLIC_URL"),
+        "web_route": {
+            "available": False,
+            "active": False,
+            "target": None,
+            "public_url": None,
+            "error": "Sparkleの実行管理がまだ開始されていません。",
+        },
+        "android": {
+            "available": False,
+            "active": False,
+            "target": None,
+            "public_url": None,
+            "error": "Sparkleの実行管理がまだ開始されていません。",
+        },
+        "mcp_route": {
+            "available": False,
+            "active": False,
+            "target": None,
+            "public_url": None,
+            "error": "Sparkleの実行管理がまだ開始されていません。",
+        },
         "remote": {
             "available": False,
             "active": False,

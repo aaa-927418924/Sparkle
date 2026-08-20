@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle — 設定</title>
-    <link rel="stylesheet" href="style.css?v=settings-remote-mcp-20260820-v1" />
+    <link rel="stylesheet" href="style.css?v=settings-remote-mcp-routes-20260820-v2" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
     <script>document.documentElement.setAttribute("data-theme", "dark");
       try {
@@ -106,20 +106,20 @@
             <div class="settings-col settings-remote-col">
               <h3 class="modal-sub">外部Webアクセス</h3>
               <p class="file-save-desc">
-                Tailscaleアプリを入れられない端末にはFunnel、Tailscaleに接続できる端末にはServe Webを使えます。
-                どちらも専用Web画面だけがアクセスキーの対象で、Sparkleデスクトップアプリ本体にはログイン制限をかけません。Remote MCPは別のアクセスキーで管理します。
+                AndroidなどTailscaleに接続できる端末にはServe、Tailscaleアプリを入れられない端末にはFunnelを使えます。
+                Web入口とRemote MCPは別ポート・別アクセスキーで管理するため、Serve（443）とMCP用Funnel（8443）を同時に利用できます。
               </p>
               <div class="setting-row column remote-access-mode-row">
                 <label for="remoteAccessMode">Web公開方式</label>
                 <div class="remote-access-mode-controls">
                   <select id="remoteAccessMode" class="modal-input">
                     <option value="funnel">Funnel Web（Tailscaleなしでアクセス）</option>
-                    <option value="serve">Tailscale Serve Web（Tailscale接続端末のみ）</option>
+                    <option value="serve">Serve Web / Android（Tailscale接続端末のみ）</option>
                   </select>
                   <button id="remoteAccessModeApply" class="modal-btn ghost" type="button">方式を適用</button>
                 </div>
                 <span id="remoteAccessModeHint" class="file-save-desc">
-                  Funnelはインターネット経由、Serve WebはTailnet内からアクセスできます。
+                  Funnel Webは443番、Serve Web / Androidは443番、Remote MCPは別のFunnel 8443番を使用します。
                 </span>
               </div>
               <div id="remoteAccessStatus" class="ai-export-status" role="status" aria-live="polite">
@@ -141,7 +141,7 @@
                 <button id="remoteAccessRetry" class="modal-btn ghost" type="button" hidden>接続を再試行</button>
                 <button id="remoteAccessRotate" class="modal-btn ghost" type="button" hidden>アクセスキーを再発行</button>
                 <button id="remoteAccessRevokeAll" class="modal-btn ghost" type="button" hidden>信頼端末をすべて解除</button>
-                <button id="remoteAccessDisable" class="modal-btn ghost" type="button" hidden>Funnel Webを無効にする</button>
+                <button id="remoteAccessDisable" class="modal-btn ghost" type="button" hidden>Web公開を無効にする</button>
               </div>
               <p class="file-save-desc">
                 「この端末を信頼する」を選んだブラウザだけが、以後キーなしで利用できます。ブラウザのCookieを削除した場合やログアウトした場合は再入力が必要です。
@@ -150,7 +150,7 @@
               <div class="remote-mcp-settings">
                 <h3 class="modal-sub">Remote MCP</h3>
                 <p class="file-save-desc">
-                  ChatGPT WebやClaude Webなどから読み取り専用Toolを使うための公開入口です。スマホ・Web画面用とは別のMCP専用アクセスキーを発行するため、両方を同時に利用できます。
+                  ChatGPT WebやClaude Webなどから読み取り専用Toolを使うための公開入口です。スマホ・Web画面用とは別のMCP専用アクセスキーを発行し、専用Funnel（HTTPS 8443）を使うため、両方を同時に利用できます。
                 </p>
                 <div id="remoteMcpStatus" class="ai-export-status" role="status" aria-live="polite">
                   状態を確認しています…
@@ -256,6 +256,6 @@
 
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260810-update-notice-v3"></script>
-    <script src="remote-access.js?v=remote-access-20260820-v3"></script>
+    <script src="remote-access.js?v=remote-access-20260820-v4"></script>
   </body>
 </html>

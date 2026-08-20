@@ -190,7 +190,9 @@ class ProjectAssistantError(RuntimeError):
 
 
 class ProviderRequestError(ProjectAssistantError):
-    pass
+    def __init__(self, status_code: int, message: str, provider_status: Optional[int] = None):
+        super().__init__(status_code, message)
+        self.provider_status = provider_status
 
 
 class _KeyringSecretStore:
@@ -521,7 +523,7 @@ class _ContextItem:
         return f"{self.kind}:{self.id}"
 
     def prompt_block(self) -> str:
-        return f"[{self.key}] {self.title}\n{self.text}".strip()
+        return f"source_id={self.key}\ntitle={self.title}\n{self.text}".strip()
 
     def source(self) -> ProjectAssistantSource:
         excerpt = _clean_text(self.text.replace("\n", " "), 180)
@@ -839,7 +841,7 @@ def _request_json(
             message = f"{provider.label}の設定またはモデル名を確認してください。"
         else:
             message = f"{provider.label} APIで一時的なエラーが発生しました。"
-        raise ProviderRequestError(502, message) from exc
+        raise ProviderRequestError(502, message, provider_status=status) from exc
     except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as exc:
         LOGGER.warning("%s API request failed: %s", provider.id, type(exc).__name__)
         raise ProviderRequestError(502, f"{provider.label} APIへ接続できませんでした。") from exc
@@ -970,20 +972,27 @@ def _call_provider(
         headers: dict[str, str] = {}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
-        body = _request_json(
-            spec,
-            _ollama_endpoint(base_url or spec.default_base_url or ""),
-            headers,
-            {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "stream": False,
-                "options": {"temperature": 0.2, "num_predict": 1_200},
-            },
-        )
+        endpoint = _ollama_endpoint(base_url or spec.default_base_url or "")
+        ollama_payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "stream": False,
+            "response_format": {"type": "json_object"},
+            "options": {"temperature": 0, "num_predict": 1_200},
+        }
+        try:
+            body = _request_json(spec, endpoint, headers, ollama_payload)
+        except ProviderRequestError as exc:
+            if exc.provider_status not in {400, 422}:
+                raise
+            # Older Ollama-compatible servers may reject response_format even
+            # though the regular chat-completions endpoint is available.
+            fallback_payload = dict(ollama_payload)
+            fallback_payload.pop("response_format", None)
+            body = _request_json(spec, endpoint, headers, fallback_payload)
         text = _deepseek_text(body) or _openai_text(body)
 
     if not text:
@@ -998,55 +1007,152 @@ _ACTION_LABELS = {
 }
 
 
+_SOURCE_REFERENCE_RE = re.compile(
+    r"(?<![\w])(?:"
+    r"(?P<latin>project|clip|note|task)\s*(?:[_ -]*(?:id|ids))?\s*"
+    r"(?:[:：=#]\s*|\s*)(?P<latin_id>\d+)"
+    r"|"
+    r"(?P<japanese>プロジェクト|クリップ|メモ|タスク)\s*(?:id|ＩＤ)?\s*"
+    r"(?:[:：=#]\s*|\s*)(?P<japanese_id>\d+)"
+    r")",
+    re.IGNORECASE,
+)
+_SOURCE_KIND_ALIASES = {
+    "プロジェクト": "project",
+    "クリップ": "clip",
+    "メモ": "note",
+    "タスク": "task",
+}
+
+
+def _strip_model_thinking(value: str) -> str:
+    text = re.sub(r"<think>.*?</think>", "", value, flags=re.IGNORECASE | re.DOTALL)
+    if re.search(r"<think>", text, flags=re.IGNORECASE):
+        text = re.split(r"<think>", text, maxsplit=1, flags=re.IGNORECASE)[0]
+    return text.strip()
+
+
+def _normalize_model_text(value: Any) -> str:
+    text = _strip_model_thinking(str(value or ""))
+    text = text.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
+    text = text.replace("¥r¥n", "\n").replace("¥n", "\n").replace("¥r", "\n")
+    return text.strip()
+
+
+def _parse_model_json(raw: str) -> Any:
+    candidate = _strip_model_thinking(raw).strip()
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r"\s*```$", "", candidate).strip()
+
+    candidates = [candidate]
+    for repaired in (
+        candidate.replace("¥r¥n", "\\n").replace("¥n", "\\n").replace("¥r", "\\r"),
+        candidate.replace("¥r¥n", "\n").replace("¥n", "\n").replace("¥r", "\n"),
+    ):
+        if repaired not in candidates:
+            candidates.append(repaired)
+
+    for value in candidates:
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            start = value.find("{")
+            end = value.rfind("}")
+            if start >= 0 and end > start:
+                try:
+                    return json.loads(value[start : end + 1])
+                except json.JSONDecodeError:
+                    continue
+    return None
+
+
+def _source_key_from_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip().lower()
+    if not isinstance(value, dict):
+        return ""
+    direct_key = value.get("source_id") or value.get("sourceId") or value.get("key")
+    if isinstance(direct_key, str):
+        return direct_key.strip().lower()
+    kind = str(value.get("kind") or value.get("type") or "").strip().lower()
+    try:
+        item_id = int(value.get("id"))
+    except (TypeError, ValueError):
+        return ""
+    return f"{kind}:{item_id}" if kind else ""
+
+
+def _sources_from_values(values: Any, context: _ProjectContext) -> list[ProjectAssistantSource]:
+    if isinstance(values, (str, dict)):
+        values = [values]
+    if not isinstance(values, list):
+        return []
+    allowed = {item.key: item for item in context.items}
+    sources: list[ProjectAssistantSource] = []
+    seen_sources: set[str] = set()
+    for value in values:
+        key = _source_key_from_value(value)
+        if key in allowed and key not in seen_sources:
+            seen_sources.add(key)
+            sources.append(allowed[key].source())
+    return sources
+
+
+def _source_keys_from_text(text: str, context: _ProjectContext) -> list[str]:
+    allowed = {item.key: item for item in context.items}
+    keys: list[str] = []
+    for match in _SOURCE_REFERENCE_RE.finditer(text):
+        kind = match.group("latin") or _SOURCE_KIND_ALIASES.get(match.group("japanese", ""), "")
+        item_id = match.group("latin_id") or match.group("japanese_id")
+        key = f"{kind.lower()}:{int(item_id)}" if kind and item_id else ""
+        if key in allowed and key not in keys:
+            keys.append(key)
+
+    normalized_text = re.sub(r"\s+", " ", text).strip().casefold()
+    title_matches: list[tuple[int, str]] = []
+    for item in context.items:
+        normalized_title = re.sub(r"\s+", " ", item.title).strip().casefold()
+        if len(normalized_title) < 3 or normalized_title.startswith("（無題"):
+            continue
+        position = normalized_text.find(normalized_title)
+        if position >= 0:
+            title_matches.append((position, item.key))
+    for _, key in sorted(title_matches):
+        if key not in keys:
+            keys.append(key)
+    return keys
+
+
+def _sources_from_text(text: str, context: _ProjectContext) -> list[ProjectAssistantSource]:
+    allowed = {item.key: item for item in context.items}
+    return [allowed[key].source() for key in _source_keys_from_text(text, context) if key in allowed]
+
+
 def _parse_model_answer(
     raw: str,
     context: _ProjectContext,
 ) -> tuple[str, list[ProjectAssistantSource], list[ProjectAssistantActionRequest]]:
-    """Parse the provider JSON and keep IDs limited to the supplied context."""
+    """Parse provider JSON and recover validated sources from small-model prose."""
 
-    parsed: Any = None
-    candidate = raw.strip()
-    if candidate.startswith("```"):
-        candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
-        candidate = re.sub(r"\s*```$", "", candidate).strip()
-    try:
-        parsed = json.loads(candidate)
-    except json.JSONDecodeError:
-        start = candidate.find("{")
-        end = candidate.rfind("}")
-        if start >= 0 and end > start:
-            try:
-                parsed = json.loads(candidate[start : end + 1])
-            except json.JSONDecodeError:
-                parsed = None
-
+    parsed = _parse_model_json(raw)
     if not isinstance(parsed, dict):
-        return raw.strip()[:12_000], [], []
+        answer = _normalize_model_text(raw)[:12_000]
+        return answer, _sources_from_text(answer, context), []
 
-    answer = parsed.get("answer")
-    if not isinstance(answer, str) or not answer.strip():
-        return raw.strip()[:12_000], [], []
+    raw_answer = parsed.get("answer")
+    if not isinstance(raw_answer, str) or not raw_answer.strip():
+        answer = _normalize_model_text(raw)[:12_000]
+        return answer, _sources_from_text(answer, context), []
 
-    allowed = {item.key: item for item in context.items}
-    raw_sources = parsed.get("source_ids", parsed.get("sources", []))
-    if not isinstance(raw_sources, list):
-        raw_sources = []
-    sources: list[ProjectAssistantSource] = []
-    seen_sources: set[str] = set()
-    for value in raw_sources:
-        key = ""
-        if isinstance(value, str):
-            key = value.strip().lower()
-        elif isinstance(value, dict):
-            kind = str(value.get("kind") or value.get("type") or "").strip().lower()
-            try:
-                item_id = int(value.get("id"))
-            except (TypeError, ValueError):
-                continue
-            key = f"{kind}:{item_id}"
-        if key in allowed and key not in seen_sources:
+    answer = _normalize_model_text(raw_answer)[:12_000]
+    sources = _sources_from_values(parsed.get("source_ids", parsed.get("sources", [])), context)
+    seen_sources = {f"{source.kind}:{source.id}" for source in sources}
+    for source in _sources_from_text(answer, context):
+        key = f"{source.kind}:{source.id}"
+        if key not in seen_sources:
             seen_sources.add(key)
-            sources.append(allowed[key].source())
+            sources.append(source)
 
     actions: list[ProjectAssistantActionRequest] = []
     raw_actions = parsed.get("actions", [])
@@ -1557,12 +1663,15 @@ def ask_project_assistant(
         "ユーザーがクリップ添付、メモ作成、メモ編集を明確に依頼した場合だけactionsに操作案を入れてください。"
         "操作案は実行せず、アプリがユーザーの許可を確認してから実行します。"
         "操作案にIDを入れる場合は参照データに存在するIDだけを使ってください。\n"
+        "回答で参照した項目は、必ずsource_ids配列へsource_idの文字列で入れてください。"
+        "回答本文にsource_idを書く必要はありませんが、検索結果として挙げた項目はすべてsource_idsへ入れてください。\n"
         "次のJSONだけを返してください。JSON以外の文章は付けないでください。\n"
         '{"answer":"回答本文","source_ids":["clip:12","note:3","task:8"],'
         '"actions":[{"operation":"attach_clip","clip_ids":[12]},'
         '{"operation":"create_note","title":"メモのタイトル","body":"本文","clip_ids":[12]},'
         '{"operation":"edit_note","note_id":3,"title":"変更後タイトル","body":"変更後本文","clip_ids":[12]}]}\n'
         "不要なactionsは空配列にしてください。source_idsにもactionsにも、存在しないIDは使わないでください。"
+        "JSON文字列内の改行は正しいJSONエスケープを使ってください。"
     )
     user_prompt = (
         f"ユーザーの質問・依頼:\n{message}\n\n"

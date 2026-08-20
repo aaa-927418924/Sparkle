@@ -124,6 +124,81 @@ class ProjectAssistantTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_non_json_ollama_prose_recovers_source_links_and_newlines(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("鳴潮AMV",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            clips = [
+                ("https://example.com/133", "Wuthering Waves - NOBATIDÃO | [GMV/EDIT]"),
+                ("https://example.com/131", "Wuthering Waves - 505 | [GMV/EDIT]"),
+                ("https://example.com/117", "The Clarity(Wuthering Waves)"),
+            ]
+            for url, title in clips:
+                connection.execute(
+                    "INSERT INTO clips(url, title, project_id) VALUES (?, ?, ?)",
+                    (url, title, project_id),
+                )
+            connection.commit()
+            store = FakeSecretStore({"openai": "sk-test"})
+            raw_answer = (
+                "鳴潮のAMVに関連するクリップは以下です。¥n¥n"
+                "- clip:133 | Wuthering Waves - NOBATIDÃO | [GMV/EDIT] ¥n"
+                "- clip:131 | Wuthering Waves - 505 | [GMV/EDIT] ¥n"
+                "- clip:117(『The Clarity(Wuthering Waves)』)¥n¥n"
+                "clip:130以降の情報は参照データにありません。"
+            )
+            with patch.object(assistant, "_secret_store", store), patch.object(
+                assistant, "_call_provider", return_value=raw_answer
+            ):
+                result = assistant.ask_project_assistant(
+                    connection,
+                    project_id,
+                    assistant.ProjectAssistantRequest(
+                        message="鳴潮のAMVだけ探して",
+                        provider="openai",
+                    ),
+                )
+
+            self.assertIn("\n- clip:133", result.answer)
+            self.assertNotIn("¥n", result.answer)
+            self.assertEqual(
+                [(source.kind, source.id) for source in result.sources],
+                [("clip", 1), ("clip", 2), ("clip", 3)],
+            )
+            history = assistant.get_project_assistant_history(connection, project_id)
+            self.assertEqual(
+                [(source.kind, source.id) for source in history.messages[-1].sources],
+                [("clip", 1), ("clip", 2), ("clip", 3)],
+            )
+        finally:
+            connection.close()
+
+    def test_ollama_requests_json_mode_and_retries_older_server(self):
+        calls = []
+
+        def request_json(provider, url, headers, payload):
+            calls.append(payload)
+            if len(calls) == 1:
+                raise assistant.ProviderRequestError(502, "unsupported", provider_status=400)
+            return {"choices": [{"message": {"content": "{}"}}]}
+
+        with patch.object(assistant, "_request_json", side_effect=request_json):
+            answer = assistant._call_provider(
+                assistant.PROVIDER_MAP["ollama"],
+                None,
+                "system",
+                "user",
+                "qwen3.5:2b",
+                "http://127.0.0.1:11434",
+            )
+
+        self.assertEqual(answer, "{}")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
+        self.assertNotIn("response_format", calls[1])
+        self.assertEqual(calls[0]["options"]["temperature"], 0)
+
     def test_note_source_targets_the_note_editor(self):
         connection = make_connection()
         try:

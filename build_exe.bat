@@ -97,5 +97,15 @@ if errorlevel 1 (
 )
 
 echo.
+echo Generating MCPB SHA-256 file...
+"%PYTHON%" -c "from hashlib import sha256; from pathlib import Path; src=Path(r'dist\Sparkle.mcpb'); out=Path(r'dist\Sparkle.mcpb.sha256'); out.write_text(sha256(src.read_bytes()).hexdigest()+'  Sparkle.mcpb'+chr(10),encoding='ascii')"
+if errorlevel 1 (
+  echo.
+  echo MCPB SHA-256 generation failed.
+  pause
+  exit /b 1
+)
+
+echo.
 echo Done: dist\Sparkle.exe, dist\SparkleMCP.exe, and dist\Sparkle.mcpb (+ SHA-256 files)
 pause

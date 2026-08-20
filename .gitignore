@@ -28,3 +28,6 @@ uploads/
 # Generated extension package
 extension.zip
 *.mcpb
+
+# Local migration handoff
+handoff.md

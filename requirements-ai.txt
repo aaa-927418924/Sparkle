@@ -1,18 +1,3 @@
-# Optional dependencies for the local natural-language parser.
-# The command palette still works with SQLite/heuristic search when these are
-# not installed. Install them into the same Python environment as Sparkle.
-#
-# GPU acceleration (NVIDIA CUDA) is used automatically when a CUDA build of
-# torch is installed. On Windows install the cu130 build to match the bundled
-# runtime; the CPU-only default from PyPI leaves the parser on the CPU:
-#
-#   py -3.13 -m pip install torch==2.13.0+cu130 --index-url https://download.pytorch.org/whl/cu130
-#
-# The parser reports its device via GET /command-palette/status ("device") and
-# per search via POST /command-palette/search ("device").
-torch>=2.2
-transformers>=5.15.1
-accelerate>=1.14
-gguf>=0.19
-safetensors>=0.5
-huggingface_hub>=0.30
+# Retired: the local command palette and its Torch/Transformers/Embedding
+# runtime are disabled in the lightweight Sparkle build. Do not install AI
+# dependencies from this file.

@@ -21,7 +21,6 @@ Save interesting web pages through the Chrome extension and organize them with c
 * Organize clips with comments, tags, and categories
 * Manage clips, notes, tasks, and projects in one place
 * Search by keyword, mark items as favorites, and sort your content
-* Open a Ctrl+K command palette for natural-language, cross-type search
 * Run Sparkle from the Windows system tray
 * Store all data locally on your PC
 * Automatically export data as Markdown for use with AI tools
@@ -48,7 +47,9 @@ Clips, notes, tasks, and projects stored in Sparkle are automatically exported a
 
 This folder can be used as a reference source in tools such as Claude Code and Codex. You can also upload the exported Markdown files to ChatGPT, Gemini, Claude, and other AI tools.
 
-The command palette search details and optional `LiquidAI/LFM2.5-350M` setup are documented in [docs/command-palette.md](docs/command-palette.md).
+The optional command palette and local LLM/Embedding search are currently disabled to keep the Windows executable lightweight. Existing per-screen search and all stored data remain available.
+
+The disabled feature is documented in [docs/command-palette.md](docs/command-palette.md) for historical context.
 
 ## System Requirements
 

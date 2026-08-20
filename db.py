@@ -262,12 +262,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_project_notes_note ON project_notes(note_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_task_notes_note ON task_notes(note_id)")
 
-    # Keep the denormalized command-palette search schema idempotent and
-    # migration-safe. The module is imported lazily to avoid a db/module
-    # import cycle during application startup.
-    from command_palette import ensure_search_schema
-
-    ensure_search_schema(conn)
+    # The legacy command-palette search tables are intentionally left in place
+    # when present, but are no longer created or refreshed. Keeping existing
+    # tables untouched avoids unnecessary data migrations for the core app.
 
 
 if __name__ == "__main__":

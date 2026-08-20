@@ -1039,31 +1039,72 @@ def _normalize_model_text(value: Any) -> str:
     return text.strip()
 
 
+def _repair_json_string_newlines(value: str) -> str:
+    """Escape literal line breaks that small models put inside JSON strings."""
+
+    repaired: list[str] = []
+    in_string = False
+    escaped = False
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if in_string:
+            if escaped:
+                repaired.append(char)
+                escaped = False
+            elif char == "\\":
+                repaired.append(char)
+                escaped = True
+            elif char == '"':
+                repaired.append(char)
+                in_string = False
+            elif char == "\r":
+                repaired.append("\\n")
+                if index + 1 < len(value) and value[index + 1] == "\n":
+                    index += 1
+            elif char == "\n":
+                repaired.append("\\n")
+            else:
+                repaired.append(char)
+        else:
+            repaired.append(char)
+            if char == '"':
+                in_string = True
+        index += 1
+    return "".join(repaired)
+
+
+def _try_parse_json(value: str) -> Any:
+    candidates = [value]
+    for repaired in (
+        value.replace("¥r¥n", "\\n").replace("¥n", "\\n").replace("¥r", "\\r"),
+        _repair_json_string_newlines(value),
+    ):
+        if repaired not in candidates:
+            candidates.append(repaired)
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
 def _parse_model_json(raw: str) -> Any:
     candidate = _strip_model_thinking(raw).strip()
     if candidate.startswith("```"):
         candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
         candidate = re.sub(r"\s*```$", "", candidate).strip()
 
-    candidates = [candidate]
-    for repaired in (
-        candidate.replace("¥r¥n", "\\n").replace("¥n", "\\n").replace("¥r", "\\r"),
-        candidate.replace("¥r¥n", "\n").replace("¥n", "\n").replace("¥r", "\n"),
-    ):
-        if repaired not in candidates:
-            candidates.append(repaired)
-
-    for value in candidates:
-        try:
-            return json.loads(value)
-        except json.JSONDecodeError:
-            start = value.find("{")
-            end = value.rfind("}")
-            if start >= 0 and end > start:
-                try:
-                    return json.loads(value[start : end + 1])
-                except json.JSONDecodeError:
-                    continue
+    parsed = _try_parse_json(candidate)
+    if parsed is not None:
+        return parsed
+    start = candidate.find("{")
+    end = candidate.rfind("}")
+    if start >= 0 and end > start:
+        parsed = _try_parse_json(candidate[start : end + 1])
+        if parsed is not None:
+            return parsed
     return None
 
 
@@ -1407,6 +1448,14 @@ def _history_sources(value: Any) -> list[ProjectAssistantSource]:
     return sources
 
 
+def _history_content(value: Any) -> str:
+    raw = str(value or "")
+    parsed = _parse_model_json(raw)
+    if isinstance(parsed, dict) and isinstance(parsed.get("answer"), str) and parsed["answer"].strip():
+        return _clean_text(_normalize_model_text(parsed["answer"]), 12_000)
+    return _clean_text(_normalize_model_text(raw), 12_000)
+
+
 def get_project_assistant_history(
     db: Connection,
     project_id: int,
@@ -1425,7 +1474,7 @@ def get_project_assistant_history(
         ProjectAssistantHistoryMessage(
             id=int(row["id"]),
             role=row["role"],
-            content=row["content"],
+            content=_history_content(row["content"]) if row["role"] == "assistant" else row["content"],
             provider=row["provider"],
             model=row["model"],
             scope=row["scope"] if row["scope"] in {"project", "all"} else "project",

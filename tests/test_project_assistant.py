@@ -199,6 +199,50 @@ class ProjectAssistantTests(unittest.TestCase):
         self.assertNotIn("response_format", calls[1])
         self.assertEqual(calls[0]["options"]["temperature"], 0)
 
+    def test_malformed_json_answer_is_unwrapped_and_history_is_clean(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("スターレイルAMV",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            for url, title in (
+                ("https://example.com/160", "MONTAGEM FAMA X YAO GUANG"),
+                ("https://example.com/132", "Black Swan max"),
+            ):
+                connection.execute(
+                    "INSERT INTO clips(url, title, project_id) VALUES (?, ?, ?)",
+                    (url, title, project_id),
+                )
+            connection.commit()
+            context = assistant._project_context(connection, project_id)
+            malformed_json = (
+                '{"answer":"スターレイルのAMVクリップの検索結果です\n\n'
+                '- clip:160 - MONTAGEM FAMA X YAO GUANG\n'
+                '- clip:132 - Black Swan max\n",\n'
+                '"source_ids":\n["clip:160",\n"clip:132"]}'
+            )
+
+            answer, sources, actions = assistant._parse_model_answer(malformed_json, context)
+
+            self.assertFalse(answer.startswith("{"))
+            self.assertIn("スターレイルのAMVクリップの検索結果です", answer)
+            self.assertIn("\n- clip:160", answer)
+            self.assertNotIn('"source_ids"', answer)
+            self.assertEqual([(source.kind, source.id) for source in sources], [("clip", 1), ("clip", 2)])
+            self.assertEqual(actions, [])
+
+            connection.execute(
+                "INSERT INTO project_assistant_messages "
+                "(project_id, role, content, provider, model, scope, context_item_count) "
+                "VALUES (?, 'assistant', ?, 'ollama', 'qwen3-9b-q4km:latest', 'project', 2)",
+                (project_id, malformed_json),
+            )
+            connection.commit()
+            history = assistant.get_project_assistant_history(connection, project_id)
+            self.assertFalse(history.messages[-1].content.startswith("{"))
+            self.assertNotIn('"source_ids"', history.messages[-1].content)
+        finally:
+            connection.close()
+
     def test_note_source_targets_the_note_editor(self):
         connection = make_connection()
         try:

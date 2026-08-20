@@ -781,16 +781,42 @@ class RemoteAccessManager:
 
         previous = self._configured_web_mode()
         if previous == normalized:
-            return {"ok": True, "status": self.status()}
+            # Re-applying the selected mode is also a recovery operation. The
+            # route may have been removed externally while the persisted mode
+            # and access key remain enabled, so do not make the settings page
+            # require a separate, less obvious Retry click.
+            if not self._any_enabled():
+                return {"ok": True, "status": self.status()}
+            if not self._start_remote_server():
+                return {"ok": False, "status": self.status(), "error": self._last_error}
+            result = self._start_enabled_routes()
+            self._last_error = result.get("error") if not result.get("ok") else None
+            return {
+                "ok": bool(result.get("ok")),
+                "status": self.status(),
+                "error": result.get("error"),
+            }
 
+        web_enabled = self.auth_store.is_enabled()
         mcp_enabled = self.mcp_auth_store.is_enabled()
         previous_mcp_port = self._mcp_route_port(previous)
         next_mcp_port = self._mcp_route_port(normalized)
+
+        # Serve and Funnel cannot own the same HTTPS port at the same time.
+        # Stop the old 443 Web route before starting the new mode. This must
+        # bypass the normal shared-route protection because Funnel Web and
+        # Remote MCP intentionally share 443 in the old mode.
+        if web_enabled:
+            stopped, error = self._stop_public_route(force=True)
+            if not stopped:
+                self._last_error = error
+                return {"ok": False, "status": self.status(), "error": error}
+
         if mcp_enabled and previous_mcp_port != next_mcp_port:
             # A Funnel Web route on 443 is shared by Web and MCP. Moving to
             # Serve must leave that route for the Web app and start MCP on
             # 8443; moving back removes the old 8443 route first.
-            if not self._mcp_route_is_shared(previous):
+            if not (web_enabled and self._mcp_route_is_shared(previous)):
                 current = self._port_status(previous_mcp_port)
                 if current.get("active"):
                     stopped, error = self._stop_route(
@@ -813,11 +839,7 @@ class RemoteAccessManager:
             if not self._start_remote_server():
                 return {"ok": False, "status": self.status(), "error": self._last_error}
 
-        result = {"ok": True}
-        if self.auth_store.is_enabled():
-            result = self._start_web_route()
-        if result.get("ok") and mcp_enabled:
-            result = self._start_mcp_route()
+        result = self._start_enabled_routes() if self._any_enabled() else {"ok": True}
         self._last_error = result.get("error") if not result.get("ok") else None
         return {
             "ok": bool(result.get("ok")),
@@ -849,8 +871,8 @@ class RemoteAccessManager:
         self._reset_mcp_oauth()
         return {"ok": True, "status": self.status()}
 
-    def _stop_public_route(self) -> tuple[bool, Optional[str]]:
-        if self._mcp_route_is_shared():
+    def _stop_public_route(self, force: bool = False) -> tuple[bool, Optional[str]]:
+        if not force and self._mcp_route_is_shared():
             return True, None
         current = self._port_status(ANDROID_WEB_HTTPS_PORT)
         if not current.get("available"):

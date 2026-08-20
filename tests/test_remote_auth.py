@@ -361,6 +361,90 @@ class RemoteAuthStoreTests(unittest.TestCase):
         self.assertEqual(status["remote"], mcp_route)
         self.assertEqual(status["mcp_url"], f"https://sparkle.example.ts.net:{MCP_FUNNEL_HTTPS_PORT}/mcp")
 
+    def test_switching_from_shared_funnel_to_serve_stops_443_before_starting_routes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            web_store = AuthStore(Path(directory) / "remote-auth.json")
+            mcp_store = AuthStore(Path(directory) / "mcp-auth.json")
+            web_store.enable()
+            mcp_store.enable()
+            manager = RemoteAccessManager(
+                auth_store=web_store,
+                mcp_auth_store=mcp_store,
+            )
+            with (
+                patch.object(manager, "_stop_public_route", return_value=(True, None)) as stop_web,
+                patch.object(manager, "_stop_route") as stop_mcp,
+                patch.object(manager, "_stop_remote_server") as stop_server,
+                patch.object(manager, "_start_remote_server", return_value=True) as start_server,
+                patch.object(manager, "_start_enabled_routes", return_value={"ok": True}) as start_routes,
+                patch.object(manager, "status", return_value={}),
+            ):
+                result = manager.set_mode("serve")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(web_store.get_remote_mode(), "serve")
+        stop_web.assert_called_once_with(force=True)
+        stop_mcp.assert_not_called()
+        stop_server.assert_called_once()
+        start_server.assert_called_once()
+        start_routes.assert_called_once()
+
+    def test_switching_from_serve_to_funnel_stops_serve_and_mcp_routes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            web_store = AuthStore(Path(directory) / "remote-auth.json")
+            mcp_store = AuthStore(Path(directory) / "mcp-auth.json")
+            web_store.enable()
+            web_store.set_remote_mode("serve")
+            mcp_store.enable()
+            manager = RemoteAccessManager(
+                auth_store=web_store,
+                mcp_auth_store=mcp_store,
+            )
+            current_mcp = {
+                "available": True,
+                "active": True,
+                "target": "remote",
+                "public_url": f"https://sparkle.example.ts.net:{MCP_FUNNEL_HTTPS_PORT}",
+            }
+            with (
+                patch.object(manager, "_stop_public_route", return_value=(True, None)) as stop_web,
+                patch.object(manager, "_port_status", return_value=current_mcp),
+                patch.object(manager, "_stop_route", return_value=(True, None)) as stop_route,
+                patch.object(manager, "_stop_remote_server") as stop_server,
+                patch.object(manager, "_start_remote_server", return_value=True),
+                patch.object(manager, "_start_enabled_routes", return_value={"ok": True}),
+                patch.object(manager, "status", return_value={}),
+            ):
+                result = manager.set_mode("funnel")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(web_store.get_remote_mode(), "funnel")
+        stop_web.assert_called_once_with(force=True)
+        stop_route.assert_called_once_with(
+            "funnel",
+            REMOTE_TARGET,
+            MCP_FUNNEL_HTTPS_PORT,
+            current_mcp,
+        )
+        stop_server.assert_called_once()
+
+    def test_reapplying_serve_mode_restarts_missing_routes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            web_store = AuthStore(Path(directory) / "remote-auth.json")
+            web_store.enable()
+            web_store.set_remote_mode("serve")
+            manager = RemoteAccessManager(auth_store=web_store)
+            with (
+                patch.object(manager, "_start_remote_server", return_value=True) as start_server,
+                patch.object(manager, "_start_enabled_routes", return_value={"ok": True}) as start_routes,
+                patch.object(manager, "status", return_value={}),
+            ):
+                result = manager.set_mode("serve")
+
+        self.assertTrue(result["ok"])
+        start_server.assert_called_once()
+        start_routes.assert_called_once()
+
     def test_trusted_session_survives_store_reload_without_plaintext(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "remote-auth.json"

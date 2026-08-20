@@ -2,6 +2,9 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
+
+import numpy as np
 
 from command_palette import (
     CommandPaletteSearchRequest,
@@ -13,6 +16,7 @@ from command_palette import (
     search_command_palette,
 )
 from db import _SCHEMA, _migrate
+import embedding_search
 
 
 def make_connection():
@@ -21,6 +25,42 @@ def make_connection():
     connection.executescript(_SCHEMA)
     _migrate(connection)
     return connection
+
+
+class StubEmbeddingModel:
+    """Deterministic stand-in for the real Gemma3 model.
+
+    Texts mentioning music map to e0, shopping to e1, everything else to e2.
+    """
+
+    def __init__(self):
+        import threading
+
+        self._lock = threading.Lock()
+        self._tokenizer = None
+        self._model = object()
+        self._torch = None
+        self._device = "cpu"
+        self._attempted = True
+        self._last_error_type = None
+
+    def _load(self):
+        return True
+
+    def embed(self, texts):
+        vectors = []
+        for text in texts:
+            lowered = text.casefold()
+            if any(word in lowered for word in ("bgm", "音楽", "曲", "song", "music")):
+                index = 0
+            elif any(word in lowered for word in ("買い物", "牛乳", "shop", "milk")):
+                index = 1
+            else:
+                index = 2
+            vector = np.zeros(embedding_search.EMBEDDING_DIM, dtype=np.float32)
+            vector[index] = 1.0
+            vectors.append(vector)
+        return np.stack(vectors)
 
 
 class CommandPaletteTests(unittest.TestCase):
@@ -94,7 +134,7 @@ class CommandPaletteTests(unittest.TestCase):
                 CommandPaletteSearchRequest(query="映像編集", use_ai=False, limit=20),
             )
 
-            self.assertIn(response.search_mode, {"fts+like", "like"})
+            self.assertIn(response.search_mode, {"fts+like", "like", "embedding"})
             self.assertEqual(
                 {item.entity_type for item in response.results},
                 {"clip", "note", "task", "project"},
@@ -245,6 +285,119 @@ class CommandPaletteTests(unittest.TestCase):
 
             self.assertEqual(response.total, 1)
             self.assertEqual(response.results[0].title, "新しいタスク名")
+        finally:
+            connection.close()
+
+    def test_semantic_search_ranks_by_cosine_similarity(self):
+        connection = make_connection()
+        try:
+            connection.execute(
+                "INSERT INTO clips(url, title, comment) VALUES (?, ?, ?)",
+                ("https://example.com/track", "MONTAGEM AETERNA", "AMVで使えそう BGM 曲"),
+            )
+            connection.execute(
+                "INSERT INTO clips(url, title, comment) VALUES (?, ?, ?)",
+                ("https://example.com/shopping", "買い物リスト", "牛乳 日用品"),
+            )
+            connection.commit()
+
+            with mock.patch.object(
+                embedding_search, "_EMBEDDING_MODEL", StubEmbeddingModel()
+            ):
+                response = search_command_palette(
+                    connection,
+                    CommandPaletteSearchRequest(query="音楽の曲を探して", use_ai=False, limit=10),
+                )
+
+            self.assertEqual(response.search_mode, "embedding")
+            self.assertEqual(response.results[0].title, "MONTAGEM AETERNA")
+            self.assertGreater(response.results[0].score, response.results[1].score)
+        finally:
+            connection.close()
+
+    def test_semantic_search_applies_filters_from_intent(self):
+        connection = make_connection()
+        try:
+            connection.execute(
+                "INSERT INTO tasks(title, is_done) VALUES (?, ?)",
+                ("完了したBGM選定タスク", 1),
+            )
+            connection.execute(
+                "INSERT INTO tasks(title, is_done) VALUES (?, ?)",
+                ("未完了のBGM選定タスク", 0),
+            )
+            connection.commit()
+
+            with mock.patch.object(
+                embedding_search, "_EMBEDDING_MODEL", StubEmbeddingModel()
+            ):
+                response = search_command_palette(
+                    connection,
+                    CommandPaletteSearchRequest(query="未完了のBGMタスク", use_ai=False, limit=10),
+                )
+
+            self.assertEqual(response.search_mode, "embedding")
+            self.assertEqual(len(response.results), 1)
+            self.assertEqual(response.results[0].title, "未完了のBGM選定タスク")
+        finally:
+            connection.close()
+
+    def test_semantic_search_falls_back_when_model_missing(self):
+        connection = make_connection()
+        try:
+            connection.execute(
+                "INSERT INTO clips(url, title) VALUES (?, ?)",
+                ("https://example.com/track", "MONTAGEM AETERNA"),
+            )
+            connection.commit()
+
+            stub = StubEmbeddingModel()
+            stub._load = lambda: False
+            with mock.patch.object(embedding_search, "_EMBEDDING_MODEL", stub):
+                response = search_command_palette(
+                    connection,
+                    CommandPaletteSearchRequest(query="BGM", use_ai=False),
+                )
+
+            self.assertIn(response.search_mode, {"fts+like", "like"})
+        finally:
+            connection.close()
+
+    def test_semantic_embeddings_rebuilt_when_source_changes(self):
+        connection = make_connection()
+        try:
+            connection.execute(
+                "INSERT INTO clips(url, title, comment) VALUES (?, ?, ?)",
+                ("https://example.com/track", "MONTAGEM AETERNA", "BGM 曲"),
+            )
+            connection.execute(
+                "INSERT INTO clips(url, title, comment) VALUES (?, ?, ?)",
+                ("https://example.com/shopping", "買い物リスト", "牛乳 日用品"),
+            )
+            connection.commit()
+
+            with mock.patch.object(
+                embedding_search, "_EMBEDDING_MODEL", StubEmbeddingModel()
+            ):
+                first = search_command_palette(
+                    connection,
+                    CommandPaletteSearchRequest(query="音楽の曲を探して", use_ai=False, limit=10),
+                )
+                self.assertEqual(first.results[0].title, "MONTAGEM AETERNA")
+
+                connection.execute(
+                    "UPDATE clips SET title = ? WHERE title = ?",
+                    ("BGM選曲リスト", "買い物リスト"),
+                )
+                connection.commit()
+                second = search_command_palette(
+                    connection,
+                    CommandPaletteSearchRequest(query="音楽の曲を探して", use_ai=False, limit=10),
+                )
+
+            self.assertIn(
+                "BGM選曲リスト", {item.title for item in second.results}
+            )
         finally:
             connection.close()
 

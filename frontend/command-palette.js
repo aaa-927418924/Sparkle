@@ -172,7 +172,11 @@
     }
     list.setAttribute("aria-busy", "false");
     let parserLabel = payload.parser === "lfm2.5-350m" ? "LFM2.5-350Mで解釈" : "通常検索";
-    if (payload.device === "cuda") parserLabel = "LFM2.5-350M (GPU)で解釈";
+    if (payload.search_mode === "embedding") {
+      parserLabel = payload.parser === "lfm2.5-350m" ? "セマンティック検索 (LFM2.5-350M)" : "セマンティック検索";
+    } else if (payload.device === "cuda") {
+      parserLabel = "LFM2.5-350M (GPU)で解釈";
+    }
     setStatus(`${payload.total || 0}件 · ${parserLabel}`);
     syncActiveDescendant();
   }

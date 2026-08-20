@@ -63,6 +63,7 @@ class CommandPaletteResultOut(BaseModel):
     is_favorite: Optional[bool] = None
     due_date: Optional[str] = None
     priority: Optional[int] = None
+    score: Optional[float] = None
 
 
 class CommandPaletteSearchOut(BaseModel):
@@ -83,6 +84,9 @@ class CommandPaletteStatusOut(BaseModel):
     device: Optional[str] = None
     model_loaded: bool = False
     message: str
+    embedding_available: bool = False
+    embedding_device: Optional[str] = None
+    embedding_model_loaded: bool = False
 
 
 SEARCH_SCHEMA_SQL = """
@@ -798,6 +802,11 @@ def rebuild_search_index(conn: sqlite3.Connection) -> None:
     conn.execute(
         "INSERT OR REPLACE INTO search_index_meta(key, value) VALUES ('dirty', '0')"
     )
+    # Rebuild_search_index rewrites every search_documents row, so any cached
+    # semantic embeddings are stale until embedding_search re-embeds them.
+    conn.execute(
+        "INSERT OR REPLACE INTO search_index_meta(key, value) VALUES ('embeddings_ready', '0')"
+    )
 
 
 def _ensure_fresh_index(conn: sqlite3.Connection) -> bool:
@@ -882,6 +891,21 @@ def search_command_palette(
     conn: sqlite3.Connection,
     request: CommandPaletteSearchRequest,
 ) -> CommandPaletteSearchOut:
+    from embedding_search import search_command_palette_embedding
+
+    try:
+        semantic = search_command_palette_embedding(
+            conn,
+            request.query,
+            limit=request.limit,
+            entity_types=request.entity_types,
+            use_ai=request.use_ai,
+        )
+        if semantic is not None:
+            return semantic
+    except Exception:
+        traceback.print_exc()
+
     fts_available = _ensure_fresh_index(conn)
     intent, parser = parse_query(request.query, use_ai=request.use_ai)
     device = _reported_device() if parser == "lfm2.5-350m" else None
@@ -1043,6 +1067,10 @@ def get_command_palette_status() -> CommandPaletteStatusOut:
             if gguf_file
             else "ローカルモデルを使用できます。"
         )
+
+    from embedding_search import embedding_model_status
+
+    embedding = embedding_model_status()
     return CommandPaletteStatusOut(
         model_id=MODEL_ID,
         backend="transformers-gguf" if gguf_file else "transformers",
@@ -1051,4 +1079,7 @@ def get_command_palette_status() -> CommandPaletteStatusOut:
         device=device,
         model_loaded=model_loaded,
         message=message,
+        embedding_available=embedding["available"],
+        embedding_device=embedding["device"],
+        embedding_model_loaded=embedding["model_loaded"],
     )

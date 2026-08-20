@@ -378,5 +378,7 @@ def _startup() -> None:
         return
     _initialize_application_data()
     from command_palette import preload_intent_parser
+    from embedding_search import preload_embedding_model
 
     preload_intent_parser()
+    preload_embedding_model()

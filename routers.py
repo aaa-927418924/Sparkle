@@ -55,6 +55,19 @@ from maintenance import (
     delete_thumbnail_file,
     run_maintenance,
 )
+from project_assistant import (
+    AIProviderUpdate,
+    AIProvidersOut,
+    AISettingsUpdate,
+    ProjectAssistantError,
+    ProjectAssistantOut,
+    ProjectAssistantRequest,
+    ask_project_assistant,
+    configure_ai_provider,
+    delete_ai_provider,
+    get_ai_provider_settings,
+    set_active_ai_provider,
+)
 from schemas import (
     BackupExportPayload,
     CategoryCreate,
@@ -961,6 +974,19 @@ def get_project(project_id: int, db: Connection = Depends(get_db)):
     return ProjectOut(id=row["id"], name=row["name"], description=row["description"], is_done=bool(row["is_done"]), created_at=row["created_at"])
 
 
+@router.post("/projects/{project_id}/assistant", response_model=ProjectAssistantOut)
+def project_assistant(
+    project_id: int,
+    payload: ProjectAssistantRequest,
+    db: Connection = Depends(get_db),
+):
+    """Ask the configured provider about this project's attached data only."""
+    try:
+        return ask_project_assistant(db, project_id, payload)
+    except ProjectAssistantError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
 def _cascade_project_done(db: Connection, project_id: int, row) -> None:
     """Mark the project done and cascade completion to its undone tasks and notes."""
     undone_tasks = db.execute(
@@ -1658,6 +1684,44 @@ def delete_note(note_id: int, db: Connection = Depends(get_db)):
 
 
 # --- Settings -------------------------------------------------------------
+
+
+@router.get("/ai/providers", response_model=AIProvidersOut)
+def list_ai_providers(db: Connection = Depends(get_db)):
+    """Return provider availability without exposing API keys."""
+    return get_ai_provider_settings(db)
+
+
+@router.put("/ai/providers/{provider_id}", response_model=AIProvidersOut)
+def update_ai_provider(
+    provider_id: str,
+    payload: AIProviderUpdate,
+    db: Connection = Depends(get_db),
+):
+    try:
+        return configure_ai_provider(db, provider_id, payload)
+    except ProjectAssistantError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.delete("/ai/providers/{provider_id}", response_model=AIProvidersOut)
+def remove_ai_provider(provider_id: str, db: Connection = Depends(get_db)):
+    try:
+        return delete_ai_provider(db, provider_id)
+    except ProjectAssistantError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.put("/ai/settings", response_model=AIProvidersOut)
+def update_ai_settings(
+    payload: AISettingsUpdate,
+    db: Connection = Depends(get_db),
+):
+    try:
+        return set_active_ai_provider(db, payload.active_provider)
+    except ProjectAssistantError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
 
 class SettingValue(BaseModel):
     value: str

@@ -18,6 +18,9 @@ ai_hiddenimports = [
     'safetensors',
     'gguf',
     'accelerate',
+    'keyring',
+    'keyring.backends.Windows',
+    'win32ctypes',
 ]
 for package in ('transformers.models.lfm2', 'gguf', 'accelerate'):
     ai_hiddenimports += collect_submodules(package)
@@ -31,6 +34,8 @@ for distribution in (
     'gguf',
     'accelerate',
     'huggingface-hub',
+    'keyring',
+    'pywin32-ctypes',
 ):
     try:
         ai_datas += copy_metadata(distribution)

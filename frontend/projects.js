@@ -277,6 +277,7 @@ function bindPageEntryAnimation(container) {
 async function openDetail(projectId, { pushHistory = true } = {}) {
   const requestId = ++state.routeRequestId;
   state.currentProjectId = projectId;
+  window.projectAssistant?.setProject?.(projectId);
   const proj = state.projects.find((p) => p.id === projectId);
   if (!proj) {
     await showProjectList({ syncUrl: true });
@@ -296,6 +297,7 @@ async function openDetail(projectId, { pushHistory = true } = {}) {
 async function showProjectList({ syncUrl = true, reload = true } = {}) {
   ++state.routeRequestId;
   state.currentProjectId = null;
+  window.projectAssistant?.setProject?.(null);
   els.listView.hidden = false;
   els.detailView.hidden = true;
   if (syncUrl) history.replaceState(null, "", window.location.pathname);

@@ -213,6 +213,57 @@
             <div id="aiEditStatus" class="ai-export-status" role="status" aria-live="polite">状態を確認中…</div>
           </div>
 
+          <section class="settings-col settings-ai-provider-col" aria-labelledby="projectAssistantSettingsTitle">
+            <h3 id="projectAssistantSettingsTitle" class="modal-sub">プロジェクト専属AI</h3>
+            <p class="file-save-desc">プロジェクトのクリップ・メモ・タスクを参照して、プロジェクト内の質問に回答します。質問した内容だけが選択中のAIプロバイダーへ送信されます。</p>
+            <p class="file-save-desc">APIキーはWindows資格情報マネージャーに保存し、データベース・バックアップ・AI向けエクスポートには含めません。</p>
+            <div class="setting-row column ai-active-provider-row">
+              <label for="aiActiveProvider">使用するAIプロバイダー</label>
+              <select id="aiActiveProvider" class="setting-select" aria-describedby="aiActiveProviderStatus">
+                <option value="">APIキーを保存してください</option>
+              </select>
+              <span id="aiActiveProviderStatus" class="ai-export-status" role="status" aria-live="polite">状態を確認中…</span>
+            </div>
+            <div class="ai-provider-grid">
+              <article class="ai-provider-card" data-ai-provider="deepseek">
+                <div class="ai-provider-card-header"><h4>DeepSeek</h4><span id="aiProviderStatus-deepseek" class="ai-provider-status">未設定</span></div>
+                <label class="modal-label" for="aiProviderKey-deepseek">APIキー</label>
+                <input id="aiProviderKey-deepseek" class="modal-input" type="password" autocomplete="new-password" placeholder="入力すると更新" />
+                <label class="modal-label" for="aiProviderModel-deepseek">モデル名</label>
+                <input id="aiProviderModel-deepseek" class="modal-input" type="text" autocomplete="off" spellcheck="false" />
+                <div class="settings-data-actions ai-provider-actions">
+                  <button class="modal-btn" type="button" data-ai-save="deepseek">保存</button>
+                  <button class="modal-btn ghost" type="button" data-ai-delete="deepseek">キーを削除</button>
+                </div>
+                <p id="aiProviderMessage-deepseek" class="ai-export-status" role="status" aria-live="polite"></p>
+              </article>
+              <article class="ai-provider-card" data-ai-provider="gemini">
+                <div class="ai-provider-card-header"><h4>Gemini</h4><span id="aiProviderStatus-gemini" class="ai-provider-status">未設定</span></div>
+                <label class="modal-label" for="aiProviderKey-gemini">APIキー</label>
+                <input id="aiProviderKey-gemini" class="modal-input" type="password" autocomplete="new-password" placeholder="入力すると更新" />
+                <label class="modal-label" for="aiProviderModel-gemini">モデル名</label>
+                <input id="aiProviderModel-gemini" class="modal-input" type="text" autocomplete="off" spellcheck="false" />
+                <div class="settings-data-actions ai-provider-actions">
+                  <button class="modal-btn" type="button" data-ai-save="gemini">保存</button>
+                  <button class="modal-btn ghost" type="button" data-ai-delete="gemini">キーを削除</button>
+                </div>
+                <p id="aiProviderMessage-gemini" class="ai-export-status" role="status" aria-live="polite"></p>
+              </article>
+              <article class="ai-provider-card" data-ai-provider="openai">
+                <div class="ai-provider-card-header"><h4>OpenAI</h4><span id="aiProviderStatus-openai" class="ai-provider-status">未設定</span></div>
+                <label class="modal-label" for="aiProviderKey-openai">APIキー</label>
+                <input id="aiProviderKey-openai" class="modal-input" type="password" autocomplete="new-password" placeholder="入力すると更新" />
+                <label class="modal-label" for="aiProviderModel-openai">モデル名</label>
+                <input id="aiProviderModel-openai" class="modal-input" type="text" autocomplete="off" spellcheck="false" />
+                <div class="settings-data-actions ai-provider-actions">
+                  <button class="modal-btn" type="button" data-ai-save="openai">保存</button>
+                  <button class="modal-btn ghost" type="button" data-ai-delete="openai">キーを削除</button>
+                </div>
+                <p id="aiProviderMessage-openai" class="ai-export-status" role="status" aria-live="polite"></p>
+              </article>
+            </div>
+          </section>
+
           <div class="settings-col">
             <h3 class="modal-sub">セットアップ</h3>
             <p class="file-save-desc">PC・Tailscale・Androidの接続手順を確認できます。</p>
@@ -256,6 +307,7 @@
     </div>
 
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
+    <script src="ai-provider-settings.js?v=ai-provider-settings-20260820-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260810-update-notice-v3"></script>
     <script src="command-palette.js?v=command-palette-20260820-v1"></script>
     <script src="remote-access.js?v=remote-access-20260820-v6"></script>

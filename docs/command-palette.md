@@ -16,11 +16,13 @@
    <python.exe> -m pip install -r requirements-ai.txt
    ```
 
-2. Hugging Faceからモデルを取得し、次のいずれかへ配置します。
+2. Hugging Face形式のモデルディレクトリ、またはGGUFを次のいずれかへ配置します。
 
    - `%APPDATA%\Sparkle\models\LFM2.5-350M`
-   - `SPARKLE_LLM_MODEL_PATH` で指定したローカルディレクトリ
+   - `SPARKLE_LLM_MODEL_PATH` で指定したローカルディレクトリまたはGGUFファイル
+
+   GGUFを使う場合は、同じディレクトリに公式 `LiquidAI/LFM2.5-350M` の `config.json`、`tokenizer.json`、`tokenizer_config.json`、`chat_template.jinja`、`generation_config.json` を配置します。GGUFの重みはそのまま使い、Transformersが起動時にPyTorch用の重みへ展開します。
 
 3. アプリを再起動します。モデルは `local_files_only=True` で読み込むため、検索時にネットワークから自動取得しません。
 
-モデルが未配置、または任意依存が未導入の場合も、コマンドパレット自体は通常検索として動作します。設定状態は `GET /command-palette/status` で確認できます。
+モデルが未配置、メタデータ不足、または任意依存が未導入の場合も、コマンドパレット自体は通常検索として動作します。設定状態は `GET /command-palette/status` で確認できます。

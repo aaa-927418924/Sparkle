@@ -14,8 +14,10 @@ import os
 import re
 import sqlite3
 import threading
+import traceback
 import unicodedata
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
@@ -25,6 +27,7 @@ from paths import get_app_data_dir
 
 
 MODEL_ID = "LiquidAI/LFM2.5-350M"
+MODEL_DIRECTORY_NAME = "LFM2.5-350M"
 ENTITY_TYPES = ("clip", "note", "task", "project")
 MAX_QUERY_LENGTH = 400
 DEFAULT_LIMIT = 20
@@ -270,10 +273,94 @@ def _configured_model_source() -> Optional[str]:
     configured = os.getenv("SPARKLE_LLM_MODEL_PATH", "").strip()
     if configured:
         return configured
-    default_path = get_app_data_dir() / "models" / "LFM2.5-350M"
+    default_path = get_app_data_dir() / "models" / MODEL_DIRECTORY_NAME
     if default_path.exists():
         return str(default_path)
     return None
+
+
+def _resolve_model_files(source: str) -> tuple[Path, Optional[str]]:
+    """Return the model directory and an optional GGUF filename."""
+    path = Path(source).expanduser()
+    if path.is_file():
+        return path.parent, path.name if path.suffix.casefold() == ".gguf" else None
+    if not path.is_dir():
+        return path, None
+
+    gguf_files = sorted(
+        path.glob("*.gguf"),
+        key=lambda item: (
+            "q6_k" not in item.name.casefold(),
+            item.name.casefold(),
+        ),
+    )
+    return path, gguf_files[0].name if gguf_files else None
+
+
+def _model_payload_to_intent(payload: Any) -> Optional[SearchIntent]:
+    if not isinstance(payload, dict):
+        return None
+
+    aliases = {
+        "clip": "clip",
+        "clips": "clip",
+        "note": "note",
+        "notes": "note",
+        "memo": "note",
+        "memos": "note",
+        "task": "task",
+        "tasks": "task",
+        "todo": "task",
+        "todos": "task",
+        "project": "project",
+        "projects": "project",
+    }
+    raw_entities = payload.get("entity_types")
+    if isinstance(raw_entities, str):
+        raw_entities = [raw_entities]
+    entities: list[str] = []
+    if isinstance(raw_entities, list):
+        for item in raw_entities:
+            mapped = aliases.get(_normalize(str(item)))
+            if mapped and mapped not in entities:
+                entities.append(mapped)
+
+    def optional_text(key: str) -> Optional[str]:
+        value = payload.get(key)
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    def optional_bool(key: str) -> Optional[bool]:
+        value = payload.get(key)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().casefold()
+            if normalized in {"true", "yes", "1"}:
+                return True
+            if normalized in {"false", "no", "0"}:
+                return False
+        return None
+
+    try:
+        limit = max(1, min(int(payload.get("limit", DEFAULT_LIMIT)), 50))
+    except (TypeError, ValueError):
+        limit = DEFAULT_LIMIT
+
+    return SearchIntent(
+        entity_types=entities or list(ENTITY_TYPES),
+        text_query=str(payload.get("text_query") or "").strip(),
+        is_done=optional_bool("is_done"),
+        is_favorite=optional_bool("is_favorite"),
+        due_from=optional_text("due_from"),
+        due_to=optional_text("due_to"),
+        project_name=optional_text("project_name"),
+        category=optional_text("category"),
+        tag=optional_text("tag"),
+        limit=limit,
+    )
 
 
 class _LocalIntentParser:
@@ -284,6 +371,7 @@ class _LocalIntentParser:
         self._torch = None
         self._device = None
         self._attempted = False
+        self._last_error_type: Optional[str] = None
 
     def parse(self, query: str) -> Optional[SearchIntent]:
         if not self._load():
@@ -294,12 +382,18 @@ class _LocalIntentParser:
                     "role": "system",
                     "content": (
                         "You are Sparkle's Japanese search parser. "
-                        "Return JSON only. Never answer the user and never write SQL. "
-                        "Allowed entity_types are clip, note, task, project. "
-                        "Use ISO dates when a date filter is explicit. "
-                        "Schema: entity_types(array), text_query(string), is_done(boolean|null), "
-                        "is_favorite(boolean|null), due_from(string|null), due_to(string|null), "
-                        "project_name(string|null), category(string|null), tag(string|null), limit(number)."
+                        "Return exactly one compact JSON object without Markdown. "
+                        "Never answer the user and never write SQL. Always include every key. "
+                        "entity_types must contain only singular values from "
+                        "[\"clip\",\"note\",\"task\",\"project\"]. "
+                        "Use null for absent filters and an integer from 1 to 50 for limit. "
+                        "Schema keys: entity_types, text_query, is_done, is_favorite, "
+                        "due_from, due_to, project_name, category, tag, limit. "
+                        "Example for 未完了タスク: "
+                        "{\"entity_types\":[\"task\"],\"text_query\":\"\","
+                        "\"is_done\":false,\"is_favorite\":null,\"due_from\":null,"
+                        "\"due_to\":null,\"project_name\":null,\"category\":null,"
+                        "\"tag\":null,\"limit\":20}."
                     ),
                 },
                 {"role": "user", "content": query[:MAX_QUERY_LENGTH]},
@@ -319,8 +413,9 @@ class _LocalIntentParser:
             with self._torch.inference_mode():
                 output = self._model.generate(
                     **model_inputs,
-                    max_new_tokens=192,
+                    max_new_tokens=256,
                     do_sample=False,
+                    repetition_penalty=1.05,
                     pad_token_id=self._tokenizer.eos_token_id,
                 )
             generated = output[0][input_length:]
@@ -329,7 +424,7 @@ class _LocalIntentParser:
             if start < 0:
                 return None
             payload, _ = json.JSONDecoder().raw_decode(text[start:])
-            return SearchIntent.model_validate(payload)
+            return _model_payload_to_intent(payload)
         except Exception:
             return None
 
@@ -345,25 +440,62 @@ class _LocalIntentParser:
                 return False
             self._attempted = True
             source = _configured_model_source()
-            if not source or importlib.util.find_spec("transformers") is None:
+            if (
+                not source
+                or importlib.util.find_spec("transformers") is None
+                or importlib.util.find_spec("torch") is None
+            ):
                 return False
             try:
                 import torch
+                import gguf
+
+                # PyInstaller can preserve gguf's distribution metadata while
+                # omitting the package-to-distribution mapping used by
+                # Transformers. Restore the version on the imported module so
+                # Transformers' GGUF capability check does not parse "N/A".
+                if not getattr(gguf, "__version__", None):
+                    try:
+                        from importlib.metadata import version as distribution_version
+
+                        gguf.__version__ = distribution_version("gguf")
+                    except Exception:
+                        gguf.__version__ = "0.19.0"
+
                 from transformers import AutoModelForCausalLM, AutoTokenizer
 
                 self._torch = torch
                 self._device = "cuda" if torch.cuda.is_available() else "cpu"
-                kwargs: dict[str, Any] = {"local_files_only": True}
-                if self._device == "cuda":
-                    kwargs["torch_dtype"] = torch.float16
-                self._tokenizer = AutoTokenizer.from_pretrained(source, **kwargs)
-                self._model = AutoModelForCausalLM.from_pretrained(source, **kwargs)
+                model_dir, gguf_file = _resolve_model_files(source)
+                self._tokenizer = AutoTokenizer.from_pretrained(
+                    str(model_dir),
+                    local_files_only=True,
+                )
+                model_kwargs: dict[str, Any] = {"local_files_only": True}
+                if gguf_file:
+                    model_kwargs["gguf_file"] = gguf_file
+                    model_kwargs["dtype"] = (
+                        torch.float16 if self._device == "cuda" else torch.float32
+                    )
+                elif self._device == "cuda":
+                    model_kwargs["dtype"] = torch.float16
+                self._model = AutoModelForCausalLM.from_pretrained(
+                    str(model_dir),
+                    **model_kwargs,
+                )
                 self._model.to(self._device)
                 self._model.eval()
+                self._last_error_type = None
                 return True
-            except Exception:
+            except Exception as exc:
                 self._tokenizer = None
                 self._model = None
+                self._last_error_type = type(exc).__name__
+                # The desktop build has no console. Keep the full traceback in
+                # the app's redirected stdio log so packaging/runtime failures
+                # can be diagnosed without exposing implementation details in
+                # the normal status response.
+                traceback.print_exc()
                 return False
 
 
@@ -687,17 +819,53 @@ def search_command_palette(
 def get_command_palette_status() -> CommandPaletteStatusOut:
     source = _configured_model_source()
     transformers_available = importlib.util.find_spec("transformers") is not None
+    torch_available = importlib.util.find_spec("torch") is not None
     configured = bool(source)
-    available = configured and transformers_available
+    model_dir: Optional[Path] = None
+    gguf_file: Optional[str] = None
+    source_exists = False
+    metadata_ready = True
+    if source:
+        model_dir, gguf_file = _resolve_model_files(source)
+        source_exists = Path(source).exists()
+        if gguf_file:
+            metadata_ready = all(
+                (model_dir / filename).is_file()
+                for filename in ("config.json", "tokenizer.json", "tokenizer_config.json")
+            )
+    gguf_runtime_available = gguf_file is None or (
+        importlib.util.find_spec("gguf") is not None
+        and importlib.util.find_spec("accelerate") is not None
+    )
+    available = (
+        configured
+        and source_exists
+        and metadata_ready
+        and transformers_available
+        and torch_available
+        and gguf_runtime_available
+    )
     if not configured:
         message = "モデル未設定。通常検索を使用します。"
-    elif not transformers_available:
-        message = "transformers未導入。通常検索を使用します。"
+    elif not source_exists:
+        message = "モデルパスが見つかりません。通常検索を使用します。"
+    elif not metadata_ready:
+        message = "GGUF用の設定・トークナイザーが不足しています。"
+    elif not transformers_available or not torch_available:
+        message = "torch/transformers未導入。通常検索を使用します。"
+    elif not gguf_runtime_available:
+        message = "GGUF用のgguf/accelerateが未導入です。"
+    elif _LOCAL_INTENT_PARSER._last_error_type:
+        message = f"モデル初期化失敗（{_LOCAL_INTENT_PARSER._last_error_type}）。"
     else:
-        message = "ローカルモデルを使用できます。"
+        message = (
+            "ローカルGGUFモデルを使用できます。"
+            if gguf_file
+            else "ローカルモデルを使用できます。"
+        )
     return CommandPaletteStatusOut(
         model_id=MODEL_ID,
-        backend="transformers",
+        backend="transformers-gguf" if gguf_file else "transformers",
         configured=configured,
         available=available,
         message=message,

@@ -1,12 +1,43 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
+
+
+ai_hiddenimports = [
+    'torch',
+    'transformers',
+    'transformers.integrations.ggml',
+    'transformers.modeling_gguf_pytorch_utils',
+    'tokenizers',
+    'safetensors',
+    'gguf',
+    'accelerate',
+]
+for package in ('transformers.models.lfm2', 'gguf', 'accelerate'):
+    ai_hiddenimports += collect_submodules(package)
+
+ai_datas = []
+for distribution in (
+    'torch',
+    'transformers',
+    'tokenizers',
+    'safetensors',
+    'gguf',
+    'accelerate',
+    'huggingface-hub',
+):
+    try:
+        ai_datas += copy_metadata(distribution)
+    except Exception:
+        pass
+
 
 a = Analysis(
     ['app_entry.py'],
     pathex=[],
     binaries=[],
-    datas=[('frontend', 'frontend'), ('Icon.png', '.')],
-    hiddenimports=['remote_auth', 'remote_gateway', 'remote_runtime', 'remote_mcp', 'mcp.server.auth.provider', 'mcp.server.auth.settings', 'mcp.server.streamable_http', 'uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan', 'uvicorn.lifespan.on', 'pystray._win32', 'webview.platforms.winforms', 'webview.platforms.edgechromium'],
+    datas=[('frontend', 'frontend'), ('Icon.png', '.')] + ai_datas,
+    hiddenimports=['remote_auth', 'remote_gateway', 'remote_runtime', 'remote_mcp', 'mcp.server.auth.provider', 'mcp.server.auth.settings', 'mcp.server.streamable_http', 'uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan', 'uvicorn.lifespan.on', 'pystray._win32', 'webview.platforms.winforms', 'webview.platforms.edgechromium'] + ai_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

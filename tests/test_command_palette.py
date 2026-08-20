@@ -1,9 +1,13 @@
 import sqlite3
+import tempfile
 import unittest
+from pathlib import Path
 
 from command_palette import (
     CommandPaletteSearchRequest,
     _heuristic_intent,
+    _model_payload_to_intent,
+    _resolve_model_files,
     search_command_palette,
 )
 from db import _SCHEMA, _migrate
@@ -18,6 +22,40 @@ def make_connection():
 
 
 class CommandPaletteTests(unittest.TestCase):
+    def test_gguf_file_is_resolved_from_model_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model_dir = Path(directory)
+            (model_dir / "another-Q4.gguf").touch()
+            preferred = model_dir / "LFM2.5-350M-Q6_K.gguf"
+            preferred.touch()
+
+            resolved_dir, gguf_file = _resolve_model_files(str(model_dir))
+
+            self.assertEqual(resolved_dir, model_dir)
+            self.assertEqual(gguf_file, preferred.name)
+
+    def test_model_payload_normalizes_entities_and_empty_filters(self):
+        intent = _model_payload_to_intent(
+            {
+                "entity_types": ["tasks", "pending", "notes"],
+                "text_query": "映像編集",
+                "is_done": "false",
+                "is_favorite": "",
+                "due_from": "",
+                "due_to": None,
+                "project_name": "",
+                "category": None,
+                "tag": "",
+                "limit": 99,
+            }
+        )
+
+        self.assertIsNotNone(intent)
+        self.assertEqual(intent.entity_types, ["task", "note"])
+        self.assertFalse(intent.is_done)
+        self.assertIsNone(intent.due_from)
+        self.assertEqual(intent.limit, 50)
+
     def test_heuristic_parses_japanese_task_filters(self):
         intent = _heuristic_intent("今週の未完了タスク")
 

@@ -2,6 +2,8 @@
 # The command palette still works with SQLite/heuristic search when these are
 # not installed. Install them into the same Python environment as Sparkle.
 torch>=2.2
-transformers>=4.56
+transformers>=5.15.1
+accelerate>=1.14
+gguf>=0.19
 safetensors>=0.5
 huggingface_hub>=0.30

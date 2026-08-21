@@ -3021,6 +3021,426 @@ html.projects-route-pending #listView {
   }
 }
 
+/* プロジェクトのクリップ添付は、ホームのカードを簡略化したライブラリUIで表示する。 */
+#clipModal .clip-picker-dialog {
+  width: min(1040px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: min(900px, calc(100vh - 32px));
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+#clipModal .clip-picker-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+#clipModal .clip-picker-kicker,
+#clipModal .clip-picker-section-kicker {
+  margin: 0 0 7px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+#clipModal .clip-picker-dialog .modal-title {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+#clipModal .clip-picker-subtitle {
+  max-width: 560px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+#clipModal .clip-picker-close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 23px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+#clipModal .clip-picker-close:hover,
+#clipModal .clip-picker-close:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+#clipModal .clip-picker-section {
+  margin: 0;
+}
+
+#clipModal .clip-picker-library {
+  margin-top: 26px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+#clipModal .clip-picker-section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 13px;
+}
+
+#clipModal .clip-picker-section-kicker {
+  margin-bottom: 4px;
+  color: var(--accent);
+  font-size: 9px;
+}
+
+#clipModal .clip-picker-section-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+#clipModal .clip-picker-count {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+}
+
+#clipModal .pm-clip-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px 150px;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+#clipModal .pm-clip-filters .modal-input {
+  min-width: 0;
+  min-height: 42px;
+  box-sizing: border-box;
+}
+
+#clipModal .pm-clip-filters select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+#clipModal .pm-clip-help {
+  margin: 0 0 13px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+#clipModal .pm-clip-linked-list,
+#clipModal .pm-clip-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  align-items: start;
+  gap: 16px;
+  padding: 2px;
+  overflow-y: auto;
+}
+
+#clipModal .pm-clip-linked-list {
+  max-height: min(280px, 30vh);
+}
+
+#clipModal .pm-clip-list {
+  max-height: min(500px, 50vh);
+}
+
+#clipModal .pm-home-clip-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  color: var(--text);
+  text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+#clipModal button.pm-home-clip-card {
+  width: 100%;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+#clipModal .pm-home-clip-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.14);
+  transform: translateY(-2px);
+}
+
+#clipModal .pm-home-clip-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+#clipModal .pm-clip-media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--border);
+}
+
+#clipModal .pm-clip-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border-radius: 0;
+  object-fit: cover;
+  background: var(--border);
+}
+
+#clipModal .pm-clip-thumb.ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--border),
+    var(--border) 12px,
+    color-mix(in srgb, var(--border) 80%, #000) 12px,
+    color-mix(in srgb, var(--border) 80%, #000) 24px
+  );
+  color: var(--muted);
+  font-size: 28px;
+}
+
+#clipModal .pm-clip-add-badge,
+#clipModal .pm-clip-state-badge {
+  position: absolute;
+  top: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--surface) 60%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.18);
+  color: var(--accent);
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1;
+  backdrop-filter: blur(8px);
+}
+
+#clipModal .pm-clip-add-badge {
+  right: 10px;
+}
+
+#clipModal .pm-clip-state-badge {
+  left: 10px;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+#clipModal .pm-clip-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 13px 14px 15px;
+}
+
+#clipModal .pm-clip-info::before {
+  display: block;
+  width: 28px;
+  height: 2px;
+  margin-bottom: 9px;
+  background: var(--accent);
+  content: "";
+}
+
+#clipModal .pm-clip-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+#clipModal .pm-clip-comment {
+  display: -webkit-box;
+  margin-top: 5px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+#clipModal .pm-clip-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 9px;
+}
+
+#clipModal .pm-clip-tag,
+#clipModal .pm-clip-cat {
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+  padding: 4px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#clipModal .pm-clip-card-status {
+  margin-top: 12px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+#clipModal .pm-clip-card-status.is-linked {
+  color: var(--muted);
+}
+
+#clipModal .pm-linked-item .item-unlink {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--surface) 60%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  color: var(--muted);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+#clipModal .pm-linked-item .item-unlink:hover,
+#clipModal .pm-linked-item .item-unlink:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+#clipModal .pm-clip-empty,
+#clipModal .pm-clip-empty-state {
+  grid-column: 1 / -1;
+  min-height: 88px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 28px 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 14px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  #clipModal .clip-picker-dialog {
+    width: min(680px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+    padding: 20px;
+  }
+
+  #clipModal .pm-clip-filters {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  #clipModal .pm-clip-filters input {
+    grid-column: 1 / -1;
+  }
+
+  #clipModal .pm-clip-linked-list,
+  #clipModal .pm-clip-list {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+}
+
+@media (max-width: 430px) {
+  #clipModal .clip-picker-dialog {
+    padding: 16px;
+  }
+
+  #clipModal .clip-picker-header {
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  #clipModal .clip-picker-dialog .modal-title {
+    font-size: 20px;
+  }
+
+  #clipModal .pm-clip-linked-list,
+  #clipModal .pm-clip-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  #clipModal .pm-clip-info {
+    padding: 11px 11px 12px;
+  }
+
+  #clipModal .pm-clip-title {
+    font-size: 12px;
+  }
+
+  #clipModal .pm-clip-comment {
+    font-size: 11px;
+  }
+}
+
 /* ==================== 複数選択 ==================== */
 
 .rubber-band {

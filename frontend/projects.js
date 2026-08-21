@@ -50,10 +50,12 @@ const els = {
   clipModal: $("clipModal"),
   clipLinked: $("clipLinked"),
   clipLinkedEmpty: $("clipLinkedEmpty"),
+  clipLinkedCount: $("clipLinkedCount"),
   clipSearch: $("clipSearch"),
   clipCatFilter: $("clipCatFilter"),
   clipTagFilter: $("clipTagFilter"),
   clipPickerList: $("clipPickerList"),
+  clipPickerCount: $("clipPickerCount"),
   taskModal: $("taskModal"),
   taskLinked: $("taskLinked"),
   taskLinkedEmpty: $("taskLinkedEmpty"),
@@ -115,6 +117,49 @@ function clipImageUrl(c) {
     return API + "/clips/" + c.id + "/file";
   }
   return null;
+}
+
+function clipThumbHtml(c) {
+  const imgUrl = clipImageUrl(c);
+  if (imgUrl) {
+    return `<img class="pm-clip-thumb" src="${escapeHtml(imgUrl)}" alt="" loading="lazy" draggable="false" />`;
+  }
+  return `<div class="pm-clip-thumb ph" aria-hidden="true">${fileIconHtml(c.url) || "🖼"}</div>`;
+}
+
+function clipTagsHtml(c) {
+  const catName = c.category_id ? (state.catMap.get(c.category_id) || "") : "";
+  const seenTagNames = new Set(catName ? [catName.trim().toLocaleLowerCase()] : []);
+  const tags = (c.tags || [])
+    .map((t) => String(t?.name || "").trim())
+    .filter((name) => {
+      const key = name.toLocaleLowerCase();
+      if (!name || seenTagNames.has(key)) return false;
+      seenTagNames.add(key);
+      return true;
+    })
+    .map((name) => `<span class="pm-clip-tag">${escapeHtml(name)}</span>`)
+    .join("");
+
+  if (!catName && !tags) return "";
+  return `
+    <div class="pm-clip-tags">
+      ${catName ? `<span class="pm-clip-cat">${escapeHtml(catName)}</span>` : ""}
+      ${tags}
+    </div>
+  `;
+}
+
+function clipCardInfoHtml(c, { linked = false } = {}) {
+  const title = c.title || c.url || "（無題）";
+  return `
+    <div class="pm-clip-info">
+      <div class="pm-clip-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+      ${c.comment ? `<div class="pm-clip-comment">${escapeHtml(c.comment)}</div>` : ""}
+      ${clipTagsHtml(c)}
+      <div class="pm-clip-card-status${linked ? " is-linked" : ""}">${linked ? "このプロジェクトに添付中" : "＋ プロジェクトに添付"}</div>
+    </div>
+  `;
 }
 
 function projectAlbumHtml(projectId) {
@@ -797,26 +842,19 @@ async function openClipModal() {
 
 function renderClipLinked() {
   const linked = state.clips.filter((c) => linkedToProject(c, state.currentProjectId));
+  els.clipLinkedCount.textContent = `${linked.length}件`;
   els.clipLinkedEmpty.hidden = linked.length > 0;
   els.clipLinked.hidden = linked.length === 0;
   els.clipLinked.innerHTML = linked.map((c) => {
-    let thumb;
-    const imgUrl = clipImageUrl(c);
-    if (imgUrl) {
-      thumb = `<img class="pm-clip-thumb" src="${escapeHtml(imgUrl)}" alt="" loading="lazy" />`;
-    } else {
-      thumb = `<div class="pm-clip-thumb ph">${fileIconHtml(c.url)}</div>`;
-    }
-    const catName = c.category_id ? (state.catMap.get(c.category_id) || "") : "";
     return `
-      <div class="pm-linked-item">
-        ${thumb}
-        <div class="pm-clip-info">
-          <div class="pm-clip-title">${escapeHtml(c.title || c.url || "（無題）")}</div>
-          ${catName ? `<div class="pm-clip-tags"><span class="pm-clip-cat">${escapeHtml(catName)}</span></div>` : ""}
+      <article class="pm-linked-item pm-home-clip-card">
+        <div class="pm-clip-media">
+          ${clipThumbHtml(c)}
+          <span class="pm-clip-state-badge">添付済み</span>
         </div>
-        <button type="button" class="item-unlink" data-id="${c.id}" title="解除" aria-label="${escapeHtml(c.title || c.url || "（無題）")}をプロジェクトから外す">✕</button>
-      </div>
+        ${clipCardInfoHtml(c, { linked: true })}
+        <button type="button" class="item-unlink" data-id="${c.id}" title="解除" aria-label="${escapeHtml(c.title || c.url || "（無題）")}をプロジェクトから外す">×</button>
+      </article>
     `;
   }).join("");
   els.clipLinked.querySelectorAll(".item-unlink").forEach((btn) => {
@@ -847,42 +885,22 @@ async function renderClipPicker() {
     clips = clips.filter((c) => c.tags && c.tags.some((t) => t.name === tag));
   }
 
+  els.clipPickerCount.textContent = `${clips.length}件`;
+
   if (clips.length === 0) {
     els.clipPickerList.innerHTML = '<div class="pm-clip-empty">該当するクリップがありません</div>';
     return;
   }
 
   els.clipPickerList.innerHTML = clips.map((c) => {
-    let thumb;
-    const imgUrl = clipImageUrl(c);
-    if (imgUrl) {
-      thumb = `<img class="pm-clip-thumb" src="${escapeHtml(imgUrl)}" alt="" loading="lazy" />`;
-    } else {
-      thumb = `<div class="pm-clip-thumb ph">${fileIconHtml(c.url)}</div>`;
-    }
-    const catName = c.category_id ? (state.catMap.get(c.category_id) || "") : "";
-    const seenTagNames = new Set(catName ? [catName.trim().toLocaleLowerCase()] : []);
-    const tags = (c.tags || [])
-      .map((t) => String(t?.name || "").trim())
-      .filter((name) => {
-        const key = name.toLocaleLowerCase();
-        if (!name || seenTagNames.has(key)) return false;
-        seenTagNames.add(key);
-        return true;
-      })
-      .map((name) => `<span class="pm-clip-tag">${escapeHtml(name)}</span>`)
-      .join("");
+    const title = c.title || c.url || "（無題）";
     return `
-      <button type="button" class="pm-clip-item" data-id="${c.id}" aria-label="${escapeHtml(c.title || c.url || "（無題）")}をプロジェクトに添付">
-        ${thumb}
-        <div class="pm-clip-info">
-          <div class="pm-clip-title">${escapeHtml(c.title || c.url || "（無題）")}</div>
-          ${c.comment ? `<div class="pm-clip-comment">${escapeHtml(c.comment)}</div>` : ""}
-          <div class="pm-clip-tags">
-            ${catName ? `<span class="pm-clip-cat">${escapeHtml(catName)}</span>` : ""}
-            ${tags}
-          </div>
+      <button type="button" class="pm-clip-item pm-home-clip-card" data-id="${c.id}" aria-label="${escapeHtml(title)}をプロジェクトに添付">
+        <div class="pm-clip-media">
+          ${clipThumbHtml(c)}
+          <span class="pm-clip-add-badge" aria-hidden="true">＋</span>
         </div>
+        ${clipCardInfoHtml(c)}
       </button>
     `;
   }).join("");

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle — プロジェクト</title>
-    <link rel="stylesheet" href="style.css?v=project-clip-attach-grid-20260821-v1" />
+    <link rel="stylesheet" href="style.css?v=project-clip-picker-home-card-20260821-v2" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
     <script>
       document.documentElement.setAttribute("data-theme", "dark");
@@ -209,28 +209,48 @@
     </div>
 
     <!-- クリップ選択モーダル -->
-    <div id="clipModal" class="modal" hidden>
-      <div class="modal-box wide">
-        <h2 class="modal-title">クリップを紐づけ</h2>
-        <div class="pm-section">
-          <label class="modal-label">このプロジェクトのクリップ</label>
-          <div id="clipLinked" class="pm-linked-list pm-clip-linked-list"></div>
-          <div id="clipLinkedEmpty" class="pm-empty">まだクリップがありません</div>
+    <div id="clipModal" class="modal clip-picker-modal" role="dialog" aria-modal="true" aria-labelledby="clipModalTitle" hidden>
+      <div class="modal-box wide clip-picker-dialog">
+        <div class="clip-picker-header">
+          <div>
+            <p class="clip-picker-kicker">PROJECT CLIPS</p>
+            <h2 id="clipModalTitle" class="modal-title">クリップを紐づけ</h2>
+            <p class="clip-picker-subtitle">サムネイルから選んで、このプロジェクトの資料に追加できます。</p>
+          </div>
+          <button id="clipModalCancel" class="clip-picker-close" type="button" title="閉じる" aria-label="閉じる">×</button>
         </div>
-        <hr class="pm-divider" />
-        <div class="pm-section">
-          <label class="modal-label">既存のクリップを選択</label>
+
+        <section class="pm-section clip-picker-section" aria-labelledby="clipLinkedHeading">
+          <div class="clip-picker-section-heading">
+            <div>
+              <p class="clip-picker-section-kicker">ATTACHED</p>
+              <h3 id="clipLinkedHeading" class="clip-picker-section-title">このプロジェクトのクリップ</h3>
+            </div>
+            <span id="clipLinkedCount" class="clip-picker-count" aria-live="polite">0件</span>
+          </div>
+          <div id="clipLinked" class="pm-linked-list pm-clip-linked-list"></div>
+          <div id="clipLinkedEmpty" class="pm-empty pm-clip-empty-state">まだクリップがありません</div>
+        </section>
+
+        <section class="pm-section clip-picker-section clip-picker-library" aria-labelledby="clipPickerHeading">
+          <div class="clip-picker-section-heading">
+            <div>
+              <p class="clip-picker-section-kicker">LIBRARY</p>
+              <h3 id="clipPickerHeading" class="clip-picker-section-title">追加するクリップ</h3>
+            </div>
+            <span id="clipPickerCount" class="clip-picker-count" aria-live="polite">0件</span>
+          </div>
           <div class="pm-clip-filters">
-            <input id="clipSearch" class="modal-input" type="text" placeholder="タイトル・コメントで検索…" autocomplete="off" />
-            <select id="clipCatFilter" class="modal-input"></select>
-            <select id="clipTagFilter" class="modal-input"></select>
+            <label class="sr-only" for="clipSearch">クリップを検索</label>
+            <input id="clipSearch" class="modal-input" type="search" placeholder="タイトル・コメントで検索…" autocomplete="off" />
+            <label class="sr-only" for="clipCatFilter">カテゴリで絞り込み</label>
+            <select id="clipCatFilter" class="modal-input" aria-label="カテゴリで絞り込み"></select>
+            <label class="sr-only" for="clipTagFilter">タグで絞り込み</label>
+            <select id="clipTagFilter" class="modal-input" aria-label="タグで絞り込み"></select>
           </div>
           <p class="pm-clip-help">カードをクリックすると、このプロジェクトにクリップを添付できます。</p>
           <div id="clipPickerList" class="pm-clip-list"></div>
-        </div>
-        <div class="modal-actions">
-          <button id="clipModalCancel" class="modal-btn ghost">閉じる</button>
-        </div>
+        </section>
       </div>
     </div>
 
@@ -360,7 +380,7 @@
     </div>
 
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
-    <script src="projects.js?v=projects-clip-attach-grid-20260821-v1"></script>
+    <script src="projects.js?v=projects-clip-picker-home-card-20260821-v2"></script>
     <script src="project-assistant.js?v=project-assistant-conversation-context-20260821-v8"></script>
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2"></script>
     <script src="page-transition.js?v=page-swipe-20260821-focus-safe-v1"></script>

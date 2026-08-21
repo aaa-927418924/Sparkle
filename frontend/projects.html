@@ -121,6 +121,12 @@
             </div>
           </div>
         </div>
+        <!-- プロジェクト内クリップの一括操作バー（選択時のみ表示） -->
+        <div id="detailClipBatchBar" class="batch-bar detail-clip-batch-bar" aria-hidden="true" aria-live="polite">
+          <span id="detailClipBatchCount" class="batch-count"></span>
+          <button id="detailClipClearBtn" class="modal-btn ghost" type="button">選択解除</button>
+          <button id="detailClipDeleteBtn" class="modal-btn ghost" type="button" style="color:#db7a5c">削除</button>
+        </div>
         <!-- 一括操作バー -->
         <div id="batchBar" class="batch-bar">
           <span id="batchCount" class="batch-count"></span>

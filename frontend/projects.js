@@ -72,6 +72,10 @@ const els = {
   noteUnlinkedSelect: $("noteUnlinkedSelect"),
   noteTitle: $("noteTitle"),
   noteBody: $("noteBody"),
+  detailClipBatchBar: $("detailClipBatchBar"),
+  detailClipBatchCount: $("detailClipBatchCount"),
+  detailClipClearBtn: $("detailClipClearBtn"),
+  detailClipDeleteBtn: $("detailClipDeleteBtn"),
   batchBar: $("batchBar"),
   batchCount: $("batchCount"),
   batchDuplicateBtn: $("batchDuplicateBtn"),
@@ -390,6 +394,7 @@ function renderDetailClips(clips) {
   for (const clipId of state.detailClipSelectedIds) {
     if (!availableIds.has(clipId)) state.detailClipSelectedIds.delete(clipId);
   }
+  updateDetailClipBatchBar();
   els.detailClips.replaceChildren();
   els.detailClipsEmpty.hidden = clips.length > 0;
   els.detailClips.hidden = clips.length === 0;
@@ -948,6 +953,8 @@ function bindEvents() {
     immediate: e.shiftKey,
   }));
   $("detailDoneCb").addEventListener("change", () => toggleProject(state.currentProjectId));
+  els.detailClipClearBtn.addEventListener("click", () => clearDetailClipSelection());
+  els.detailClipDeleteBtn.addEventListener("click", (e) => deleteSelectedDetailClips(e));
 
   // Filter tabs
   $("projFilterTabs").addEventListener("click", (e) => {
@@ -1052,6 +1059,7 @@ function setDetailClipSelected(id, selected) {
   else state.detailClipSelectedIds.delete(clipId);
   const card = els.detailClips.querySelector(`.card[data-clip-id="${clipId}"]`);
   card?.classList.toggle("selected", selected);
+  updateDetailClipBatchBar();
 }
 
 function toggleDetailClipSelection(id) {
@@ -1062,6 +1070,45 @@ function toggleDetailClipSelection(id) {
 function clearDetailClipSelection() {
   state.detailClipSelectedIds.clear();
   els.detailClips?.querySelectorAll(".card.selected").forEach((card) => card.classList.remove("selected"));
+  updateDetailClipBatchBar();
+}
+
+function updateDetailClipBatchBar() {
+  const count = state.detailClipSelectedIds.size;
+  if (!els.detailClipBatchBar) return;
+  els.detailClipBatchBar.classList.toggle("visible", count > 0);
+  els.detailClipBatchBar.setAttribute("aria-hidden", count > 0 ? "false" : "true");
+  if (els.detailClipBatchCount) els.detailClipBatchCount.textContent = `${count}件選択`;
+}
+
+async function deleteSelectedDetailClips(event) {
+  const ids = [...state.detailClipSelectedIds];
+  if (!ids.length || !state.currentProjectId || els.detailClipDeleteBtn?.disabled) return;
+  if (!(await window.confirmDeletion(`${ids.length}件のクリップをこのプロジェクトから削除します。`, {
+    anchor: els.detailClipDeleteBtn,
+    immediate: Boolean(event?.shiftKey),
+  }))) return;
+
+  const projectId = state.currentProjectId;
+  els.detailClipDeleteBtn.disabled = true;
+  els.detailClipBatchBar?.setAttribute("aria-busy", "true");
+  let ok = 0;
+  let fail = 0;
+  for (const clipId of ids) {
+    try {
+      await api(`/projects/${projectId}/clips/${clipId}`, { method: "DELETE" });
+      ok++;
+    } catch {
+      fail++;
+    }
+  }
+  els.detailClipDeleteBtn.disabled = false;
+  els.detailClipBatchBar?.removeAttribute("aria-busy");
+  clearDetailClipSelection();
+  await refreshState();
+  await reloadDetail();
+  await refreshProjectPin(projectId);
+  if (fail) alert(`${ok}件削除、${fail}件失敗しました。`);
 }
 
 function cancelDetailClipRubberBand() {

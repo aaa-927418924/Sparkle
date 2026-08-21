@@ -39,14 +39,19 @@ class FrontendInteractionTests(unittest.TestCase):
 
         self.assertNotIn('id="detailClipSelectionBar"', html)
         self.assertNotIn('id="clearDetailClipSelectionBtn"', html)
+        self.assertIn('id="detailClipBatchBar"', html)
+        self.assertIn('id="detailClipDeleteBtn"', html)
         self.assertNotIn('class="card-select-toggle"', source)
         self.assertIn("detailClipSelectedIds", source)
+        self.assertIn("function deleteSelectedDetailClips(event)", source)
+        self.assertIn("/projects/${projectId}/clips/${clipId}", source)
         self.assertIn("els.detailClips.addEventListener(\"mousedown\"", source)
         self.assertIn("function finishDetailClipRubberBand(event)", source)
         self.assertIn("toggleDetailClipSelection(clipId)", source)
         self.assertIn("detailClipAutoScrollStep", source)
         self.assertIn('e.target.closest("#detailClips")', source)
         self.assertIn("#detailClips.is-range-selecting", css)
+        self.assertIn(".card.selected:hover", css)
         self.assertNotIn(".card-select-toggle", css)
 
     def test_project_assistant_drawer_uses_fast_transparent_toggle_composer(self):

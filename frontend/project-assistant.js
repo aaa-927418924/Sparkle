@@ -237,7 +237,9 @@
 
   function updateStreamingAnswer(request, text, replace = false) {
     if (!request) return;
-    request.answerText = replace ? String(text || "") : `${request.answerText || ""}${String(text || "")}`;
+    const nextText = String(text || "");
+    if (nextText.length > 0) hideThinkingPreview(request);
+    request.answerText = replace ? nextText : `${request.answerText || ""}${nextText}`;
     const answer = request.generation?.querySelector(".project-assistant-streaming-answer");
     if (!answer) return;
     answer.textContent = request.answerText;
@@ -245,30 +247,35 @@
   }
 
   function updateThinkingPreview(request, text) {
-    if (!request || !text) return;
+    if (!request || request.thinkingComplete || !text) return;
     request.thinkingText = `${request.thinkingText || ""}${String(text)}`;
     const details = ensureThinkingPreview(request);
     if (!details) return;
     const content = details.querySelector(".project-assistant-thinking-preview-content");
     if (content) content.textContent = request.thinkingText;
-    details.open = true;
+  }
+
+  function hideThinkingPreview(request) {
+    if (!request) return;
+    request.thinkingComplete = true;
+    request.generation?.querySelector(".project-assistant-thinking-preview")?.remove();
   }
 
   function ensureThinkingPreview(request) {
-    if (!request?.generation) return null;
-    let details = request.generation.querySelector(".project-assistant-thinking-preview");
-    if (details) return details;
-    details = document.createElement("details");
-    details.className = "project-assistant-thinking-preview";
-    details.open = true;
-    const summary = document.createElement("summary");
-    summary.textContent = "思考プレビュー";
+    if (!request?.generation || request.thinkingComplete) return null;
+    let preview = request.generation.querySelector(".project-assistant-thinking-preview");
+    if (preview) return preview;
+    preview = document.createElement("div");
+    preview.className = "project-assistant-thinking-preview";
+    const label = document.createElement("div");
+    label.className = "project-assistant-thinking-preview-label";
+    label.textContent = "思考プレビュー";
     const content = document.createElement("div");
     content.className = "project-assistant-thinking-preview-content";
-    details.append(summary, content);
+    preview.append(label, content);
     const body = request.generation.querySelector(".project-assistant-message-content");
-    body?.append(details);
-    return details;
+    body?.append(preview);
+    return preview;
   }
 
   function createMessageIconButton(iconName, label) {
@@ -409,9 +416,9 @@
       pendingRequestId: request.id,
       scope: request.scope,
     });
-    if (request.thinkingText) ensureThinkingPreview(request);
+    if (!request.thinkingComplete) ensureThinkingPreview(request);
     if (request.answerText) updateStreamingAnswer(request, request.answerText, true);
-    if (request.thinkingText) {
+    if (request.thinkingText && !request.thinkingComplete) {
       const content = request.generation.querySelector(".project-assistant-thinking-preview-content");
       if (content) content.textContent = request.thinkingText;
     }
@@ -756,6 +763,7 @@
       generation: null,
       answerText: "",
       thinkingText: "",
+      thinkingComplete: false,
       result: null,
     };
     state.activeRequest = request;

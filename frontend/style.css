@@ -5082,10 +5082,12 @@ body.project-assistant-open {
   font-size: 11px;
 }
 
-.project-assistant-thinking-preview summary {
-  cursor: pointer;
+.project-assistant-thinking-preview-label {
+  display: block;
   color: var(--muted);
   font-weight: 700;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .project-assistant-thinking-preview-content {

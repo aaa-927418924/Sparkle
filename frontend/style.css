@@ -4195,6 +4195,26 @@ body.project-assistant-open {
   -webkit-user-select: text;
 }
 
+.project-assistant-message-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.project-assistant-message-action {
+  min-width: 44px;
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.project-assistant-message-action:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
 .project-assistant-message-bubble.is-generating .project-assistant-message-content::after,
 .project-assistant-status.is-generating::after {
   content: "";

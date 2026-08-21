@@ -1647,6 +1647,64 @@ def clear_project_assistant_history(db: Connection, project_id: int) -> None:
     db.commit()
 
 
+def _delete_project_assistant_exchange(
+    db: Connection,
+    project_id: int,
+    message_id: int,
+    *,
+    latest_user_only: bool = False,
+) -> None:
+    project = db.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+    if not project:
+        raise ProjectAssistantError(404, "プロジェクトが見つかりません。")
+
+    row = db.execute(
+        "SELECT id, role FROM project_assistant_messages WHERE project_id = ? AND id = ?",
+        (project_id, message_id),
+    ).fetchone()
+    if not row:
+        raise ProjectAssistantError(404, "対象のAIメッセージが見つかりません。")
+    if row["role"] != "user":
+        raise ProjectAssistantError(409, "ユーザーメッセージだけを削除・編集できます。")
+
+    if latest_user_only:
+        latest = db.execute(
+            "SELECT id FROM project_assistant_messages "
+            "WHERE project_id = ? AND role = 'user' ORDER BY id DESC LIMIT 1",
+            (project_id,),
+        ).fetchone()
+        if not latest or int(latest["id"]) != int(message_id):
+            raise ProjectAssistantError(409, "編集できるのは最後のユーザーメッセージだけです。")
+
+    next_row = db.execute(
+        "SELECT id, role FROM project_assistant_messages "
+        "WHERE project_id = ? AND id > ? ORDER BY id ASC LIMIT 1",
+        (project_id, message_id),
+    ).fetchone()
+    ids = [int(message_id)]
+    if next_row and next_row["role"] == "assistant":
+        ids.append(int(next_row["id"]))
+
+    placeholders = ",".join("?" for _ in ids)
+    db.execute(
+        f"DELETE FROM project_assistant_messages WHERE project_id = ? AND id IN ({placeholders})",
+        [project_id, *ids],
+    )
+    db.commit()
+
+
+def delete_project_assistant_message(db: Connection, project_id: int, message_id: int) -> None:
+    """Delete one user turn and its immediately following assistant answer."""
+
+    _delete_project_assistant_exchange(db, project_id, message_id)
+
+
+def prepare_project_assistant_edit(db: Connection, project_id: int, message_id: int) -> None:
+    """Remove the last user turn so a replacement prompt can be submitted."""
+
+    _delete_project_assistant_exchange(db, project_id, message_id, latest_user_only=True)
+
+
 def get_ai_action_permissions(db: Connection) -> AIActionPermissionsOut:
     rows = db.execute("SELECT operation FROM ai_action_permissions WHERE mode = 'always'").fetchall()
     enabled = {row["operation"] for row in rows}

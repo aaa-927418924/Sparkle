@@ -30,6 +30,58 @@ def make_connection():
 
 
 class ProjectAssistantTests(unittest.TestCase):
+    def _insert_history_pair(self, connection, project_id, user_content, answer_content):
+        connection.execute(
+            "INSERT INTO project_assistant_messages "
+            "(project_id, role, content, provider, model, scope, context_item_count) "
+            "VALUES (?, 'user', ?, 'ollama', 'test-model', 'project', 1)",
+            (project_id, user_content),
+        )
+        user_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+        connection.execute(
+            "INSERT INTO project_assistant_messages "
+            "(project_id, role, content, provider, model, scope, context_item_count) "
+            "VALUES (?, 'assistant', ?, 'ollama', 'test-model', 'project', 1)",
+            (project_id, answer_content),
+        )
+        assistant_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return user_id, assistant_id
+
+    def test_delete_assistant_history_message_removes_only_that_turn(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("対象",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            first_user_id, _ = self._insert_history_pair(connection, project_id, "最初の質問", "最初の回答")
+            self._insert_history_pair(connection, project_id, "残す質問", "残す回答")
+            connection.commit()
+
+            assistant.delete_project_assistant_message(connection, project_id, first_user_id)
+
+            history = assistant.get_project_assistant_history(connection, project_id)
+            self.assertEqual([message.content for message in history.messages], ["残す質問", "残す回答"])
+        finally:
+            connection.close()
+
+    def test_prepare_assistant_edit_only_removes_latest_user_turn(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("対象",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            first_user_id, _ = self._insert_history_pair(connection, project_id, "最初の質問", "最初の回答")
+            latest_user_id, _ = self._insert_history_pair(connection, project_id, "最後の質問", "最後の回答")
+            connection.commit()
+
+            with self.assertRaises(assistant.ProjectAssistantError) as raised:
+                assistant.prepare_project_assistant_edit(connection, project_id, first_user_id)
+            self.assertEqual(raised.exception.status_code, 409)
+
+            assistant.prepare_project_assistant_edit(connection, project_id, latest_user_id)
+            history = assistant.get_project_assistant_history(connection, project_id)
+            self.assertEqual([message.content for message in history.messages], ["最初の質問", "最初の回答"])
+        finally:
+            connection.close()
+
     def test_provider_status_never_returns_api_key(self):
         connection = make_connection()
         try:

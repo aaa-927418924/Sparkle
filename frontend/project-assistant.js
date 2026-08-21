@@ -11,6 +11,9 @@
     requestId: 0,
     previousLayoutAriaHidden: null,
     pendingGeneration: null,
+    activeRequest: null,
+    editingMessageId: null,
+    backgroundResult: null,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -32,6 +35,7 @@
     actionList: $("projectAssistantActionList"),
     clearHistory: $("projectAssistantClearHistory"),
     status: $("projectAssistantStatus"),
+    editCancel: $("projectAssistantEditCancel"),
     scopeProject: $("projectAssistantScopeProject"),
     scopeAll: $("projectAssistantScopeAll"),
   };
@@ -175,6 +179,8 @@
     const bubble = document.createElement("article");
     bubble.className = `project-assistant-message-bubble is-${role}${options.generating ? " is-generating" : ""}${options.error ? " is-error" : ""}`;
     bubble.dataset.role = role;
+    if (options.messageId != null) bubble.dataset.messageId = String(options.messageId);
+    if (options.pendingRequestId != null) bubble.dataset.pendingRequest = String(options.pendingRequestId);
     const meta = document.createElement("div");
     meta.className = "project-assistant-message-meta";
     meta.textContent = role === "user" ? "あなた" : (options.provider || "専属AI");
@@ -186,6 +192,91 @@
     els.messages?.append(bubble);
     if (els.messages) els.messages.scrollTop = els.messages.scrollHeight;
     return bubble;
+  }
+
+  function appendUserMessageActions(bubble, message, canEdit) {
+    const actions = document.createElement("div");
+    actions.className = "project-assistant-message-actions";
+    const disabled = Boolean(state.activeRequest);
+
+    if (canEdit) {
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "project-assistant-message-action modal-btn ghost";
+      edit.textContent = "編集";
+      edit.setAttribute("aria-label", "最後のユーザーメッセージを編集");
+      edit.disabled = disabled;
+      edit.addEventListener("click", () => beginEditMessage(message));
+      actions.append(edit);
+    }
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "project-assistant-message-action modal-btn ghost";
+    remove.textContent = "削除";
+    remove.setAttribute("aria-label", "このユーザーメッセージを削除");
+    remove.disabled = disabled;
+    remove.addEventListener("click", () => deleteUserMessage(message.id));
+    actions.append(remove);
+    bubble.append(actions);
+  }
+
+  function renderPendingRequest(request) {
+    if (!request || request.projectId !== state.projectId || !els.messages) return;
+    const marker = String(request.id);
+    if (els.messages.querySelector(`[data-pending-request="${marker}"]`)) return;
+
+    request.userBubble = appendBubble("user", request.message, { pendingRequestId: request.id });
+    request.generation = appendBubble("assistant", "生成中…", {
+      generating: true,
+      pendingRequestId: request.id,
+    });
+  }
+
+  function syncPendingRequestUi() {
+    const request = state.activeRequest;
+    if (!request || request.projectId !== state.projectId) return false;
+    renderPendingRequest(request);
+    els.message.disabled = true;
+    setStatus("生成中…", false, true);
+    return true;
+  }
+
+  function beginEditMessage(message) {
+    if (state.activeRequest || !message || message.id == null) return;
+    state.editingMessageId = Number(message.id);
+    els.message.value = String(message.content || "");
+    if (els.editCancel) els.editCancel.hidden = false;
+    setStatus("編集内容を入力してEnterで再送信してください。", false);
+    els.message.focus({ preventScroll: true });
+    const end = els.message.value.length;
+    els.message.setSelectionRange(end, end);
+  }
+
+  function cancelEdit() {
+    state.editingMessageId = null;
+    if (els.editCancel) els.editCancel.hidden = true;
+    els.message.value = "";
+    setStatus("編集をキャンセルしました。", false);
+    if (state.open && !els.message.disabled) els.message.focus({ preventScroll: true });
+  }
+
+  async function deleteUserMessage(messageId) {
+    if (state.activeRequest || state.projectId == null || messageId == null) return;
+    if (!window.confirm("このユーザーメッセージと回答を削除します。続けますか？")) return;
+    try {
+      const response = await fetch(`${API}/projects/${state.projectId}/assistant/history/${messageId}`, {
+        method: "DELETE",
+        headers: { Accept: "application/json" },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "メッセージを削除できませんでした。");
+      if (Number(state.editingMessageId) === Number(messageId)) cancelEdit();
+      await loadHistory();
+      setStatus("メッセージを削除しました。", false);
+    } catch (error) {
+      setStatus(error.message || "メッセージを削除できませんでした。", true);
+    }
   }
 
   function safeSourceHref(value) {
@@ -251,11 +342,17 @@
 
   function renderHistory(messages) {
     els.messages?.replaceChildren();
-    for (const message of Array.isArray(messages) ? messages : []) {
+    const history = Array.isArray(messages) ? messages : [];
+    const lastUserMessage = [...history].reverse().find((message) => message?.role === "user");
+    const lastUserId = lastUserMessage?.id == null ? null : Number(lastUserMessage.id);
+    for (const message of history) {
       const bubble = appendBubble(message.role, message.content, {
+        messageId: message.id,
         provider: message.provider ? `${providerLabels[message.provider] || message.provider}${message.model ? ` / ${message.model}` : ""}` : "専属AI",
       });
-      if (message.role === "assistant") {
+      if (message.role === "user") {
+        appendUserMessageActions(bubble, message, Number(message.id) === lastUserId);
+      } else if (message.role === "assistant") {
         const scope = document.createElement("span");
         scope.className = "project-assistant-message-scope";
         scope.textContent = `参照範囲: ${scopeLabels[message.scope] || "プロジェクト内"}`;
@@ -343,6 +440,12 @@
     }
   }
 
+  function showCompletedResult(data) {
+    renderActionPlans(data.actions);
+    const count = Number(data.context_item_count || 0);
+    setStatus(`${scopeLabels[data.scope] || scopeLabels.project}の${count}件を参照しました。${data.context_truncated ? "一部は上限により省略されています。" : ""}`);
+  }
+
   async function openAssistant() {
     if (state.projectId == null || !els.modal) return;
     state.returnFocus = document.activeElement;
@@ -350,6 +453,8 @@
     setLayoutInert(true);
     els.modal.hidden = false;
     els.message.value = "";
+    state.editingMessageId = null;
+    if (els.editCancel) els.editCancel.hidden = true;
     closeActionDialog(false);
     els.form.hidden = true;
     els.setup.hidden = true;
@@ -360,16 +465,25 @@
     const [providers] = await Promise.all([loadProviders(), loadHistory()]);
     if (!state.open) return;
     showProviderSetup(providers);
-    setStatus(els.form.hidden ? "" : "準備ができました。", false);
-    if (!els.form.hidden) els.message.focus({ preventScroll: true });
+    const pending = syncPendingRequestUi();
+    const background = !pending
+      && state.backgroundResult?.projectId === state.projectId
+      && state.backgroundResult?.data;
+    if (background) {
+      const result = state.backgroundResult;
+      state.backgroundResult = null;
+      showCompletedResult(result.data);
+    } else if (!pending) {
+      setStatus(els.form.hidden ? "" : "準備ができました。", false);
+      if (!els.form.hidden) els.message.focus({ preventScroll: true });
+    }
   }
 
   function closeAssistant() {
     if (!state.open) return;
     state.open = false;
-    state.requestId += 1;
-    state.controller?.abort();
-    state.controller = null;
+    state.editingMessageId = null;
+    if (els.editCancel) els.editCancel.hidden = true;
     closeActionDialog(false);
     els.modal.hidden = true;
     setLayoutInert(false);
@@ -379,6 +493,10 @@
   }
 
   async function clearHistory() {
+    if (state.activeRequest) {
+      setStatus("生成中は履歴を消去できません。", true);
+      return;
+    }
     if (state.projectId == null || !window.confirm("このプロジェクトの専属AI履歴を消去します。続けますか？")) return;
     try {
       const response = await fetch(`${API}/projects/${state.projectId}/assistant/history`, { method: "DELETE" });
@@ -395,7 +513,7 @@
 
   async function askAssistant(event) {
     event?.preventDefault();
-    if (state.projectId == null || els.message.disabled) return;
+    if (state.projectId == null || els.message.disabled || state.activeRequest) return;
     const message = els.message.value.trim();
     if (!message) {
       setStatus("質問・依頼を入力してください。", true);
@@ -403,43 +521,82 @@
       return;
     }
 
+    const editingId = state.editingMessageId;
+    if (editingId != null) {
+      els.message.disabled = true;
+      setStatus("編集中の履歴を更新しています…", false, true);
+      try {
+        const response = await fetch(`${API}/projects/${state.projectId}/assistant/history/${editingId}/edit`, {
+          method: "POST",
+          headers: { Accept: "application/json" },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "編集対象を更新できませんでした。");
+        state.editingMessageId = null;
+        if (els.editCancel) els.editCancel.hidden = true;
+        await loadHistory();
+      } catch (error) {
+        els.message.disabled = false;
+        setStatus(error.message || "編集対象を更新できませんでした。", true);
+        return;
+      }
+    }
+
     const requestId = ++state.requestId;
-    state.controller?.abort();
-    state.controller = new AbortController();
-    els.message.disabled = true;
+    const controller = new AbortController();
     const scope = els.scope.checked ? "all" : "project";
-    appendBubble("user", message);
-    const generation = appendBubble("assistant", "生成中…", { generating: true });
-    state.pendingGeneration = generation;
+    const request = {
+      id: requestId,
+      projectId: state.projectId,
+      message,
+      scope,
+      controller,
+      userBubble: null,
+      generation: null,
+    };
+    state.activeRequest = request;
+    state.controller = controller;
+    els.message.disabled = true;
     els.message.value = "";
+    renderPendingRequest(request);
+    state.pendingGeneration = request.generation;
     setStatus("生成中…", false, true);
     try {
-      const response = await fetch(`${API}/projects/${state.projectId}/assistant`, {
+      const response = await fetch(`${API}/projects/${request.projectId}/assistant`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ message, scope }),
-        signal: state.controller.signal,
+        signal: controller.signal,
       });
       let data = {};
       try { data = await response.json(); } catch {}
       if (!response.ok) throw new Error(data.detail || "回答を取得できませんでした。");
-      if (requestId !== state.requestId || !state.open) return;
-      generation.remove();
+      if (requestId !== state.requestId) return;
+      request.generation?.remove();
       state.pendingGeneration = null;
-      appendAssistantAnswer(data);
-      renderActionPlans(data.actions);
-      const count = Number(data.context_item_count || 0);
-      setStatus(`${scopeLabels[data.scope] || scopeLabels[scope]}の${count}件を参照しました。${data.context_truncated ? "一部は上限により省略されています。" : ""}`);
+      state.activeRequest = null;
+      state.controller = null;
+      if (state.open && state.projectId === request.projectId) {
+        await loadHistory();
+        if (state.open && state.projectId === request.projectId) showCompletedResult(data);
+        else state.backgroundResult = { projectId: request.projectId, data };
+      } else {
+        state.backgroundResult = { projectId: request.projectId, data };
+      }
     } catch (error) {
       if (error.name === "AbortError" || requestId !== state.requestId) return;
-      generation.remove();
+      request.generation?.remove();
       state.pendingGeneration = null;
-      appendBubble("assistant", error.message || "回答を取得できませんでした。", { error: true });
-      setStatus(error.message || "回答を取得できませんでした。", true);
+      state.activeRequest = null;
+      state.controller = null;
+      if (state.open && state.projectId === request.projectId) {
+        appendBubble("assistant", error.message || "回答を取得できませんでした。", { error: true });
+        setStatus(error.message || "回答を取得できませんでした。", true);
+      }
     } finally {
       if (requestId === state.requestId) {
         els.message.disabled = false;
-        state.controller = null;
+        if (state.controller === controller) state.controller = null;
       }
     }
   }
@@ -462,6 +619,7 @@
     askAssistant();
   });
   els.clearHistory?.addEventListener("click", clearHistory);
+  els.editCancel?.addEventListener("click", cancelEdit);
   els.modal?.addEventListener("click", (event) => {
     if (event.target === els.modal || event.target.matches?.("[data-project-assistant-close]")) closeAssistant();
   });

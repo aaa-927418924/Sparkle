@@ -62,11 +62,13 @@ from project_assistant import (
     ask_project_assistant,
     clear_project_assistant_history,
     configure_ai_provider,
+    delete_project_assistant_message,
     delete_ai_provider,
     execute_project_assistant_action,
     get_ai_action_permissions,
     get_ai_provider_settings,
     get_project_assistant_history,
+    prepare_project_assistant_edit,
     reset_ai_action_permission,
     set_active_ai_provider,
 )
@@ -984,6 +986,30 @@ def project_assistant_history(
 ):
     try:
         return get_project_assistant_history(db, project_id, limit)
+    except ProjectAssistantError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.delete("/projects/{project_id}/assistant/history/{message_id}", status_code=204)
+def delete_project_assistant_message_route(
+    project_id: int,
+    message_id: int,
+    db: Connection = Depends(get_db),
+):
+    try:
+        delete_project_assistant_message(db, project_id, message_id)
+    except ProjectAssistantError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.post("/projects/{project_id}/assistant/history/{message_id}/edit", status_code=204)
+def prepare_project_assistant_edit_route(
+    project_id: int,
+    message_id: int,
+    db: Connection = Depends(get_db),
+):
+    try:
+        prepare_project_assistant_edit(db, project_id, message_id)
     except ProjectAssistantError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 

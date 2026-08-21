@@ -107,7 +107,7 @@ def _rewrite_remote_payload(client: RemoteClient, value: Any, path: str) -> Any:
     kind = value.get("kind")
     source_id = value.get("id")
     for key, item in value.items():
-        if key in {"thumbnail_url", "href"}:
+        if key in {"thumbnail_url", "href", "icon_url"}:
             rewritten[key] = _rewrite_local_resource_url(client, item)
         elif key == "path" and path.startswith("/data/ai-export"):
             rewritten[key] = str(get_ai_export_dir())
@@ -357,6 +357,8 @@ class RemoteClientProxy:
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
+        query = str(request.url.query or "")
+        forward_path = f"{path}?{query}" if query else path
         # RemoteGateway forwards authenticated client requests into the same
         # FastAPI app. If this process also has its own client mode enabled,
         # never proxy that already-forwarded request back out to another
@@ -392,7 +394,7 @@ class RemoteClientProxy:
             elif path.endswith("/assistant/stream") and request.method.upper() == "POST":
                 response = await asyncio.to_thread(
                     self.client.stream_request,
-                    path,
+                    forward_path,
                     request.method,
                     body,
                     dict(request.headers),
@@ -401,7 +403,7 @@ class RemoteClientProxy:
             else:
                 response = await asyncio.to_thread(
                     self.client.request,
-                    path,
+                    forward_path,
                     request.method,
                     body,
                     dict(request.headers),

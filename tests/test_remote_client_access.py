@@ -6,13 +6,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import FastAPI
+from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from remote_auth import AuthStore
-from remote_client import RemoteStreamResponse
+from remote_client import RemoteResponse, RemoteStreamResponse
 from remote_gateway import RemoteGateway
-from remote_proxy import _stream_response_from_remote
+from remote_proxy import RemoteClientProxy, _rewrite_remote_payload, _stream_response_from_remote
 from remote_runtime import (
     CLIENT_SERVE_HTTPS_PORT,
     MCP_FUNNEL_HTTPS_PORT,
@@ -37,7 +38,55 @@ class _NoMcpRuntime:
         await JSONResponse({"detail": "not found"}, status_code=404)(scope, receive, send)
 
 
+class _RecordingRemoteClient:
+    def __init__(self):
+        self.paths = []
+
+    def is_enabled(self):
+        return True
+
+    def base_url(self):
+        return "https://remote.example.test"
+
+    def request(self, path, method="GET", body=b"", headers=None):
+        self.paths.append((path, method, body, headers or {}))
+        return RemoteResponse(200, {"Content-Type": "application/json"}, b"[]")
+
+
 class RemoteClientAccessTests(unittest.TestCase):
+    def test_remote_proxy_preserves_query_filters(self):
+        app = FastAPI()
+        remote = _RecordingRemoteClient()
+        app.add_middleware(BaseHTTPMiddleware, dispatch=RemoteClientProxy(remote).dispatch)
+
+        with TestClient(app) as client:
+            self.assertEqual(client.get("/clips", params={"url": "https://example.test"}).status_code, 200)
+            self.assertEqual(client.get("/projects", params={"done": "0"}).status_code, 200)
+            self.assertEqual(client.get("/clips", params={"project_id": "7"}).status_code, 200)
+            self.assertEqual(client.get("/tasks", params={"project_id": "7"}).status_code, 200)
+            self.assertEqual(client.get("/notes", params={"project_id": "7"}).status_code, 200)
+
+        paths = [item[0] for item in remote.paths]
+        self.assertIn("/clips?url=https%3A%2F%2Fexample.test", paths)
+        self.assertIn("/projects?done=0", paths)
+        self.assertIn("/clips?project_id=7", paths)
+        self.assertIn("/tasks?project_id=7", paths)
+        self.assertIn("/notes?project_id=7", paths)
+
+    def test_remote_profile_icon_url_is_rewritten_to_local_proxy_path(self):
+        remote = _RecordingRemoteClient()
+        payload = {
+            "icon_url": "https://remote.example.test/uploads/profile/profile-icon.png",
+            "picks": [
+                {"thumbnail_url": "https://remote.example.test/uploads/thumb.png"},
+            ],
+        }
+
+        rewritten = _rewrite_remote_payload(remote, payload, "/profile")
+
+        self.assertEqual(rewritten["icon_url"], "/uploads/profile/profile-icon.png")
+        self.assertEqual(rewritten["picks"][0]["thumbnail_url"], "/uploads/thumb.png")
+
     def test_stream_proxy_preserves_incremental_event_chunks(self):
         response = _stream_response_from_remote(
             RemoteStreamResponse(

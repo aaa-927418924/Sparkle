@@ -175,8 +175,11 @@ async function autoSaveNote() {
       });
       state.serverUpdatedAt = String(saved?.updated_at || state.serverUpdatedAt);
     }
-    await window.refreshPinnedData?.("note", savedNoteId);
-    await window.refreshAllPinnedProjects?.();
+    // The note is already persisted at this point. Pin/tooltip refreshes are
+    // visual follow-up work and must not keep the editor in a saving state on
+    // a remote connection with many pinned projects.
+    window.refreshPinnedDataInBackground?.("note", savedNoteId);
+    window.refreshAllPinnedProjectsInBackground?.();
     if (version === state.autoSaveVersion) {
       state.dirty = false;
       removeNoteDraft(draftKeyBeforeSave);

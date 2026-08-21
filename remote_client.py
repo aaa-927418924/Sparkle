@@ -10,6 +10,7 @@ Manager through ``keyring``.
 from __future__ import annotations
 
 import json
+import http.client
 import logging
 import os
 import threading
@@ -133,6 +134,11 @@ class RemoteClient:
         self._lock = threading.RLock()
         self._state = self._load()
         self._credentials: Optional[_CredentialStore] = None
+        # ``asyncio.to_thread`` uses a reusable worker pool. Keep one HTTP
+        # connection per origin in each worker so concurrent reads can use
+        # separate keep-alive connections without sharing a socket between
+        # threads.
+        self._connection_local = threading.local()
 
     def _load(self) -> dict[str, Any]:
         try:
@@ -201,6 +207,64 @@ class RemoteClient:
         detail = data.get("detail") if isinstance(data, dict) else None
         return str(detail).strip()[:500] if detail else fallback
 
+    def _thread_connections(self) -> dict[tuple[str, str, Optional[int]], http.client.HTTPConnection]:
+        connections = getattr(self._connection_local, "connections", None)
+        if connections is None:
+            connections = {}
+            self._connection_local.connections = connections
+        return connections
+
+    @staticmethod
+    def _connection_target(url: str) -> tuple[tuple[str, str, Optional[int]], str]:
+        parsed = urlsplit(url)
+        scheme = parsed.scheme.lower()
+        if scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("unsupported remote URL")
+        key = (scheme, parsed.hostname.lower(), parsed.port)
+        target = parsed.path or "/"
+        if parsed.query:
+            target += "?" + parsed.query
+        return key, target
+
+    def _get_thread_connection(
+        self,
+        key: tuple[str, str, Optional[int]],
+    ) -> http.client.HTTPConnection:
+        connections = self._thread_connections()
+        connection = connections.get(key)
+        if connection is not None:
+            return connection
+
+        scheme, host, port = key
+        if scheme == "https":
+            connection = http.client.HTTPSConnection(host, port, timeout=45)
+        else:
+            connection = http.client.HTTPConnection(host, port, timeout=45)
+        connections[key] = connection
+        return connection
+
+    def _discard_thread_connection(
+        self,
+        key: tuple[str, str, Optional[int]],
+        connection: http.client.HTTPConnection,
+    ) -> None:
+        connections = self._thread_connections()
+        if connections.get(key) is connection:
+            connections.pop(key, None)
+        try:
+            connection.close()
+        except OSError:
+            pass
+
+    def _close_thread_connections(self) -> None:
+        connections = self._thread_connections()
+        for connection in list(connections.values()):
+            try:
+                connection.close()
+            except OSError:
+                pass
+        connections.clear()
+
     def _raw_request(
         self,
         url: str,
@@ -210,23 +274,33 @@ class RemoteClient:
     ) -> RemoteResponse:
         request_headers = self._safe_headers(headers)
         request_headers.setdefault("Accept", "application/json")
+        request_headers.setdefault("Connection", "keep-alive")
         data = body if method.upper() not in {"GET", "HEAD"} else None
-        request = Request(url, data=data, headers=request_headers, method=method.upper())
+        method_name = method.upper()
         try:
-            with urlopen(request, timeout=45) as response:
-                return RemoteResponse(
-                    int(response.status),
-                    {str(key): str(value) for key, value in response.headers.items()},
-                    response.read(),
-                )
-        except HTTPError as exc:
-            payload = exc.read()
-            return RemoteResponse(
-                int(exc.code),
-                {str(key): str(value) for key, value in exc.headers.items()},
-                payload,
-            )
-        except (URLError, TimeoutError, OSError) as exc:
+            key, target = self._connection_target(url)
+            # A stale keep-alive connection can be closed by the server while
+            # it is idle. Idempotent reads may be retried on a fresh socket;
+            # mutations are never retried to avoid duplicate writes.
+            attempts = 2 if method_name in {"GET", "HEAD", "OPTIONS"} else 1
+            for attempt in range(attempts):
+                connection = self._get_thread_connection(key)
+                try:
+                    connection.request(method_name, target, body=data, headers=request_headers)
+                    response = connection.getresponse()
+                    response_headers = {
+                        str(header): str(value) for header, value in response.headers.items()
+                    }
+                    payload = response.read()
+                    if response.will_close:
+                        self._discard_thread_connection(key, connection)
+                    return RemoteResponse(int(response.status), response_headers, payload)
+                except (http.client.HTTPException, OSError):
+                    self._discard_thread_connection(key, connection)
+                    if attempt + 1 < attempts:
+                        continue
+                    raise
+        except (http.client.HTTPException, TimeoutError, OSError, ValueError) as exc:
             raise RemoteClientError(
                 "サーバーに接続できません。URL、Tailscale接続、サーバーの起動状態を確認してください。"
             ) from exc
@@ -308,6 +382,7 @@ class RemoteClient:
             self._credential_store().delete()
             self._state = _default_state()
             self._save_locked()
+            self._close_thread_connections()
 
     def test_connection(self) -> dict[str, Any]:
         response = self.request("/remote-client/status", method="GET")

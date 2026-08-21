@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from remote_auth import AuthStore
-from remote_client import RemoteResponse, RemoteStreamResponse
+from remote_client import RemoteClient, RemoteResponse, RemoteStreamResponse
 from remote_gateway import RemoteGateway
 from remote_proxy import RemoteClientProxy, _rewrite_remote_payload, _stream_response_from_remote
 from remote_runtime import (
@@ -67,14 +67,74 @@ class _RecordingRemoteClient:
                 self._active -= 1
 
 
+class _KeepAliveResponse:
+    status = 200
+    headers = {"Content-Type": "application/json"}
+    will_close = False
+
+    def read(self):
+        return b"{}"
+
+
+class _KeepAliveConnection:
+    instances = []
+
+    def __init__(self, host, port, timeout):
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+        self.requests = []
+        self.closed = False
+        type(self).instances.append(self)
+
+    def request(self, method, target, body=None, headers=None):
+        self.requests.append((method, target))
+
+    def getresponse(self):
+        return _KeepAliveResponse()
+
+    def close(self):
+        self.closed = True
+
+
 class RemoteClientAccessTests(unittest.TestCase):
-    def test_remote_proxy_serializes_normal_requests(self):
+    def test_remote_client_reuses_keep_alive_connection_per_worker(self):
+        _KeepAliveConnection.instances.clear()
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "remote_client.http.client.HTTPConnection", _KeepAliveConnection
+        ):
+            client = RemoteClient(Path(directory) / "remote.json")
+            first = client._raw_request("http://remote.example.test/clips")
+            second = client._raw_request("http://remote.example.test/tasks")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(len(_KeepAliveConnection.instances), 1)
+        self.assertEqual(
+            _KeepAliveConnection.instances[0].requests,
+            [("GET", "/clips"), ("GET", "/tasks")],
+        )
+
+    def test_remote_proxy_allows_concurrent_reads(self):
         remote = _RecordingRemoteClient()
         proxy = RemoteClientProxy(remote)
 
         with ThreadPoolExecutor(max_workers=6) as executor:
             list(executor.map(
                 lambda _: proxy._serialized_request("/clips", "GET", b"", {}),
+                range(6),
+            ))
+
+        self.assertGreaterEqual(remote.max_active, 2)
+        self.assertEqual(len(remote.paths), 6)
+
+    def test_remote_proxy_serializes_mutations(self):
+        remote = _RecordingRemoteClient()
+        proxy = RemoteClientProxy(remote)
+
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            list(executor.map(
+                lambda _: proxy._serialized_request("/clips", "POST", b"{}", {}),
                 range(6),
             ))
 

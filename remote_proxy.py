@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from contextlib import contextmanager
 import json
 import mimetypes
 import os
@@ -350,23 +351,69 @@ def _download_ai_export_to_client(client: RemoteClient) -> Response:
     return _json_response(200, {"ok": True, "path": str(target_dir), "files": downloaded})
 
 
+class _RequestGate:
+    """Allow concurrent reads while keeping mutations ordered."""
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._active_readers = 0
+        self._active_writer = False
+        self._waiting_writers = 0
+
+    @contextmanager
+    def read(self):
+        with self._condition:
+            while self._active_writer or self._waiting_writers:
+                self._condition.wait()
+            self._active_readers += 1
+        try:
+            yield
+        finally:
+            with self._condition:
+                self._active_readers -= 1
+                if self._active_readers == 0:
+                    self._condition.notify_all()
+
+    @contextmanager
+    def write(self):
+        with self._condition:
+            self._waiting_writers += 1
+            try:
+                while self._active_writer or self._active_readers:
+                    self._condition.wait()
+                self._active_writer = True
+            finally:
+                self._waiting_writers -= 1
+        try:
+            yield
+        finally:
+            with self._condition:
+                self._active_writer = False
+                self._condition.notify_all()
+
+
+_READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
 class RemoteClientProxy:
     """FastAPI middleware implementation for remote mode."""
 
     def __init__(self, client: RemoteClient):
         self.client = client
         # A desktop remote session can receive a burst of writes from several
-        # WebView pages at once. Keep ordinary requests in one order so a
-        # read-after-write cannot overtake a pending mutation. Streaming Ask
-        # AI requests remain separate because their response is long-lived.
-        self._request_lock = threading.RLock()
+        # WebView pages at once. Reads may run concurrently, but a waiting
+        # mutation blocks newer reads so a read-after-write cannot overtake it.
+        # Streaming Ask AI requests remain separate because their response is
+        # long-lived.
+        self._request_gate = _RequestGate()
 
     def _serialized_request(self, path, method, body, headers):
-        with self._request_lock:
+        gate = self._request_gate.read if str(method).upper() in _READ_METHODS else self._request_gate.write
+        with gate():
             return self.client.request(path, method, body, headers)
 
     def _serialized_call(self, callback, *args):
-        with self._request_lock:
+        with self._request_gate.write():
             return callback(*args)
 
     async def dispatch(self, request: Request, call_next):

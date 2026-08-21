@@ -291,6 +291,15 @@ async function refreshAllPinned(type) {
 window.refreshPinnedData = refreshPinnedData;
 window.refreshAllPinned = refreshAllPinned;
 window.refreshAllPinnedProjects = () => refreshAllPinned("project");
+window.refreshPinnedDataInBackground = (type, id) => {
+  void refreshPinnedData(type, id).catch(() => {});
+};
+window.refreshAllPinnedInBackground = (type) => {
+  void refreshAllPinned(type).catch(() => {});
+};
+window.refreshAllPinnedProjectsInBackground = () => {
+  void refreshAllPinned("project").catch(() => {});
+};
 
 // Hide tooltip on any click outside tooltip/pin
 document.addEventListener("click", () => hideTooltip());

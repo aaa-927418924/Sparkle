@@ -270,7 +270,7 @@ async function toggleTask(id, cb) {
     // 繝輔ぅ繝ｫ繧ｿ蜀埼←逕ｨ(螳御ｺ・ｸ医∩縺ｫ遘ｻ蜍輔☆繧狗ｭ・
     renderTasks();
     renderNotes();
-    await window.refreshAllPinnedProjects?.();
+    window.refreshAllPinnedProjectsInBackground?.();
   } catch (e) {
     task.is_done = !optimistic;
     alert("更新に失敗しました。");
@@ -284,7 +284,7 @@ async function deleteTask(id, options = {}) {
     state.tasks = state.tasks.filter((t) => t.id !== id);
     renderTasks();
     renderNotes();
-    await window.refreshAllPinnedProjects?.();
+    window.refreshAllPinnedProjectsInBackground?.();
   } catch (e) {
     alert("削除に失敗しました。");
   }
@@ -364,7 +364,7 @@ els.taskEditSave.addEventListener("click", async () => {
     closeTaskEditModal();
     renderTasks();
     renderNotes();
-    await window.refreshAllPinnedProjects?.();
+    window.refreshAllPinnedProjectsInBackground?.();
   } catch (e) {
     alert("更新に失敗しました。");
   }
@@ -400,8 +400,8 @@ async function deleteNote(id, options = {}) {
     renderTasks();
     renderNotes();
     updateBatchBar();
-    await window.refreshAllPinned?.("note");
-    await window.refreshAllPinnedProjects?.();
+    window.refreshAllPinnedInBackground?.("note");
+    window.refreshAllPinnedProjectsInBackground?.();
   } catch {
     alert("メモを削除できませんでした。もう一度お試しください。");
   }
@@ -565,8 +565,8 @@ async function batchDeleteSelected(event) {
     } catch { fail++; }
   }
   await loadAll({ force: true });
-  await window.refreshAllPinned?.("note");
-  await window.refreshAllPinnedProjects?.();
+  window.refreshAllPinnedInBackground?.("note");
+  window.refreshAllPinnedProjectsInBackground?.();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
 }
 
@@ -612,7 +612,7 @@ async function batchDuplicateSelected() {
     }
   }
   await loadAll({ force: true });
-  await window.refreshAllPinnedProjects?.();
+  window.refreshAllPinnedProjectsInBackground?.();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
 }
 
@@ -691,8 +691,13 @@ document.addEventListener("keydown", (e) => {
 
 // PC側やAndroid側で変更されたタスク・メモを、リロードなしで反映する。
 // 変更がない場合はDOMを再描画せず、編集中の表示を揺らさない。
+let lastNotesBackgroundRefreshAt = 0;
 function refreshNotesInBackground() {
   if (document.visibilityState !== "visible") return;
+  const now = Date.now();
+  const minimumInterval = document.body.classList.contains("remote-data-mode") ? 5000 : 1000;
+  if (now - lastNotesBackgroundRefreshAt < minimumInterval) return;
+  lastNotesBackgroundRefreshAt = now;
   loadAll({ silent: true }).catch(() => {});
 }
 

@@ -611,8 +611,8 @@ async function batchTag() {
     } catch { fail++; }
   }
   await loadAll({ force: true });
-  await Promise.all(ids.map((id) => window.refreshPinnedData?.("clip", id)));
-  await window.refreshAllPinnedProjects?.();
+  ids.forEach((id) => window.refreshPinnedDataInBackground?.("clip", id));
+  window.refreshAllPinnedProjectsInBackground?.();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
 }
 
@@ -637,8 +637,8 @@ async function batchCategory() {
     } catch { fail++; }
   }
   await loadAll({ force: true });
-  await Promise.all(ids.map((id) => window.refreshPinnedData?.("clip", id)));
-  await window.refreshAllPinnedProjects?.();
+  ids.forEach((id) => window.refreshPinnedDataInBackground?.("clip", id));
+  window.refreshAllPinnedProjectsInBackground?.();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
 }
 
@@ -658,8 +658,8 @@ async function batchDelete(event) {
     } catch { fail++; }
   }
   await loadAll({ force: true });
-  await window.refreshAllPinned?.("clip");
-  await window.refreshAllPinnedProjects?.();
+  window.refreshAllPinnedInBackground?.("clip");
+  window.refreshAllPinnedProjectsInBackground?.();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
 }
 
@@ -785,8 +785,8 @@ async function attachSelectedClipsToProject(projectId) {
     // 添付自体は完了しているため、一覧更新に失敗しても選択状態は確定させる。
   }
   render();
-  await Promise.all(successfulIds.map((id) => window.refreshPinnedData?.("clip", id)));
-  await window.refreshAllPinnedProjects?.();
+  successfulIds.forEach((id) => window.refreshPinnedDataInBackground?.("clip", id));
+  window.refreshAllPinnedProjectsInBackground?.();
 
   setProjectAttachBusy(false);
   if (failed === 0) {
@@ -1119,8 +1119,8 @@ editEls.save.addEventListener("click", async () => {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     closeEditModal();
     await loadAll({ force: true }); // クリップ・カテゴリ・タグを全部再取得して同期する
-    await window.refreshPinnedData?.("clip", clipId);
-    await window.refreshAllPinnedProjects?.();
+    window.refreshPinnedDataInBackground?.("clip", clipId);
+    window.refreshAllPinnedProjectsInBackground?.();
   } catch (e) {
     alert("更新に失敗しました。");
   }
@@ -1137,8 +1137,8 @@ async function deleteManaged(type, id, options = {}) {
     const res = await fetch(API + path, { method: "DELETE" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     await loadAll({ force: true });
-    if (type === "tag") await window.refreshAllPinned?.("clip");
-    await window.refreshAllPinnedProjects?.();
+    if (type === "tag") window.refreshAllPinnedInBackground?.("clip");
+    window.refreshAllPinnedProjectsInBackground?.();
   } catch (e) {
     alert("削除に失敗しました。");
   }
@@ -2362,8 +2362,12 @@ window.addEventListener("focus", () => {
   // 最近開いた順では、戻ってきたときにも並びを再評価する
   if (state.sortMode === "recent_opened") render();
 });
+let lastHomeBackgroundRefreshAt = 0;
 window.setInterval(() => {
-  if (document.visibilityState === "visible") {
-    loadAll().catch(() => {});
-  }
+  if (document.visibilityState !== "visible") return;
+  const now = Date.now();
+  const minimumInterval = document.body.classList.contains("remote-data-mode") ? 5000 : 1000;
+  if (now - lastHomeBackgroundRefreshAt < minimumInterval) return;
+  lastHomeBackgroundRefreshAt = now;
+  loadAll().catch(() => {});
 }, 1000);

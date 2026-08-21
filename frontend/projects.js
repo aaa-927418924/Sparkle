@@ -379,11 +379,11 @@ async function syncRouteFromLocation({ reloadList = true } = {}) {
 async function reloadDetail() {
   if (!state.currentProjectId) return;
   const pid = state.currentProjectId;
-  const [clips, tasks, notes] = await Promise.all([
-    api(`/clips?project_id=${pid}`),
-    api(`/tasks?project_id=${pid}`),
-    api(`/notes?project_id=${pid}`),
-  ]);
+  // loadAll already fetched the complete records, including project_ids.
+  // Reusing them avoids three extra round trips every time a project opens.
+  const clips = state.clips.filter((item) => linkedToProject(item, pid));
+  const tasks = state.tasks.filter((item) => linkedToProject(item, pid));
+  const notes = state.notes.filter((item) => linkedToProject(item, pid));
   if (state.currentProjectId !== pid) return;
   renderDetailClips(clips);
   renderDetailTasks(tasks);
@@ -564,27 +564,50 @@ async function refreshProjectPin(projectId = state.currentProjectId) {
   await window.refreshPinnedData?.("project", projectId);
 }
 
+function removeProjectLinkFromState(items, itemId, projectId) {
+  const item = items.find((entry) => Number(entry.id) === Number(itemId));
+  if (!item) return;
+  if (Array.isArray(item.project_ids)) {
+    item.project_ids = item.project_ids.filter((id) => Number(id) !== Number(projectId));
+  }
+  if (Number(item.project_id) === Number(projectId)) {
+    item.project_id = item.project_ids?.[0] ?? null;
+  }
+}
+
 // ==================== Unlink ====================
 
 async function unlinkClip(clipId) {
-  await api(`/projects/${state.currentProjectId}/clips/${clipId}`, { method: "DELETE" });
-  await refreshState();
+  const projectId = state.currentProjectId;
+  await api(`/projects/${projectId}/clips/${clipId}`, { method: "DELETE" });
+  removeProjectLinkFromState(state.clips, clipId, projectId);
   await reloadDetail();
-  await refreshProjectPin();
+  void Promise.all([
+    loadAll({ force: true }),
+    refreshProjectPin(projectId),
+  ]).catch(() => {});
 }
 
 async function unlinkTask(taskId) {
-  await api(`/projects/${state.currentProjectId}/tasks/${taskId}`, { method: "DELETE" });
-  await refreshState();
+  const projectId = state.currentProjectId;
+  await api(`/projects/${projectId}/tasks/${taskId}`, { method: "DELETE" });
+  removeProjectLinkFromState(state.tasks, taskId, projectId);
   await reloadDetail();
-  await refreshProjectPin();
+  void Promise.all([
+    loadAll({ force: true }),
+    refreshProjectPin(projectId),
+  ]).catch(() => {});
 }
 
 async function unlinkNote(noteId) {
-  await api(`/projects/${state.currentProjectId}/notes/${noteId}`, { method: "DELETE" });
-  await refreshState();
+  const projectId = state.currentProjectId;
+  await api(`/projects/${projectId}/notes/${noteId}`, { method: "DELETE" });
+  removeProjectLinkFromState(state.notes, noteId, projectId);
   await reloadDetail();
-  await refreshProjectPin();
+  void Promise.all([
+    loadAll({ force: true }),
+    refreshProjectPin(projectId),
+  ]).catch(() => {});
 }
 
 // ==================== Project CRUD ====================
@@ -634,7 +657,7 @@ async function saveProject() {
   }
   els.projectModal.hidden = true;
   await loadAll({ force: true });
-  if (editingId) await refreshProjectPin(editingId);
+  if (editingId) void refreshProjectPin(editingId).catch(() => {});
 }
 
 async function deleteProject(id, options = {}) {
@@ -650,7 +673,7 @@ async function deleteProject(id, options = {}) {
     return;
   }
   await loadAll({ force: true });
-  await refreshProjectPin(id);
+  void refreshProjectPin(id).catch(() => {});
 }
 
 async function duplicateProject(project) {
@@ -659,24 +682,8 @@ async function duplicateProject(project) {
 
 async function toggleProject(id) {
   await api(`/projects/${id}/toggle`, { method: "PATCH" });
-  if (state.currentProjectId === id) {
-    const [clips, tasks, notes] = await Promise.all([
-      api(`/clips?project_id=${id}`),
-      api(`/tasks?project_id=${id}`),
-      api(`/notes?project_id=${id}`),
-    ]);
-    const proj = state.projects.find((p) => p.id === id);
-    if (proj) {
-      proj.is_done = !proj.is_done;
-      els.detailTitle.textContent = proj.name;
-    }
-    // Re-sort: refresh tasks (they may have been cascaded)
-    renderDetailClips(clips);
-    renderDetailTasks(tasks);
-    renderDetailMemos(notes);
-  }
   await loadAll({ force: true });
-  await refreshProjectPin(id);
+  void refreshProjectPin(id).catch(() => {});
 }
 
 // ==================== Task Modal ====================
@@ -752,7 +759,7 @@ async function linkTask() {
   renderTaskUnlinked();
   els.taskUnlinkedSelect.value = "";
   await reloadDetail();
-  await refreshProjectPin();
+  void refreshProjectPin().catch(() => {});
 }
 
 async function createAndAddTask() {
@@ -773,7 +780,7 @@ async function createAndAddTask() {
   renderTaskLinked();
   renderTaskUnlinked();
   await reloadDetail();
-  await refreshProjectPin();
+  void refreshProjectPin().catch(() => {});
 }
 
 // ==================== Note Modal ====================
@@ -820,7 +827,7 @@ async function linkNote() {
   renderNoteUnlinked();
   els.noteUnlinkedSelect.value = "";
   await reloadDetail();
-  await refreshProjectPin();
+  void refreshProjectPin().catch(() => {});
 }
 
 async function createAndAddNote() {
@@ -838,7 +845,7 @@ async function createAndAddNote() {
   renderNoteLinked();
   renderNoteUnlinked();
   await reloadDetail();
-  await refreshProjectPin();
+  void refreshProjectPin().catch(() => {});
 }
 
 // ==================== Clip Modal ====================
@@ -931,7 +938,7 @@ async function linkClip(clipId) {
   renderClipLinked();
   renderClipPicker();
   await reloadDetail();
-  await refreshProjectPin();
+  void refreshProjectPin().catch(() => {});
 }
 
 // ==================== Event Binding ====================
@@ -1107,7 +1114,7 @@ async function deleteSelectedDetailClips(event) {
   clearDetailClipSelection();
   await refreshState();
   await reloadDetail();
-  await refreshProjectPin(projectId);
+  void refreshProjectPin(projectId).catch(() => {});
   if (fail) alert(`${ok}件削除、${fail}件失敗しました。`);
 }
 
@@ -1353,8 +1360,13 @@ document.addEventListener("mouseup", (e) => {
 
 // AndroidやPC側で変更されたプロジェクトと紐づき情報を、リロードなしで反映する。
 // 変更がない場合は一覧・詳細を再描画しない。
+let lastProjectsBackgroundRefreshAt = 0;
 function refreshProjectsInBackground() {
   if (document.visibilityState !== "visible") return;
+  const now = Date.now();
+  const minimumInterval = document.body.classList.contains("remote-data-mode") ? 5000 : 1000;
+  if (now - lastProjectsBackgroundRefreshAt < minimumInterval) return;
+  lastProjectsBackgroundRefreshAt = now;
   loadAll({ silent: true }).catch(() => {});
 }
 

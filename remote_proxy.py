@@ -18,10 +18,10 @@ from typing import Any, Mapping, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from paths import get_ai_export_dir
-from remote_client import RemoteClient, RemoteClientError, RemoteResponse
+from remote_client import RemoteClient, RemoteClientError, RemoteResponse, RemoteStreamResponse
 
 
 _PROXY_ROOTS = (
@@ -141,6 +141,34 @@ def _response_from_remote(client: RemoteClient, response: RemoteResponse, path: 
             pass
     return Response(
         content=body,
+        status_code=response.status_code,
+        headers=headers,
+        media_type=None,
+    )
+
+
+def _next_stream_chunk(iterator):
+    try:
+        return next(iterator)
+    except StopIteration:
+        return None
+
+
+def _stream_response_from_remote(response: RemoteStreamResponse) -> StreamingResponse:
+    headers = _response_headers(response.headers)
+    headers = {key: value for key, value in headers.items() if key.lower() != "content-length"}
+    headers["Cache-Control"] = "no-cache, no-store"
+    headers["X-Accel-Buffering"] = "no"
+
+    async def body():
+        while True:
+            chunk = await asyncio.to_thread(_next_stream_chunk, response.body)
+            if chunk is None:
+                break
+            yield chunk
+
+    return StreamingResponse(
+        body(),
         status_code=response.status_code,
         headers=headers,
         media_type=None,
@@ -361,6 +389,15 @@ class RemoteClientProxy:
                     path,
                     body,
                 )
+            elif path.endswith("/assistant/stream") and request.method.upper() == "POST":
+                response = await asyncio.to_thread(
+                    self.client.stream_request,
+                    path,
+                    request.method,
+                    body,
+                    dict(request.headers),
+                )
+                return _stream_response_from_remote(response)
             else:
                 response = await asyncio.to_thread(
                     self.client.request,

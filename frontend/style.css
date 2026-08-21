@@ -5046,7 +5046,7 @@ body.project-assistant-open {
   font-size: 11px;
 }
 
-.project-assistant-message-bubble.is-generating .project-assistant-message-content::after,
+.project-assistant-thinking-label::after,
 .project-assistant-status.is-generating::after {
   content: "";
   display: inline-block;
@@ -5060,6 +5060,43 @@ body.project-assistant-open {
   25% { content: "."; }
   50% { content: ".."; }
   75%, 100% { content: "..."; }
+}
+
+.project-assistant-thinking-label {
+  display: inline-block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.project-assistant-streaming-answer {
+  min-height: 0;
+  margin-top: 8px;
+  white-space: pre-wrap;
+}
+
+.project-assistant-thinking-preview {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.project-assistant-thinking-preview summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.project-assistant-thinking-preview-content {
+  max-height: 160px;
+  margin-top: 6px;
+  padding: 7px 8px;
+  border-left: 2px solid var(--border);
+  overflow: auto;
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .project-assistant-message-sources {
@@ -5330,7 +5367,7 @@ body.project-assistant-open {
     transition: none;
   }
 
-  .project-assistant-message-bubble.is-generating .project-assistant-message-content::after,
+  .project-assistant-thinking-label::after,
   .project-assistant-status.is-generating::after {
     animation: none;
     content: "";

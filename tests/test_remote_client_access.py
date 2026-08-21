@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 import unittest
 from contextlib import asynccontextmanager
@@ -9,7 +10,9 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from remote_auth import AuthStore
+from remote_client import RemoteStreamResponse
 from remote_gateway import RemoteGateway
+from remote_proxy import _stream_response_from_remote
 from remote_runtime import (
     CLIENT_SERVE_HTTPS_PORT,
     MCP_FUNNEL_HTTPS_PORT,
@@ -35,6 +38,22 @@ class _NoMcpRuntime:
 
 
 class RemoteClientAccessTests(unittest.TestCase):
+    def test_stream_proxy_preserves_incremental_event_chunks(self):
+        response = _stream_response_from_remote(
+            RemoteStreamResponse(
+                200,
+                {"Content-Type": "text/event-stream", "Content-Length": "999"},
+                iter((b"event: start\n\n", b"event: done\n\n")),
+            )
+        )
+
+        async def collect():
+            return [chunk async for chunk in response.body_iterator]
+
+        chunks = asyncio.run(collect())
+        self.assertEqual(chunks, [b"event: start\n\n", b"event: done\n\n"])
+        self.assertNotIn("content-length", {key.lower() for key in response.headers})
+
     def test_client_key_and_bearer_session_protect_full_data_api(self):
         with tempfile.TemporaryDirectory() as directory:
             root = FastAPI()

@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Optional
@@ -44,6 +45,13 @@ class RemoteResponse:
     status_code: int
     headers: dict[str, str]
     body: bytes
+
+
+@dataclass
+class RemoteStreamResponse:
+    status_code: int
+    headers: dict[str, str]
+    body: Iterator[bytes]
 
 
 def _default_state() -> dict[str, Any]:
@@ -332,6 +340,72 @@ class RemoteClient:
         request_headers = self._safe_headers(headers)
         request_headers["Authorization"] = f"Bearer {token}"
         return self._raw_request(
+            f"{base}{normalized_path}",
+            method=method,
+            body=body,
+            headers=request_headers,
+        )
+
+    def _raw_stream_request(
+        self,
+        url: str,
+        method: str = "GET",
+        body: bytes = b"",
+        headers: Optional[Mapping[str, str]] = None,
+    ) -> RemoteStreamResponse:
+        request_headers = self._safe_headers(headers)
+        request_headers.setdefault("Accept", "text/event-stream")
+        data = body if method.upper() not in {"GET", "HEAD"} else None
+        request = Request(url, data=data, headers=request_headers, method=method.upper())
+        try:
+            response = urlopen(request, timeout=45)
+            status_code = int(response.status)
+            response_headers = {str(key): str(value) for key, value in response.headers.items()}
+        except HTTPError as exc:
+            payload = exc.read()
+            return RemoteStreamResponse(
+                int(exc.code),
+                {str(key): str(value) for key, value in exc.headers.items()},
+                iter((payload,)),
+            )
+        except (URLError, TimeoutError, OSError) as exc:
+            raise RemoteClientError(
+                "サーバーに接続できません。URL、Tailscale接続、サーバーの起動状態を確認してください。"
+            ) from exc
+
+        def chunks() -> Iterator[bytes]:
+            try:
+                while True:
+                    # Ask AI uses SSE/NDJSON lines. readline() returns each
+                    # provider event immediately instead of waiting for a
+                    # large buffer or the connection to close.
+                    chunk = response.readline()
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                response.close()
+
+        return RemoteStreamResponse(status_code, response_headers, chunks())
+
+    def stream_request(
+        self,
+        path: str,
+        method: str = "GET",
+        body: bytes = b"",
+        headers: Optional[Mapping[str, str]] = None,
+    ) -> RemoteStreamResponse:
+        with self._lock:
+            base = str(self._state.get("server_url") or "").rstrip("/")
+            if not self._state.get("enabled") or not base:
+                raise RemoteClientError("サーバーモードが有効になっていません。", 409)
+            token = self._credential_store().get()
+        if not token:
+            raise RemoteClientError("リモート接続トークンがありません。再接続してください。", 401)
+        normalized_path = path if str(path).startswith("/") else f"/{path}"
+        request_headers = self._safe_headers(headers)
+        request_headers["Authorization"] = f"Bearer {token}"
+        return self._raw_stream_request(
             f"{base}{normalized_path}",
             method=method,
             body=body,

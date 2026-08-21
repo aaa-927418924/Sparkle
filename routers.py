@@ -73,6 +73,7 @@ from project_assistant import (
     prepare_project_assistant_edit,
     reset_ai_action_permission,
     set_active_ai_provider,
+    stream_project_assistant,
 )
 from schemas import (
     BackupExportPayload,
@@ -978,6 +979,36 @@ def project_assistant(
         return ask_project_assistant(db, project_id, payload)
     except ProjectAssistantError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.post("/projects/{project_id}/assistant/stream")
+def project_assistant_stream(
+    project_id: int,
+    payload: ProjectAssistantRequest,
+    db: Connection = Depends(get_db),
+):
+    """Stream safe answer text, then emit the same final result as the JSON API."""
+    try:
+        stream = stream_project_assistant(db, project_id, payload)
+        # Advance through validation before returning the response so bad
+        # requests still receive normal HTTP errors instead of an SSE error.
+        first_event = next(stream)
+    except ProjectAssistantError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+    def events():
+        yield first_event
+        yield from stream
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get("/projects/{project_id}/assistant/history", response_model=ProjectAssistantHistoryOut)

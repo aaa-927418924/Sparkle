@@ -217,12 +217,58 @@
     }
     const body = document.createElement("div");
     body.className = "project-assistant-message-content";
-    body.textContent = String(content ?? "");
+    if (options.generating) {
+      const thinking = document.createElement("span");
+      thinking.className = "project-assistant-thinking-label";
+      thinking.textContent = String(content || "Thinking");
+      const answer = document.createElement("div");
+      answer.className = "project-assistant-streaming-answer";
+      answer.setAttribute("aria-live", "polite");
+      body.append(thinking, answer);
+    } else {
+      body.textContent = String(content ?? "");
+    }
     bubble.append(meta, body);
 
     els.messages?.append(bubble);
     if (els.messages) els.messages.scrollTop = els.messages.scrollHeight;
     return bubble;
+  }
+
+  function updateStreamingAnswer(request, text, replace = false) {
+    if (!request) return;
+    request.answerText = replace ? String(text || "") : `${request.answerText || ""}${String(text || "")}`;
+    const answer = request.generation?.querySelector(".project-assistant-streaming-answer");
+    if (!answer) return;
+    answer.textContent = request.answerText;
+    if (els.messages) els.messages.scrollTop = els.messages.scrollHeight;
+  }
+
+  function updateThinkingPreview(request, text) {
+    if (!request || !text) return;
+    request.thinkingText = `${request.thinkingText || ""}${String(text)}`;
+    const details = ensureThinkingPreview(request);
+    if (!details) return;
+    const content = details.querySelector(".project-assistant-thinking-preview-content");
+    if (content) content.textContent = request.thinkingText;
+    details.open = true;
+  }
+
+  function ensureThinkingPreview(request) {
+    if (!request?.generation) return null;
+    let details = request.generation.querySelector(".project-assistant-thinking-preview");
+    if (details) return details;
+    details = document.createElement("details");
+    details.className = "project-assistant-thinking-preview";
+    details.open = true;
+    const summary = document.createElement("summary");
+    summary.textContent = "思考プレビュー";
+    const content = document.createElement("div");
+    content.className = "project-assistant-thinking-preview-content";
+    details.append(summary, content);
+    const body = request.generation.querySelector(".project-assistant-message-content");
+    body?.append(details);
+    return details;
   }
 
   function createMessageIconButton(iconName, label) {
@@ -358,11 +404,17 @@
       pendingRequestId: request.id,
       scope: request.scope,
     });
-    request.generation = appendBubble("assistant", "生成中…", {
+    request.generation = appendBubble("assistant", "Thinking", {
       generating: true,
       pendingRequestId: request.id,
       scope: request.scope,
     });
+    if (request.thinkingText) ensureThinkingPreview(request);
+    if (request.answerText) updateStreamingAnswer(request, request.answerText, true);
+    if (request.thinkingText) {
+      const content = request.generation.querySelector(".project-assistant-thinking-preview-content");
+      if (content) content.textContent = request.thinkingText;
+    }
   }
 
   function syncPendingRequestUi() {
@@ -371,7 +423,7 @@
     renderPendingRequest(request);
     els.message.disabled = true;
     if (els.scope) els.scope.disabled = true;
-    setStatus("生成中…", false, true);
+    setStatus("Thinking", false, true);
     return true;
   }
 
@@ -628,6 +680,65 @@
     }
   }
 
+  function parseAssistantSseBlock(block, request) {
+    const lines = String(block || "").split(/\r?\n/);
+    let eventName = "message";
+    const dataLines = [];
+    for (const line of lines) {
+      if (line.startsWith("event:")) eventName = line.slice(6).trim();
+      else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+    }
+    if (!dataLines.length) return;
+    let data;
+    try {
+      data = JSON.parse(dataLines.join("\n"));
+    } catch {
+      return;
+    }
+    if (eventName === "status") {
+      setStatus(data.message || "Thinking", false, data.generating !== false);
+    } else if (eventName === "answer_delta") {
+      updateStreamingAnswer(request, data.text || "", Boolean(data.replace));
+    } else if (eventName === "thinking_delta") {
+      updateThinkingPreview(request, data.text || "");
+    } else if (eventName === "complete") {
+      request.result = data;
+    } else if (eventName === "error") {
+      throw new Error(data.detail || "回答を取得できませんでした。");
+    }
+  }
+
+  async function consumeAssistantStream(response, request) {
+    if (!response.body?.getReader) {
+      const data = await response.json();
+      request.result = data;
+      return data;
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const consumeBlocks = () => {
+      while (true) {
+        const match = buffer.match(/\r?\n\r?\n/);
+        if (!match || match.index == null) break;
+        const block = buffer.slice(0, match.index);
+        buffer = buffer.slice(match.index + match[0].length);
+        parseAssistantSseBlock(block, request);
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      consumeBlocks();
+    }
+    buffer += decoder.decode();
+    if (buffer.trim()) parseAssistantSseBlock(buffer, request);
+    if (!request.result) throw new Error("AIから完了した回答を受け取れませんでした。");
+    return request.result;
+  }
+
   async function startAssistantRequest(message) {
     if (state.projectId == null || state.activeRequest) return;
     const cleanMessage = String(message || "").trim();
@@ -643,6 +754,9 @@
       controller,
       userBubble: null,
       generation: null,
+      answerText: "",
+      thinkingText: "",
+      result: null,
     };
     state.activeRequest = request;
     state.controller = controller;
@@ -651,17 +765,19 @@
     els.message.value = "";
     renderPendingRequest(request);
     state.pendingGeneration = request.generation;
-    setStatus("生成中…", false, true);
+    setStatus("Thinking", false, true);
     try {
-      const response = await fetch(`${API}/projects/${request.projectId}/assistant`, {
+      const response = await fetch(`${API}/projects/${request.projectId}/assistant/stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
         body: JSON.stringify({ message: cleanMessage, scope }),
         signal: controller.signal,
       });
-      let data = {};
-      try { data = await response.json(); } catch {}
-      if (!response.ok) throw new Error(data.detail || "回答を取得できませんでした。");
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "回答を取得できませんでした。");
+      }
+      const data = await consumeAssistantStream(response, request);
       if (requestId !== state.requestId) return;
       request.generation?.remove();
       state.pendingGeneration = null;

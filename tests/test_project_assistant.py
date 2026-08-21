@@ -703,6 +703,77 @@ class ProjectAssistantTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_stream_project_assistant_emits_thinking_and_incremental_answer_before_final_history(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("ストリーム対象",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.commit()
+            store = FakeSecretStore({"openai": "sk-test"})
+            chunks = iter(
+                [
+                    assistant._ProviderStreamChunk(thinking="候補を整理中"),
+                    assistant._ProviderStreamChunk(content='{"answer":"B'),
+                    assistant._ProviderStreamChunk(content='GMを見つけました。","source_ids":[],"actions":[]}'),
+                ]
+            )
+            with patch.object(assistant, "_secret_store", store), patch.object(
+                assistant, "_stream_provider", return_value=chunks
+            ):
+                events = list(
+                    assistant.stream_project_assistant(
+                        connection,
+                        project_id,
+                        assistant.ProjectAssistantRequest(message="BGMを探して", provider="openai"),
+                    )
+                )
+
+            serialized = b"".join(events).decode("utf-8")
+            self.assertIn("event: thinking_delta", serialized)
+            self.assertIn('"text":"候補を整理中"', serialized)
+            self.assertIn("event: answer_delta", serialized)
+            self.assertIn('"text":"B"', serialized)
+            self.assertIn('"text":"GMを見つけました。"', serialized)
+            self.assertIn("event: complete", serialized)
+            self.assertIn("event: done", serialized)
+            history = assistant.get_project_assistant_history(connection, project_id)
+            self.assertEqual([message.content for message in history.messages], ["BGMを探して", "BGMを見つけました。"])
+        finally:
+            connection.close()
+
+    def test_ollama_stream_reads_native_thinking_and_content_fields(self):
+        class FakeStreamResponse:
+            def __init__(self, lines):
+                self.lines = iter(lines)
+
+            def readline(self):
+                return next(self.lines, b"")
+
+            def close(self):
+                return None
+
+        response = FakeStreamResponse(
+            [
+                '{"message":{"thinking":"考え中","content":""}}\n'.encode("utf-8"),
+                '{"message":{"thinking":"","content":"{\\\"answer\\\":\\\"OK\\\"}"}}\n'.encode("utf-8"),
+            ]
+        )
+        with patch.object(assistant, "_stream_request", return_value=response):
+            chunks = list(
+                assistant._ollama_stream_chunks(
+                    assistant.PROVIDER_MAP["ollama"],
+                    None,
+                    "system",
+                    "user",
+                    "qwen3:latest",
+                    "http://127.0.0.1:11434",
+                    native=True,
+                    include_thinking=True,
+                )
+            )
+        self.assertEqual(chunks[0].thinking, "考え中")
+        self.assertEqual(chunks[1].content, '{"answer":"OK"}')
+
 
 if __name__ == "__main__":
     unittest.main()

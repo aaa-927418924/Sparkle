@@ -16,6 +16,7 @@ import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Iterator
 from dataclasses import dataclass
 from sqlite3 import Connection
 from typing import Any, Literal, Optional
@@ -931,6 +932,73 @@ def _request_json(
     return parsed
 
 
+def _stream_request(
+    provider: ProviderSpec,
+    url: str,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+):
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream", "User-Agent": "Sparkle-ProjectAssistant/1", **headers},
+        method="POST",
+    )
+    try:
+        return urllib.request.urlopen(request, timeout=AI_TIMEOUT_SECONDS)
+    except urllib.error.HTTPError as exc:
+        status = int(exc.code or 502)
+        try:
+            exc.read(MAX_PROVIDER_RESPONSE_BYTES)
+        except OSError:
+            pass
+        if status in {401, 403}:
+            message = (
+                "Ollamaの認証設定を確認してください。"
+                if provider.id == "ollama"
+                else f"{provider.label}のAPIキーを確認してください。"
+            )
+        elif status == 429:
+            message = f"{provider.label}の利用上限またはレート制限に達しました。"
+        elif 400 <= status < 500:
+            message = f"{provider.label}の設定またはモデル名を確認してください。"
+        else:
+            message = f"{provider.label} APIで一時的なエラーが発生しました。"
+        raise ProviderRequestError(502, message, provider_status=status) from exc
+    except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as exc:
+        LOGGER.warning("%s streaming request failed: %s", provider.id, type(exc).__name__)
+        raise ProviderRequestError(502, f"{provider.label} APIへ接続できませんでした。") from exc
+
+
+def _iter_stream_json(response) -> Iterator[dict[str, Any]]:
+    """Read both SSE data lines and Ollama's newline-delimited JSON stream."""
+
+    try:
+        for raw_line in iter(response.readline, b""):
+            try:
+                line = raw_line.decode("utf-8").strip()
+            except UnicodeDecodeError:
+                continue
+            if not line or line.startswith(":"):
+                continue
+            if line.startswith("event:"):
+                continue
+            if line.startswith("data:"):
+                line = line[5:].strip()
+            if not line or line == "[DONE]":
+                if line == "[DONE]":
+                    break
+                continue
+            try:
+                parsed = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                yield parsed
+    finally:
+        response.close()
+
+
 def _deepseek_text(body: dict[str, Any]) -> str:
     choices = body.get("choices")
     if not isinstance(choices, list) or not choices:
@@ -992,6 +1060,194 @@ def _ollama_endpoint(base_url: str) -> str:
     if not path.endswith("/v1"):
         path += "/v1"
     return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, f"{path}/chat/completions", "", ""))
+
+
+def _ollama_native_endpoint(base_url: str) -> str:
+    normalized = _normalize_base_url(PROVIDER_MAP["ollama"], base_url)
+    if not normalized:
+        normalized = PROVIDER_MAP["ollama"].default_base_url or "http://127.0.0.1:11434"
+    parsed = urllib.parse.urlsplit(normalized)
+    path = parsed.path.rstrip("/")
+    if path.endswith("/v1"):
+        path = path[:-3].rstrip("/")
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, f"{path}/api/chat", "", ""))
+
+
+@dataclass(frozen=True)
+class _ProviderStreamChunk:
+    content: str = ""
+    thinking: str = ""
+
+
+def _ollama_stream_chunks(
+    spec: ProviderSpec,
+    api_key: Optional[str],
+    system_prompt: str,
+    user_prompt: str,
+    model: str,
+    base_url: Optional[str],
+    *,
+    native: bool,
+    include_thinking: bool,
+) -> Iterator[_ProviderStreamChunk]:
+    headers: dict[str, str] = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    if native:
+        endpoint = _ollama_native_endpoint(base_url or spec.default_base_url or "")
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "stream": True,
+            "think": include_thinking,
+            "format": "json",
+            "options": {"temperature": 0, "num_predict": 1_200},
+        }
+    else:
+        endpoint = _ollama_endpoint(base_url or spec.default_base_url or "")
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "stream": True,
+            "response_format": {"type": "json_object"},
+            "options": {"temperature": 0, "num_predict": 1_200},
+        }
+
+    response = _stream_request(spec, endpoint, headers, payload)
+    for body in _iter_stream_json(response):
+        if native:
+            message = body.get("message")
+            if not isinstance(message, dict):
+                continue
+            content = message.get("content")
+            thinking = message.get("thinking") if include_thinking else ""
+        else:
+            choices = body.get("choices")
+            delta = choices[0].get("delta") if isinstance(choices, list) and choices and isinstance(choices[0], dict) else None
+            if not isinstance(delta, dict):
+                continue
+            content = delta.get("content")
+            thinking = ""
+            if include_thinking:
+                thinking = delta.get("thinking") or delta.get("reasoning_content") or delta.get("reasoning")
+        yield _ProviderStreamChunk(
+            content=content if isinstance(content, str) else "",
+            thinking=thinking if isinstance(thinking, str) else "",
+        )
+
+
+def _gemini_stream_chunks(
+    spec: ProviderSpec,
+    api_key: Optional[str],
+    system_prompt: str,
+    user_prompt: str,
+    model: str,
+) -> Iterator[_ProviderStreamChunk]:
+    model_path = model if model.startswith("models/") else f"models/{model}"
+    encoded_model = urllib.parse.quote(model_path, safe="/-_.")
+    endpoint = f"https://generativelanguage.googleapis.com/v1beta/{encoded_model}:streamGenerateContent?alt=sse"
+    base_payload = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+    }
+    payloads = (
+        {
+            **base_payload,
+            "generationConfig": {
+                "maxOutputTokens": 1_200,
+                "temperature": 0.2,
+                "responseFormat": {
+                    "text": {
+                        "mimeType": "application/json",
+                        "schema": GEMINI_RESPONSE_SCHEMA,
+                    }
+                },
+            },
+        },
+        {
+            **base_payload,
+            "generationConfig": {"maxOutputTokens": 1_200, "temperature": 0.2},
+        },
+    )
+    response = None
+    for index, payload in enumerate(payloads):
+        try:
+            response = _stream_request(spec, endpoint, {"x-goog-api-key": api_key or ""}, payload)
+            break
+        except ProviderRequestError as exc:
+            if index == len(payloads) - 1 or exc.provider_status not in {400, 422}:
+                raise
+    if response is None:
+        raise ProviderRequestError(502, "Geminiからストリームを開始できませんでした。")
+
+    for body in _iter_stream_json(response):
+        candidates = body.get("candidates")
+        candidate = candidates[0] if isinstance(candidates, list) and candidates and isinstance(candidates[0], dict) else None
+        content = candidate.get("content") if isinstance(candidate, dict) else None
+        parts = content.get("parts") if isinstance(content, dict) else None
+        if not isinstance(parts, list):
+            continue
+        for part in parts:
+            if not isinstance(part, dict) or not isinstance(part.get("text"), str):
+                continue
+            is_thought = bool(part.get("thought")) or bool(part.get("thoughtSummary")) or part.get("type") == "thought_summary"
+            if is_thought:
+                yield _ProviderStreamChunk(thinking=part["text"])
+            else:
+                yield _ProviderStreamChunk(content=part["text"])
+
+
+def _stream_provider(
+    spec: ProviderSpec,
+    api_key: Optional[str],
+    system_prompt: str,
+    user_prompt: str,
+    model: str,
+    base_url: Optional[str] = None,
+) -> Iterator[_ProviderStreamChunk]:
+    if spec.id == "ollama":
+        try:
+            yield from _ollama_stream_chunks(
+                spec,
+                api_key,
+                system_prompt,
+                user_prompt,
+                model,
+                base_url,
+                native=True,
+                include_thinking=True,
+            )
+            return
+        except ProviderRequestError as exc:
+            if exc.provider_status not in {400, 404, 405, 422}:
+                raise
+        yield from _ollama_stream_chunks(
+            spec,
+            api_key,
+            system_prompt,
+            user_prompt,
+            model,
+            base_url,
+            native=False,
+            include_thinking=True,
+        )
+        return
+
+    if spec.id == "gemini":
+        yield from _gemini_stream_chunks(spec, api_key, system_prompt, user_prompt, model)
+        return
+
+    # Keep providers without a stream adapter fully compatible. The UI still
+    # receives one answer event instead of waiting for a second code path.
+    yield _ProviderStreamChunk(
+        content=_call_provider(spec, api_key, system_prompt, user_prompt, model, base_url),
+    )
 
 
 def _call_provider(
@@ -1142,6 +1398,50 @@ def _normalize_model_text(value: Any) -> str:
     text = text.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
     text = text.replace("¥r¥n", "\n").replace("¥n", "\n").replace("¥r", "\n")
     return text.strip()
+
+
+def _partial_answer_text(raw: str) -> str:
+    match = re.search(r'"answer"\s*:\s*"', raw, flags=re.IGNORECASE)
+    if not match:
+        return ""
+    fragment = raw[match.end() :]
+    result: list[str] = []
+    index = 0
+    while index < len(fragment):
+        char = fragment[index]
+        if char == "\\" or char == "¥":
+            if index + 1 >= len(fragment):
+                break
+            escaped = fragment[index + 1]
+            if escaped == "u" and index + 5 >= len(fragment):
+                break
+            if escaped == "u":
+                sequence = fragment[index + 2 : index + 6]
+                if any(item not in _HEX_DIGITS for item in sequence):
+                    break
+                result.append(chr(int(sequence, 16)))
+                index += 6
+                continue
+            result.append(
+                {"b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "/": "/", '"': '"', "\\": "\\"}.get(
+                    escaped,
+                    escaped,
+                )
+            )
+            index += 2
+            continue
+        if char == '"':
+            break
+        result.append(char)
+        index += 1
+    return _normalize_model_text("".join(result))
+
+
+def _stream_visible_answer(raw: str) -> str:
+    stripped = raw.lstrip()
+    if stripped.startswith("{"):
+        return _partial_answer_text(raw)
+    return _normalize_model_text(raw)
 
 
 _JSON_ESCAPE_CHARS = frozenset('"\\/bfnrt')
@@ -1967,11 +2267,24 @@ def execute_project_assistant_action(
     )
 
 
-def ask_project_assistant(
+@dataclass(frozen=True)
+class _PreparedAssistantRequest:
+    message: str
+    scope: str
+    spec: ProviderSpec
+    api_key: Optional[str]
+    model: str
+    base_url: Optional[str]
+    context: _ProjectContext
+    system_prompt: str
+    user_prompt: str
+
+
+def _prepare_assistant_request(
     db: Connection,
     project_id: int,
     payload: ProjectAssistantRequest,
-) -> ProjectAssistantOut:
+) -> _PreparedAssistantRequest:
     message = payload.message.strip()
     if not message:
         raise ProjectAssistantError(422, "質問を入力してください。")
@@ -2039,35 +2352,128 @@ def ask_project_assistant(
         f"{context.prompt}\n"
         "</project_data>"
     )
-    raw_answer = _call_provider(
-        spec,
-        api_key,
-        system_prompt,
-        user_prompt,
-        provider_status.model,
-        provider_status.base_url,
+    return _PreparedAssistantRequest(
+        message=message,
+        scope=payload.scope,
+        spec=spec,
+        api_key=api_key,
+        model=provider_status.model,
+        base_url=provider_status.base_url,
+        context=context,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
     )
-    answer, sources, raw_actions = _parse_model_answer(raw_answer, context)
-    actions = _build_action_plans(db, project_id, context, raw_actions)
+
+
+def _finalize_assistant_response(
+    db: Connection,
+    project_id: int,
+    prepared: _PreparedAssistantRequest,
+    raw_answer: str,
+) -> ProjectAssistantOut:
+    answer, sources, raw_actions = _parse_model_answer(raw_answer, prepared.context)
+    actions = _build_action_plans(db, project_id, prepared.context, raw_actions)
     _save_assistant_history(
         db,
         project_id,
-        message,
+        prepared.message,
         answer,
-        spec.id,
-        provider_status.model,
-        payload.scope,
-        len(context.items),
+        prepared.spec.id,
+        prepared.model,
+        prepared.scope,
+        len(prepared.context.items),
         sources,
     )
     db.commit()
     return ProjectAssistantOut(
         answer=answer,
-        provider=spec.id,
-        model=provider_status.model,
+        provider=prepared.spec.id,
+        model=prepared.model,
         sources=sources,
-        context_item_count=len(context.items),
-        context_truncated=context.truncated,
-        scope=payload.scope,
+        context_item_count=len(prepared.context.items),
+        context_truncated=prepared.context.truncated,
+        scope=prepared.scope,
         actions=actions,
     )
+
+
+def ask_project_assistant(
+    db: Connection,
+    project_id: int,
+    payload: ProjectAssistantRequest,
+) -> ProjectAssistantOut:
+    prepared = _prepare_assistant_request(db, project_id, payload)
+    raw_answer = _call_provider(
+        prepared.spec,
+        prepared.api_key,
+        prepared.system_prompt,
+        prepared.user_prompt,
+        prepared.model,
+        prepared.base_url,
+    )
+    return _finalize_assistant_response(db, project_id, prepared, raw_answer)
+
+
+def _assistant_sse(event: str, payload: dict[str, Any]) -> bytes:
+    return (
+        f"event: {event}\n"
+        f"data: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}\n\n"
+    ).encode("utf-8")
+
+
+def stream_project_assistant(
+    db: Connection,
+    project_id: int,
+    payload: ProjectAssistantRequest,
+) -> Iterator[bytes]:
+    prepared = _prepare_assistant_request(db, project_id, payload)
+    yield _assistant_sse(
+        "start",
+        {
+            "provider": prepared.spec.id,
+            "model": prepared.model,
+            "scope": prepared.scope,
+            "context_item_count": len(prepared.context.items),
+        },
+    )
+    yield _assistant_sse("status", {"message": "Thinking", "generating": True})
+    raw_answer = ""
+    last_visible = ""
+    try:
+        for chunk in _stream_provider(
+            prepared.spec,
+            prepared.api_key,
+            prepared.system_prompt,
+            prepared.user_prompt,
+            prepared.model,
+            prepared.base_url,
+        ):
+            if chunk.thinking:
+                yield _assistant_sse("thinking_delta", {"text": chunk.thinking})
+            if not chunk.content:
+                continue
+            raw_answer += chunk.content
+            visible = _stream_visible_answer(raw_answer)
+            if visible == last_visible:
+                continue
+            replace = not visible.startswith(last_visible)
+            text = visible if replace else visible[len(last_visible) :]
+            yield _assistant_sse(
+                "answer_delta",
+                {"text": text, "replace": replace},
+            )
+            last_visible = visible
+
+        if not raw_answer.strip():
+            raise ProviderRequestError(502, f"{prepared.spec.label}から回答を受け取れませんでした。")
+        yield _assistant_sse("status", {"message": "Thinking", "generating": True})
+        result = _finalize_assistant_response(db, project_id, prepared, raw_answer)
+        yield _assistant_sse("complete", result.model_dump(mode="json"))
+        yield _assistant_sse("done", {"ok": True})
+    except ProjectAssistantError as exc:
+        db.rollback()
+        yield _assistant_sse("error", {"detail": exc.message, "status_code": exc.status_code})
+    except Exception as exc:  # pragma: no cover - defensive stream boundary
+        db.rollback()
+        LOGGER.exception("Project assistant stream failed: %s", type(exc).__name__)
+        yield _assistant_sse("error", {"detail": "AI回答の生成中にエラーが発生しました。"})

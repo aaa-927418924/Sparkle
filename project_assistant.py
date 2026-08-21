@@ -680,8 +680,10 @@ def _project_context(db: Connection, project_id: int) -> _ProjectContext:
 
     tasks = db.execute(
         "SELECT id, title, is_done, clip_id, due_date, priority "
-        "FROM tasks WHERE project_id = ? ORDER BY is_done, created_at DESC, id DESC LIMIT ?",
-        (project_id, MAX_CONTEXT_ITEMS_PER_TYPE),
+        "FROM tasks WHERE project_id = ? OR id IN ("
+        "SELECT task_id FROM project_tasks WHERE project_id = ?"
+        ") ORDER BY is_done, created_at DESC, id DESC LIMIT ?",
+        (project_id, project_id, MAX_CONTEXT_ITEMS_PER_TYPE),
     ).fetchall()
     for task in tasks:
         task_title = _clean_text(task["title"], 500) or "（無題のタスク）"
@@ -709,9 +711,10 @@ def _project_context(db: Connection, project_id: int) -> _ProjectContext:
         "FROM notes n LEFT JOIN project_notes pn "
         " ON pn.note_id = n.id AND pn.project_id = ? "
         "WHERE pn.project_id IS NOT NULL OR n.project_id = ? "
-        " OR n.task_id IN (SELECT id FROM tasks WHERE project_id = ?) "
+        " OR n.task_id IN (SELECT pt.task_id FROM project_tasks pt WHERE pt.project_id = ? "
+        "UNION SELECT id FROM tasks WHERE project_id = ?) "
         "ORDER BY n.updated_at DESC, n.id DESC LIMIT ?",
-        (project_id, project_id, project_id, MAX_CONTEXT_ITEMS_PER_TYPE),
+        (project_id, project_id, project_id, project_id, MAX_CONTEXT_ITEMS_PER_TYPE),
     ).fetchall()
     for note in notes:
         note_title = _clean_text(note["title"], 500) or "（無題のメモ）"
@@ -788,8 +791,9 @@ def _all_context(db: Connection, project_id: int) -> _ProjectContext:
         "SELECT c.id, c.url, c.title, c.comment, c.clip_type, "
         "(SELECT group_concat(t.name, '、') FROM tags t "
         " JOIN clip_tags ct ON ct.tag_id = t.id WHERE ct.clip_id = c.id) AS tags, "
-        "(SELECT group_concat(p.name, '、') FROM project_clips pc2 "
-        " JOIN projects p ON p.id = pc2.project_id WHERE pc2.clip_id = c.id) AS project_names "
+        "(SELECT group_concat(p.name, '、') FROM projects p "
+        " WHERE p.id = c.project_id OR EXISTS (SELECT 1 FROM project_clips pc2 "
+        " WHERE pc2.clip_id = c.id AND pc2.project_id = p.id)) AS project_names "
         "FROM clips c ORDER BY c.created_at DESC, c.id DESC LIMIT ?",
         (MAX_CONTEXT_ITEMS_PER_TYPE,),
     ).fetchall()
@@ -819,7 +823,10 @@ def _all_context(db: Connection, project_id: int) -> _ProjectContext:
 
     tasks = db.execute(
         "SELECT t.id, t.title, t.is_done, t.clip_id, t.due_date, t.priority, "
-        "p.name AS project_name FROM tasks t LEFT JOIN projects p ON p.id = t.project_id "
+        "(SELECT group_concat(p.name, '、') FROM projects p "
+        "WHERE p.id = t.project_id OR EXISTS (SELECT 1 FROM project_tasks pt "
+        "WHERE pt.task_id = t.id AND pt.project_id = p.id)) AS project_name "
+        "FROM tasks t "
         "ORDER BY t.is_done, t.created_at DESC, t.id DESC LIMIT ?",
         (MAX_CONTEXT_ITEMS_PER_TYPE,),
     ).fetchall()
@@ -845,8 +852,9 @@ def _all_context(db: Connection, project_id: int) -> _ProjectContext:
 
     notes = db.execute(
         "SELECT n.id, n.title, n.body, n.is_done, n.updated_at, "
-        "(SELECT group_concat(p.name, '、') FROM project_notes pn2 "
-        " JOIN projects p ON p.id = pn2.project_id WHERE pn2.note_id = n.id) AS project_names "
+        "(SELECT group_concat(p.name, '、') FROM projects p "
+        " WHERE p.id = n.project_id OR EXISTS (SELECT 1 FROM project_notes pn2 "
+        " WHERE pn2.note_id = n.id AND pn2.project_id = p.id)) AS project_names "
         "FROM notes n ORDER BY n.updated_at DESC, n.id DESC LIMIT ?",
         (MAX_CONTEXT_ITEMS_PER_TYPE,),
     ).fetchall()
@@ -1770,8 +1778,9 @@ def _note_in_project(db: Connection, project_id: int, note_id: int):
     return db.execute(
         "SELECT id, title, body FROM notes WHERE id = ? AND ("
         "project_id = ? OR id IN (SELECT note_id FROM project_notes WHERE project_id = ?) "
-        "OR task_id IN (SELECT id FROM tasks WHERE project_id = ?))",
-        (note_id, project_id, project_id, project_id),
+        "OR task_id IN (SELECT pt.task_id FROM project_tasks pt WHERE pt.project_id = ? "
+        "UNION SELECT id FROM tasks WHERE project_id = ?))",
+        (note_id, project_id, project_id, project_id, project_id),
     ).fetchone()
 
 

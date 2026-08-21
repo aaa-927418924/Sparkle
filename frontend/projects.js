@@ -27,6 +27,7 @@ const state = {
 };
 let projectListHasRendered = false;
 let projectsLoadInFlight = null;
+let projectsLoadSequence = 0;
 let projectsDataSignature = "";
 
 const $ = (id) => document.getElementById(id);
@@ -181,14 +182,16 @@ function projectAlbumHtml(projectId) {
   return '<div class="project-card-album count-' + countClass + '" aria-label="紐づいたクリップのサムネイル">' + cells + more + '</div>';
 }
 
-function loadAll({ silent = false } = {}) {
-  if (projectsLoadInFlight) return projectsLoadInFlight;
-  projectsLoadInFlight = (async () => {
+function loadAll({ silent = false, force = false } = {}) {
+  if (projectsLoadInFlight && !force) return projectsLoadInFlight;
+  const loadSequence = ++projectsLoadSequence;
+  const request = (async () => {
     const doneParam = state.doneFilter !== "" ? `?done=${state.doneFilter}` : "";
     const [projects, clips, tasks, notes, categories, tags] = await Promise.all([
       api(`/projects${doneParam}`), api("/clips"), api("/tasks"), api("/notes"),
       api("/categories"), api("/tags"),
     ]);
+    if (loadSequence !== projectsLoadSequence) return;
     const nextSignature = JSON.stringify({
       doneFilter: state.doneFilter,
       projects,
@@ -222,10 +225,13 @@ function loadAll({ silent = false } = {}) {
       }
     }
     projectsDataSignature = nextSignature;
-  })().finally(() => {
-    projectsLoadInFlight = null;
-  });
-  return projectsLoadInFlight;
+  })();
+  projectsLoadInFlight = request;
+  request.then(
+    () => { if (projectsLoadInFlight === request) projectsLoadInFlight = null; },
+    () => { if (projectsLoadInFlight === request) projectsLoadInFlight = null; },
+  );
+  return request;
 }
 
 // ==================== Project List ====================
@@ -237,7 +243,7 @@ function renderProjectList() {
   els.projectGrid.hidden = projs.length === 0;
   els.projectGrid.innerHTML = projs.map((p, index) => {
     const clipCount = state.clips.filter((c) => linkedToProject(c, p.id)).length;
-    const taskCount = state.tasks.filter((t) => t.project_id === p.id).length;
+    const taskCount = state.tasks.filter((t) => linkedToProject(t, p.id)).length;
     const noteCount = state.notes.filter((n) => linkedToProject(n, p.id)).length;
     const entryClass = animateInitial ? " page-enter-card" : "";
     const entryStyle = animateInitial ? ` style="--page-enter-index:${index}"` : "";
@@ -346,7 +352,7 @@ async function showProjectList({ syncUrl = true, reload = true } = {}) {
   els.listView.hidden = false;
   els.detailView.hidden = true;
   if (syncUrl) history.replaceState(null, "", window.location.pathname);
-  if (reload) await loadAll();
+  if (reload) await loadAll({ force: true });
 }
 
 async function syncRouteFromLocation({ reloadList = true } = {}) {
@@ -544,7 +550,7 @@ async function unlinkClip(clipId) {
 }
 
 async function unlinkTask(taskId) {
-  await api(`/tasks/${taskId}`, { method: "PUT", body: JSON.stringify({ project_id: null }) });
+  await api(`/projects/${state.currentProjectId}/tasks/${taskId}`, { method: "DELETE" });
   await refreshState();
   await reloadDetail();
   await refreshProjectPin();
@@ -603,7 +609,7 @@ async function saveProject() {
     }
   }
   els.projectModal.hidden = true;
-  await loadAll();
+  await loadAll({ force: true });
   if (editingId) await refreshProjectPin(editingId);
 }
 
@@ -619,27 +625,12 @@ async function deleteProject(id, options = {}) {
     await showProjectList();
     return;
   }
-  await loadAll();
+  await loadAll({ force: true });
   await refreshProjectPin(id);
 }
 
 async function duplicateProject(project) {
-  const duplicate = await api("/projects", {
-    method: "POST",
-    body: JSON.stringify({
-      name: duplicateLabel(project.name, "無題のプロジェクト"),
-      description: project.description || null,
-    }),
-  });
-  if (project.is_done && duplicate?.id) {
-    await api(`/projects/${duplicate.id}/toggle`, { method: "PATCH" });
-  }
-  return duplicate;
-}
-
-function duplicateLabel(value, fallback) {
-  const base = String(value || "").trim() || fallback;
-  return `${base}（コピー）`;
+  return api(`/projects/${project.id}/duplicate`, { method: "POST" });
 }
 
 async function toggleProject(id) {
@@ -660,7 +651,7 @@ async function toggleProject(id) {
     renderDetailTasks(tasks);
     renderDetailMemos(notes);
   }
-  await loadAll();
+  await loadAll({ force: true });
   await refreshProjectPin(id);
 }
 
@@ -698,7 +689,7 @@ function renderStarPicker() {
 }
 
 function renderTaskLinked() {
-  const linked = state.tasks.filter((t) => t.project_id === state.currentProjectId);
+  const linked = state.tasks.filter((t) => linkedToProject(t, state.currentProjectId));
   els.taskLinkedEmpty.hidden = linked.length > 0;
   els.taskLinked.hidden = linked.length === 0;
   els.taskLinked.innerHTML = linked.map((t) => {
@@ -731,7 +722,7 @@ async function renderTaskUnlinked() {
 async function linkTask() {
   const taskId = Number(els.taskUnlinkedSelect.value);
   if (!taskId) return;
-  await api(`/tasks/${taskId}`, { method: "PUT", body: JSON.stringify({ project_id: state.currentProjectId }) });
+  await api(`/projects/${state.currentProjectId}/tasks/${taskId}`, { method: "POST" });
   await refreshState();
   renderTaskLinked();
   renderTaskUnlinked();
@@ -1055,7 +1046,7 @@ async function batchDeleteSelected(event) {
       if (res.ok) ok++; else fail++;
     } catch { fail++; }
   }
-  await loadAll();
+  await loadAll({ force: true });
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
 }
 
@@ -1076,7 +1067,7 @@ async function batchDuplicateSelected() {
       fail++;
     }
   }
-  await loadAll();
+  await loadAll({ force: true });
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
 }
 

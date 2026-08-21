@@ -960,6 +960,51 @@ def create_project(payload: ProjectCreate, db: Connection = Depends(get_db)):
     return ProjectOut(id=row["id"], name=row["name"], description=row["description"], is_done=bool(row["is_done"]), created_at=row["created_at"])
 
 
+@router.post("/projects/{project_id}/duplicate", response_model=ProjectOut, status_code=201)
+def duplicate_project(project_id: int, db: Connection = Depends(get_db)):
+    """Create a project copy while reusing the original attached records."""
+    source = db.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    if not source:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    name = f"{source['name'] or '無題のプロジェクト'}（コピー）"
+    # A copied completed project starts with no cascade snapshot. Its shared
+    # records were not completed by the copy operation itself.
+    cur = db.execute(
+        "INSERT INTO projects(name, description, is_done, done_snapshot, notes_done_snapshot) "
+        "VALUES (?, ?, ?, '[]', '[]')",
+        (name, source["description"], 1 if source["is_done"] else 0),
+    )
+    duplicate_id = int(cur.lastrowid)
+    db.execute(
+        "INSERT OR IGNORE INTO project_clips(project_id, clip_id) "
+        "SELECT ?, clip_id FROM project_clips WHERE project_id = ? "
+        "UNION SELECT ?, id FROM clips WHERE project_id = ?",
+        (duplicate_id, project_id, duplicate_id, project_id),
+    )
+    db.execute(
+        "INSERT OR IGNORE INTO project_notes(project_id, note_id) "
+        "SELECT ?, note_id FROM project_notes WHERE project_id = ? "
+        "UNION SELECT ?, id FROM notes WHERE project_id = ?",
+        (duplicate_id, project_id, duplicate_id, project_id),
+    )
+    db.execute(
+        "INSERT OR IGNORE INTO project_tasks(project_id, task_id) "
+        "SELECT ?, task_id FROM project_tasks WHERE project_id = ? "
+        "UNION SELECT ?, id FROM tasks WHERE project_id = ?",
+        (duplicate_id, project_id, duplicate_id, project_id),
+    )
+    db.commit()
+    row = db.execute("SELECT * FROM projects WHERE id = ?", (duplicate_id,)).fetchone()
+    return ProjectOut(
+        id=row["id"],
+        name=row["name"],
+        description=row["description"],
+        is_done=bool(row["is_done"]),
+        created_at=row["created_at"],
+    )
+
+
 @router.get("/projects/{project_id}", response_model=ProjectOut)
 def get_project(project_id: int, db: Connection = Depends(get_db)):
     row = db.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
@@ -1070,13 +1115,23 @@ def decide_project_assistant_action(
 def _cascade_project_done(db: Connection, project_id: int, row) -> None:
     """Mark the project done and cascade completion to its undone tasks and notes."""
     undone_tasks = db.execute(
-        "SELECT id FROM tasks WHERE project_id = ? AND is_done = 0", (project_id,)
+        "SELECT t.id FROM tasks t "
+        "LEFT JOIN project_tasks pt ON pt.task_id = t.id "
+        "WHERE (pt.project_id = ? OR t.project_id = ?) AND t.is_done = 0 "
+        "AND NOT EXISTS ("
+        "SELECT 1 FROM project_tasks other WHERE other.task_id = t.id AND other.project_id != ?"
+        ")",
+        (project_id, project_id, project_id),
     ).fetchall()
     task_snapshot = [t["id"] for t in undone_tasks]
     undone_notes = db.execute(
         "SELECT note_id FROM project_notes WHERE project_id = ? "
-        "AND note_id IN (SELECT id FROM notes WHERE is_done = 0)",
-        (project_id,),
+        "AND note_id IN (SELECT id FROM notes WHERE is_done = 0) "
+        "AND NOT EXISTS ("
+        "SELECT 1 FROM project_notes other WHERE other.note_id = project_notes.note_id "
+        "AND other.project_id != ?"
+        ")",
+        (project_id, project_id),
     ).fetchall()
     note_snapshot = [n["note_id"] for n in undone_notes]
     db.execute(
@@ -1207,6 +1262,46 @@ def unlink_project_clip(project_id: int, clip_id: int, db: Connection = Depends(
         db.execute(
             "UPDATE clips SET project_id = ? WHERE id = ?",
             (next_link["project_id"], clip_id),
+        )
+    db.commit()
+
+
+@router.post("/projects/{project_id}/tasks/{task_id}", response_model=TaskOut)
+def link_project_task(project_id: int, task_id: int, db: Connection = Depends(get_db)):
+    project = db.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    task = db.execute("SELECT id, project_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    db.execute(
+        "INSERT OR IGNORE INTO project_tasks(project_id, task_id) VALUES (?, ?)",
+        (project_id, task_id),
+    )
+    if task["project_id"] is None:
+        db.execute("UPDATE tasks SET project_id = ? WHERE id = ?", (project_id, task_id))
+    db.commit()
+    row = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    return _row_to_task(db, row)
+
+
+@router.delete("/projects/{project_id}/tasks/{task_id}", status_code=204)
+def unlink_project_task(project_id: int, task_id: int, db: Connection = Depends(get_db)):
+    task = db.execute("SELECT id, project_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    db.execute(
+        "DELETE FROM project_tasks WHERE project_id = ? AND task_id = ?",
+        (project_id, task_id),
+    )
+    if task["project_id"] == project_id:
+        next_link = db.execute(
+            "SELECT MIN(project_id) AS project_id FROM project_tasks WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        db.execute(
+            "UPDATE tasks SET project_id = ? WHERE id = ?",
+            (next_link["project_id"], task_id),
         )
     db.commit()
 
@@ -1454,6 +1549,10 @@ def _light_clip(db: Connection, clip_id: Optional[int]) -> Optional[LightClipOut
 
 
 def _row_to_task(db: Connection, row) -> TaskOut:
+    legacy_project_id = row["project_id"]
+    project_ids = _fetch_project_ids(db, "project_tasks", "task_id", row["id"])
+    if not project_ids and legacy_project_id is not None:
+        project_ids = [int(legacy_project_id)]
     return TaskOut(
         id=row["id"],
         title=row["title"],
@@ -1462,7 +1561,8 @@ def _row_to_task(db: Connection, row) -> TaskOut:
         due_date=row["due_date"],
         priority=row["priority"],
         created_at=row["created_at"],
-        project_id=row["project_id"],
+        project_id=legacy_project_id if legacy_project_id is not None else (project_ids[0] if project_ids else None),
+        project_ids=project_ids,
         clip=_light_clip(db, row["clip_id"]),
     )
 
@@ -1483,6 +1583,11 @@ def create_task(payload: TaskCreate, db: Connection = Depends(get_db)):
         "INSERT INTO tasks(title, clip_id, due_date, priority, project_id) VALUES (?, ?, ?, ?, ?)",
         (payload.title, payload.clip_id, payload.due_date, payload.priority, payload.project_id),
     )
+    if payload.project_id is not None:
+        db.execute(
+            "INSERT OR IGNORE INTO project_tasks(project_id, task_id) VALUES (?, ?)",
+            (payload.project_id, cur.lastrowid),
+        )
     db.commit()
     row = db.execute("SELECT * FROM tasks WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _row_to_task(db, row)
@@ -1502,11 +1607,14 @@ def list_tasks(
         conditions.append("is_done = ?")
         params.append(1 if done else 0)
     if project_id is not None:
-        conditions.append("project_id = ?")
-        params.append(project_id)
+        conditions.append("(id IN (SELECT task_id FROM project_tasks WHERE project_id = ?) OR project_id = ?)")
+        params.extend([project_id, project_id])
     if exclude_project is not None:
-        conditions.append("project_id != ?")
-        params.append(exclude_project)
+        conditions.append(
+            "id NOT IN (SELECT task_id FROM project_tasks WHERE project_id = ?) AND "
+            "(project_id IS NULL OR project_id != ?)"
+        )
+        params.extend([exclude_project, exclude_project])
     if conditions:
         sql += " WHERE " + " AND ".join(conditions)
     sql += " ORDER BY created_at DESC"
@@ -1524,7 +1632,7 @@ def get_task(task_id: int, db: Connection = Depends(get_db)):
 
 @router.put("/tasks/{task_id}", response_model=TaskOut)
 def update_task(task_id: int, payload: TaskUpdate, db: Connection = Depends(get_db)):
-    row = db.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    row = db.execute("SELECT id, project_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Task not found")
 
@@ -1555,7 +1663,19 @@ def update_task(task_id: int, payload: TaskUpdate, db: Connection = Depends(get_
     if "priority" in payload.model_fields_set:
         db.execute("UPDATE tasks SET priority = ? WHERE id = ?", (payload.priority, task_id))
     if "project_id" in payload.model_fields_set:
-        db.execute("UPDATE tasks SET project_id = ? WHERE id = ?", (payload.project_id, task_id))
+        if payload.project_id is None:
+            db.execute("DELETE FROM project_tasks WHERE task_id = ?", (task_id,))
+            db.execute("UPDATE tasks SET project_id = NULL WHERE id = ?", (task_id,))
+        else:
+            project = db.execute("SELECT id FROM projects WHERE id = ?", (payload.project_id,)).fetchone()
+            if not project:
+                raise HTTPException(status_code=400, detail="project_id does not exist")
+            db.execute(
+                "INSERT OR IGNORE INTO project_tasks(project_id, task_id) VALUES (?, ?)",
+                (payload.project_id, task_id),
+            )
+            if row["project_id"] is None:
+                db.execute("UPDATE tasks SET project_id = ? WHERE id = ?", (payload.project_id, task_id))
     db.commit()
     row = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
     return _row_to_task(db, row)
@@ -2308,6 +2428,11 @@ def _merge_database(source: sqlite3.Connection, dest: Connection) -> dict:
             ),
         )
         task_map[source_id] = int(cur.lastrowid)
+        if project_id is not None:
+            dest.execute(
+                "INSERT OR IGNORE INTO project_tasks(project_id, task_id) VALUES (?, ?)",
+                (project_id, int(cur.lastrowid)),
+            )
 
     note_columns = _source_columns(source, "notes")
     note_map = {}
@@ -2372,6 +2497,15 @@ def _merge_database(source: sqlite3.Connection, dest: Connection) -> dict:
             dest.execute(
                 "INSERT OR IGNORE INTO project_notes(project_id, note_id) VALUES (?, ?)",
                 (project_id, note_id),
+            )
+
+    for row in _source_rows(source, "project_tasks"):
+        project_id = project_map.get(_source_id(row["project_id"]))
+        task_id = task_map.get(_source_id(row["task_id"]))
+        if project_id is not None and task_id is not None:
+            dest.execute(
+                "INSERT OR IGNORE INTO project_tasks(project_id, task_id) VALUES (?, ?)",
+                (project_id, task_id),
             )
 
     # Restore app settings and profile data from the source (migration semantics:

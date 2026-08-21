@@ -247,6 +247,19 @@ class ReadRepository:
         return [int(row["project_id"]) for row in rows if row["project_id"] is not None]
 
     @staticmethod
+    def _project_ids_for_task(connection: sqlite3.Connection, task_id: int) -> list[int]:
+        rows = connection.execute(
+            """
+            SELECT project_id FROM project_tasks WHERE task_id = ?
+            UNION
+            SELECT project_id FROM tasks WHERE id = ? AND project_id IS NOT NULL
+            ORDER BY project_id
+            """,
+            (task_id, task_id),
+        ).fetchall()
+        return [int(row["project_id"]) for row in rows if row["project_id"] is not None]
+
+    @staticmethod
     def _project_refs(connection: sqlite3.Connection, project_ids: Sequence[int]) -> list[dict[str, Any]]:
         if not project_ids:
             return []
@@ -702,7 +715,7 @@ class ReadRepository:
     @classmethod
     def _task_summary(cls, connection: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         clip_row = cls._task_clip_row(connection, row["clip_id"])
-        project_ids = [int(row["project_id"])] if row["project_id"] is not None else []
+        project_ids = cls._project_ids_for_task(connection, int(row["id"]))
         return {
             "id": int(row["id"]),
             "title": row["title"],
@@ -783,9 +796,10 @@ class ReadRepository:
                 where.append(
                     "(t.title LIKE ? ESCAPE '\\' COLLATE NOCASE "
                     "OR EXISTS (SELECT 1 FROM clips qc WHERE qc.id = t.clip_id AND (qc.title LIKE ? ESCAPE '\\' COLLATE NOCASE OR qc.url LIKE ? ESCAPE '\\' COLLATE NOCASE OR qc.comment LIKE ? ESCAPE '\\' COLLATE NOCASE)) "
-                    "OR EXISTS (SELECT 1 FROM projects qp WHERE qp.id = t.project_id AND qp.name LIKE ? ESCAPE '\\' COLLATE NOCASE))"
+                    "OR EXISTS (SELECT 1 FROM project_tasks qpt JOIN projects qp ON qp.id = qpt.project_id WHERE qpt.task_id = t.id AND qp.name LIKE ? ESCAPE '\\' COLLATE NOCASE)"
+                    "OR EXISTS (SELECT 1 FROM projects qpl WHERE qpl.id = t.project_id AND qpl.name LIKE ? ESCAPE '\\' COLLATE NOCASE))"
                 )
-                params.extend([search] * 5)
+                params.extend([search] * 6)
             if category:
                 where.append(
                     "EXISTS (SELECT 1 FROM clips tc JOIN categories tcat ON tcat.id = tc.category_id WHERE tc.id = t.clip_id AND LOWER(tcat.name) = LOWER(?))"
@@ -805,11 +819,16 @@ class ReadRepository:
                     )
                     params.extend(tags)
             if project_id is not None:
-                where.append("t.project_id = ?")
-                params.append(project_id)
+                where.append(
+                    "(t.project_id = ? OR EXISTS (SELECT 1 FROM project_tasks fpt WHERE fpt.task_id = t.id AND fpt.project_id = ?))"
+                )
+                params.extend([project_id, project_id])
             if project_query:
-                where.append("EXISTS (SELECT 1 FROM projects tp WHERE tp.id = t.project_id AND tp.name LIKE ? ESCAPE '\\' COLLATE NOCASE)")
-                params.append(_like(project_query))
+                where.append(
+                    "(EXISTS (SELECT 1 FROM projects tp JOIN project_tasks tpt ON tpt.project_id = tp.id WHERE tpt.task_id = t.id AND tp.name LIKE ? ESCAPE '\\' COLLATE NOCASE) "
+                    "OR EXISTS (SELECT 1 FROM projects tpl WHERE tpl.id = t.project_id AND tpl.name LIKE ? ESCAPE '\\' COLLATE NOCASE))"
+                )
+                params.extend([_like(project_query), _like(project_query)])
             if status != "all":
                 where.append("t.is_done = ?")
                 params.append(1 if status == "done" else 0)
@@ -871,8 +890,8 @@ class ReadRepository:
             (project_id, project_id),
         ).fetchall()]
         task_ids = [int(item["id"]) for item in connection.execute(
-            "SELECT id FROM tasks WHERE project_id = ? ORDER BY is_done, created_at DESC, id DESC LIMIT 100",
-            (project_id,),
+            "SELECT id FROM tasks WHERE project_id = ? OR EXISTS (SELECT 1 FROM project_tasks pt WHERE pt.task_id = tasks.id AND pt.project_id = ?) ORDER BY is_done, created_at DESC, id DESC LIMIT 100",
+            (project_id, project_id),
         ).fetchall()]
         clip_count = int(connection.execute(
             "SELECT COUNT(DISTINCT c.id) FROM clips c LEFT JOIN project_clips pc ON pc.clip_id = c.id WHERE c.project_id = ? OR pc.project_id = ?",
@@ -883,8 +902,8 @@ class ReadRepository:
             (project_id, project_id),
         ).fetchone()[0])
         task_count = int(connection.execute(
-            "SELECT COUNT(*) FROM tasks WHERE project_id = ?",
-            (project_id,),
+            "SELECT COUNT(*) FROM tasks WHERE project_id = ? OR EXISTS (SELECT 1 FROM project_tasks pt WHERE pt.task_id = tasks.id AND pt.project_id = ?)",
+            (project_id, project_id),
         ).fetchone()[0])
         result: dict[str, Any] = {
             "id": project_id,
@@ -991,8 +1010,8 @@ class ReadRepository:
                 (project_id, project_id, limit + 1),
             ).fetchall()
             tasks = connection.execute(
-                "SELECT id, title, is_done, clip_id, due_date, priority, completed_at, created_at, project_id FROM tasks WHERE project_id = ? ORDER BY is_done, due_date IS NULL, due_date ASC, id DESC LIMIT ?",
-                (project_id, limit + 1),
+                "SELECT id, title, is_done, clip_id, due_date, priority, completed_at, created_at, project_id FROM tasks WHERE project_id = ? OR EXISTS (SELECT 1 FROM project_tasks pt WHERE pt.task_id = tasks.id AND pt.project_id = ?) ORDER BY is_done, due_date IS NULL, due_date ASC, id DESC LIMIT ?",
+                (project_id, project_id, limit + 1),
             ).fetchall()
             return {
                 "project": {"id": int(project["id"]), "name": project["name"]},

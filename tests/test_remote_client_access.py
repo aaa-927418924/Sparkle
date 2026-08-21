@@ -1,5 +1,8 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import tempfile
+import threading
+import time
 import unittest
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -41,6 +44,9 @@ class _NoMcpRuntime:
 class _RecordingRemoteClient:
     def __init__(self):
         self.paths = []
+        self._active = 0
+        self.max_active = 0
+        self._counter_lock = threading.Lock()
 
     def is_enabled(self):
         return True
@@ -49,11 +55,32 @@ class _RecordingRemoteClient:
         return "https://remote.example.test"
 
     def request(self, path, method="GET", body=b"", headers=None):
-        self.paths.append((path, method, body, headers or {}))
-        return RemoteResponse(200, {"Content-Type": "application/json"}, b"[]")
+        with self._counter_lock:
+            self._active += 1
+            self.max_active = max(self.max_active, self._active)
+        try:
+            time.sleep(0.01)
+            self.paths.append((path, method, body, headers or {}))
+            return RemoteResponse(200, {"Content-Type": "application/json"}, b"[]")
+        finally:
+            with self._counter_lock:
+                self._active -= 1
 
 
 class RemoteClientAccessTests(unittest.TestCase):
+    def test_remote_proxy_serializes_normal_requests(self):
+        remote = _RecordingRemoteClient()
+        proxy = RemoteClientProxy(remote)
+
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            list(executor.map(
+                lambda _: proxy._serialized_request("/clips", "GET", b"", {}),
+                range(6),
+            ))
+
+        self.assertEqual(remote.max_active, 1)
+        self.assertEqual(len(remote.paths), 6)
+
     def test_remote_proxy_preserves_query_filters(self):
         app = FastAPI()
         remote = _RecordingRemoteClient()

@@ -149,6 +149,12 @@ CREATE TABLE IF NOT EXISTS project_notes (
     PRIMARY KEY (project_id, note_id)
 );
 
+CREATE TABLE IF NOT EXISTS project_tasks (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    PRIMARY KEY (project_id, task_id)
+);
+
 CREATE TABLE IF NOT EXISTS task_notes (
     task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
@@ -188,6 +194,7 @@ CREATE INDEX IF NOT EXISTS idx_clip_tags_tag  ON clip_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_clip    ON tasks(clip_id);
 CREATE INDEX IF NOT EXISTS idx_note_clips_note ON note_clips(note_id);
 CREATE INDEX IF NOT EXISTS idx_note_clips_clip ON note_clips(clip_id);
+CREATE INDEX IF NOT EXISTS idx_project_tasks_task ON project_tasks(task_id);
 CREATE INDEX IF NOT EXISTS idx_project_assistant_messages_project
     ON project_assistant_messages(project_id, id);
 CREATE INDEX IF NOT EXISTS idx_project_assistant_proposals_project
@@ -198,16 +205,23 @@ CREATE INDEX IF NOT EXISTS idx_project_assistant_proposals_project
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(
         str(DB_PATH),
+        timeout=30.0,
         check_same_thread=False,
         factory=TrackedConnection,
     )
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 30000")
     return conn
 
 
 def init_db() -> None:
     with get_connection() as conn:
+        # WAL lets read-heavy export/UI paths proceed while a short write
+        # transaction is in progress. busy_timeout is configured per
+        # connection above because every request opens its own connection.
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
         conn.executescript(_SCHEMA)
         _migrate(conn)
 
@@ -269,6 +283,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
             note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
             PRIMARY KEY (project_id, note_id)
         );
+        CREATE TABLE IF NOT EXISTS project_tasks (
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            PRIMARY KEY (project_id, task_id)
+        );
         CREATE TABLE IF NOT EXISTS task_notes (
             task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
             note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
@@ -287,11 +306,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "INSERT OR IGNORE INTO task_notes(task_id, note_id) "
         "SELECT task_id, id FROM notes WHERE task_id IS NOT NULL"
     )
+    conn.execute(
+        "INSERT OR IGNORE INTO project_tasks(project_id, task_id) "
+        "SELECT project_id, id FROM tasks WHERE project_id IS NOT NULL"
+    )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_project ON clips(project_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_notes_project ON notes(project_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_project_clips_clip ON project_clips(clip_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_project_notes_note ON project_notes(note_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_project_tasks_task ON project_tasks(task_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_task_notes_note ON task_notes(note_id)")
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS project_assistant_messages (

@@ -133,6 +133,7 @@ class TaskOut(BaseModel):
     priority: Optional[int] = None
     created_at: str
     project_id: Optional[int] = None
+    project_ids: List[int] = []
     clip: Optional[LightClipOut] = None
 
 

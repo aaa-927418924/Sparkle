@@ -54,22 +54,24 @@ async function api(path) {
 }
 
 let dataSignature = "";
-let loadInFlight = false;
+let loadInFlight = null;
+let loadSequence = 0;
 let clipGridHasRendered = false;
 let projectAttachProjects = [];
 let projectAttachReturnFocus = null;
 let projectAttachRequestId = 0;
 let projectAttachBusy = false;
 
-async function loadAll() {
-  if (loadInFlight) return;
-  loadInFlight = true;
-  try {
+function loadAll({ force = false } = {}) {
+  if (loadInFlight && !force) return loadInFlight;
+  const requestSequence = ++loadSequence;
+  const request = (async () => {
     const [clips, categories, tags] = await Promise.all([
       api("/clips"),
       api("/categories"),
       api("/tags"),
     ]);
+    if (requestSequence !== loadSequence) return;
 
     // 拡張機能など別の画面から保存された場合も検知できるようにする。
     // 内容が変わっていないときは再描画せず、入力中の状態や選択を保つ。
@@ -92,9 +94,13 @@ async function loadAll() {
     setSortValue(state.sortMode);
     renderCategories();
     render();
-  } finally {
-    loadInFlight = false;
-  }
+  })();
+  loadInFlight = request;
+  request.then(
+    () => { if (loadInFlight === request) loadInFlight = null; },
+    () => { if (loadInFlight === request) loadInFlight = null; },
+  );
+  return request;
 }
 
 function renderCategories() {
@@ -604,7 +610,7 @@ async function batchTag() {
       if (res.ok) ok++; else fail++;
     } catch { fail++; }
   }
-  await loadAll();
+  await loadAll({ force: true });
   await Promise.all(ids.map((id) => window.refreshPinnedData?.("clip", id)));
   await window.refreshAllPinnedProjects?.();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
@@ -630,7 +636,7 @@ async function batchCategory() {
       if (res.ok) ok++; else fail++;
     } catch { fail++; }
   }
-  await loadAll();
+  await loadAll({ force: true });
   await Promise.all(ids.map((id) => window.refreshPinnedData?.("clip", id)));
   await window.refreshAllPinnedProjects?.();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
@@ -651,7 +657,7 @@ async function batchDelete(event) {
       if (res.ok) ok++; else fail++;
     } catch { fail++; }
   }
-  await loadAll();
+  await loadAll({ force: true });
   await window.refreshAllPinned?.("clip");
   await window.refreshAllPinnedProjects?.();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
@@ -774,7 +780,7 @@ async function attachSelectedClipsToProject(projectId) {
   successfulIds.forEach((id) => state.selectedIds.delete(id));
   updateBatchBar();
   try {
-    await loadAll();
+    await loadAll({ force: true });
   } catch {
     // 添付自体は完了しているため、一覧更新に失敗しても選択状態は確定させる。
   }
@@ -1112,7 +1118,7 @@ editEls.save.addEventListener("click", async () => {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     closeEditModal();
-    await loadAll(); // クリップ・カテゴリ・タグを全部再取得して同期する
+    await loadAll({ force: true }); // クリップ・カテゴリ・タグを全部再取得して同期する
     await window.refreshPinnedData?.("clip", clipId);
     await window.refreshAllPinnedProjects?.();
   } catch (e) {
@@ -1130,7 +1136,7 @@ async function deleteManaged(type, id, options = {}) {
   try {
     const res = await fetch(API + path, { method: "DELETE" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    await loadAll();
+    await loadAll({ force: true });
     if (type === "tag") await window.refreshAllPinned?.("clip");
     await window.refreshAllPinnedProjects?.();
   } catch (e) {
@@ -2277,7 +2283,7 @@ uploadEls.save.addEventListener("click", async () => {
   }
 
   closeUploadModal();
-  await loadAll();
+  await loadAll({ force: true });
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。\n${failDetails.join("\n")}`);
 });
 

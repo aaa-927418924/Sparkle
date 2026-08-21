@@ -39,6 +39,7 @@ CREATE TABLE projects (
 );
 CREATE TABLE project_clips (project_id INTEGER NOT NULL, clip_id INTEGER NOT NULL, PRIMARY KEY (project_id, clip_id));
 CREATE TABLE project_notes (project_id INTEGER NOT NULL, note_id INTEGER NOT NULL, PRIMARY KEY (project_id, note_id));
+CREATE TABLE project_tasks (project_id INTEGER NOT NULL, task_id INTEGER NOT NULL, PRIMARY KEY (project_id, task_id));
 CREATE TABLE task_notes (task_id INTEGER NOT NULL, note_id INTEGER NOT NULL, PRIMARY KEY (task_id, note_id));
 """
 
@@ -138,6 +139,7 @@ def seed_database(path: Path) -> None:
         )
         connection.executemany("INSERT INTO project_clips(project_id, clip_id) VALUES (?, ?)", [(1, 1), (2, 2)])
         connection.executemany("INSERT INTO project_notes(project_id, note_id) VALUES (?, ?)", [(1, 1), (2, 2)])
+        connection.executemany("INSERT INTO project_tasks(project_id, task_id) VALUES (?, ?)", [(1, 1), (2, 2)])
         connection.execute("INSERT INTO task_notes(task_id, note_id) VALUES (?, ?)", (1, 1))
         connection.commit()
     finally:

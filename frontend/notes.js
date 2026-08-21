@@ -10,6 +10,7 @@ const state = {
 };
 let notesHaveRendered = false;
 let notesLoadInFlight = null;
+let notesLoadSequence = 0;
 let notesDataSignature = "";
 
 const $ = (id) => document.getElementById(id);
@@ -148,14 +149,16 @@ function noteMatchesStatus(n) {
 }
 
 // --- 繝・・繧ｿ隱ｭ縺ｿ霎ｼ縺ｿ ---
-function loadAll({ silent = false } = {}) {
-  if (notesLoadInFlight) return notesLoadInFlight;
-  notesLoadInFlight = (async () => {
+function loadAll({ silent = false, force = false } = {}) {
+  if (notesLoadInFlight && !force) return notesLoadInFlight;
+  const loadSequence = ++notesLoadSequence;
+  const request = (async () => {
     const [tasks, notes, projects] = await Promise.all([
       api("/tasks"),
       api("/notes"),
       api("/projects"),
     ]);
+    if (loadSequence !== notesLoadSequence) return;
     const nextSignature = JSON.stringify({ tasks, notes, projects });
     const changed = nextSignature !== notesDataSignature;
     state.tasks = tasks;
@@ -167,10 +170,13 @@ function loadAll({ silent = false } = {}) {
       renderNotes();
     }
     notesDataSignature = nextSignature;
-  })().finally(() => {
-    notesLoadInFlight = null;
-  });
-  return notesLoadInFlight;
+  })();
+  notesLoadInFlight = request;
+  request.then(
+    () => { if (notesLoadInFlight === request) notesLoadInFlight = null; },
+    () => { if (notesLoadInFlight === request) notesLoadInFlight = null; },
+  );
+  return request;
 }
 
 // --- 繧ｿ繧ｹ繧ｯ ---
@@ -558,7 +564,7 @@ async function batchDeleteSelected(event) {
       if (res.ok) ok++; else fail++;
     } catch { fail++; }
   }
-  await loadAll();
+  await loadAll({ force: true });
   await window.refreshAllPinned?.("note");
   await window.refreshAllPinnedProjects?.();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
@@ -605,7 +611,7 @@ async function batchDuplicateSelected() {
       fail++;
     }
   }
-  await loadAll();
+  await loadAll({ force: true });
   await window.refreshAllPinnedProjects?.();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
 }

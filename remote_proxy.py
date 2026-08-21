@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import zipfile
 from email.message import Message
 from pathlib import Path
@@ -354,6 +355,19 @@ class RemoteClientProxy:
 
     def __init__(self, client: RemoteClient):
         self.client = client
+        # A desktop remote session can receive a burst of writes from several
+        # WebView pages at once. Keep ordinary requests in one order so a
+        # read-after-write cannot overtake a pending mutation. Streaming Ask
+        # AI requests remain separate because their response is long-lived.
+        self._request_lock = threading.RLock()
+
+    def _serialized_request(self, path, method, body, headers):
+        with self._request_lock:
+            return self.client.request(path, method, body, headers)
+
+    def _serialized_call(self, callback, *args):
+        with self._request_lock:
+            return callback(*args)
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -373,9 +387,14 @@ class RemoteClientProxy:
 
         try:
             if path == "/data/ai-export/open" and request.method.upper() == "POST":
-                return await asyncio.to_thread(_download_ai_export_to_client, self.client)
+                return await asyncio.to_thread(
+                    self._serialized_call,
+                    _download_ai_export_to_client,
+                    self.client,
+                )
 
             local_file_response = await asyncio.to_thread(
+                self._serialized_call,
                 _handle_cached_file_operation,
                 self.client,
                 path,
@@ -386,6 +405,7 @@ class RemoteClientProxy:
             body = await request.body()
             if path in {"/clips/local/reference", "/clips/local/copy-path"}:
                 response = await asyncio.to_thread(
+                    self._serialized_call,
                     _handle_local_path_upload,
                     self.client,
                     path,
@@ -402,7 +422,7 @@ class RemoteClientProxy:
                 return _stream_response_from_remote(response)
             else:
                 response = await asyncio.to_thread(
-                    self.client.request,
+                    self._serialized_request,
                     forward_path,
                     request.method,
                     body,

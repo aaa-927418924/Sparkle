@@ -14,7 +14,7 @@ from typing import Any, Optional
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import urlopen
 
-from remote_auth import AuthStore, get_mcp_auth_store
+from remote_auth import AuthStore, get_client_auth_store, get_mcp_auth_store
 
 
 REMOTE_HOST = "127.0.0.1"
@@ -27,6 +27,10 @@ MAIN_TARGET = f"http://{REMOTE_HOST}:{MAIN_PORT}"
 # the Android/Web route and the public MCP route never share a Tailscale port.
 MCP_FUNNEL_HTTPS_PORT = 443
 SERVE_WEB_HTTPS_PORT = 8443
+# The desktop-client gateway must remain authenticated.  Serve Web 8443 is
+# reserved for the existing Android/main-app route, so clients get their own
+# private Tailscale Serve port when Serve mode is selected.
+CLIENT_SERVE_HTTPS_PORT = 8444
 # Compatibility name retained for callers that used the old Android route
 # constant. Android/Web Serve now uses the separate private 8443 endpoint.
 ANDROID_WEB_HTTPS_PORT = SERVE_WEB_HTTPS_PORT
@@ -194,9 +198,11 @@ class RemoteAccessManager:
         auth_store: Optional[AuthStore] = None,
         main_port: int = MAIN_PORT,
         mcp_auth_store: Optional[AuthStore] = None,
+        client_auth_store: Optional[AuthStore] = None,
     ) -> None:
         self.auth_store = auth_store or AuthStore()
         self.mcp_auth_store = mcp_auth_store or get_mcp_auth_store()
+        self.client_auth_store = client_auth_store or get_client_auth_store()
         self.main_target = f"http://{REMOTE_HOST}:{int(main_port)}"
         self._lock = threading.RLock()
         self._server = None
@@ -207,7 +213,14 @@ class RemoteAccessManager:
         self._funnel_cache_at = 0.0
 
     def _any_enabled(self) -> bool:
-        return self.auth_store.is_enabled() or self.mcp_auth_store.is_enabled()
+        return (
+            self.auth_store.is_enabled()
+            or self.mcp_auth_store.is_enabled()
+            or self.client_auth_store.is_enabled()
+        )
+
+    def _web_access_enabled(self) -> bool:
+        return self.auth_store.is_enabled() or self.client_auth_store.is_enabled()
 
     def _reset_mcp_oauth(self) -> None:
         with self._lock:
@@ -382,7 +395,7 @@ class RemoteAccessManager:
     def _mcp_route_is_shared(self, mode: Optional[str] = None) -> bool:
         return (
             self.mcp_auth_store.is_enabled()
-            and self.auth_store.is_enabled()
+            and self._web_access_enabled()
             and (mode or self._configured_web_mode()) == WEB_MODE_FUNNEL
         )
 
@@ -587,6 +600,7 @@ class RemoteAccessManager:
                     app,
                     self.auth_store,
                     mcp_auth_store=self.mcp_auth_store,
+                    client_auth_store=self.client_auth_store,
                     mcp_public_url=self._mcp_public_url(),
                 )
                 config = uvicorn.Config(
@@ -700,6 +714,48 @@ class RemoteAccessManager:
             return self._start_serve_web_route()
         return self._start_funnel_route()
 
+    def _client_route_status(self, mode: Optional[str] = None) -> dict[str, Any]:
+        selected = mode or self._configured_web_mode()
+        if selected == WEB_MODE_SERVE:
+            return self._status_for_target("serve", REMOTE_TARGET, CLIENT_SERVE_HTTPS_PORT)
+        return self._status_for_target("funnel", REMOTE_TARGET, MCP_FUNNEL_HTTPS_PORT)
+
+    def _start_client_route(self) -> dict[str, Any]:
+        if self._configured_web_mode() == WEB_MODE_SERVE:
+            return self._start_route(
+                "serve",
+                REMOTE_TARGET,
+                CLIENT_SERVE_HTTPS_PORT,
+                "デスクトップクライアント用Tailscale Serve",
+            )
+        return self._start_route(
+            "funnel",
+            REMOTE_TARGET,
+            MCP_FUNNEL_HTTPS_PORT,
+            "デスクトップクライアント用Tailscale Funnel",
+        )
+
+    def _stop_client_route(self, force: bool = False) -> tuple[bool, Optional[str]]:
+        mode = self._configured_web_mode()
+        if not force and mode == WEB_MODE_FUNNEL and (
+            self.auth_store.is_enabled() or self.mcp_auth_store.is_enabled()
+        ):
+            return True, None
+        port = CLIENT_SERVE_HTTPS_PORT if mode == WEB_MODE_SERVE else MCP_FUNNEL_HTTPS_PORT
+        current = self._port_status(port)
+        if not current.get("available"):
+            return False, current.get("error") or "Tailscaleの状態を確認できません。"
+        if not current.get("active"):
+            return True, None
+        if current.get("target") != "remote":
+            return False, f"TailscaleのHTTPS {port}番ポートに別の設定があります。先にその設定を解除してください。"
+        return self._stop_route(
+            "serve" if mode == WEB_MODE_SERVE else "funnel",
+            REMOTE_TARGET,
+            port,
+            current,
+        )
+
     def _start_enabled_routes(self) -> dict[str, Any]:
         """Start each enabled feature on its own Tailscale HTTPS port."""
         # Clean up the old Serve layout (Web 443 + MCP 8443) before starting
@@ -721,6 +777,13 @@ class RemoteAccessManager:
             mcp_result = self._start_mcp_route()
             if not mcp_result.get("ok"):
                 return mcp_result
+        if self.client_auth_store.is_enabled() and not (
+            self._configured_web_mode() == WEB_MODE_FUNNEL
+            and (self.auth_store.is_enabled() or self.mcp_auth_store.is_enabled())
+        ):
+            client_result = self._start_client_route()
+            if not client_result.get("ok"):
+                return client_result
         return {"ok": True, "status": self.status()}
 
     def enable(self) -> dict[str, Any]:
@@ -765,12 +828,32 @@ class RemoteAccessManager:
             "error": result.get("error"),
         }
 
+    def enable_client(self) -> dict[str, Any]:
+        """Enable authenticated full-data access for desktop clients."""
+
+        key = self.client_auth_store.enable()
+        if not self._start_remote_server():
+            return {
+                "ok": False,
+                "access_key": key,
+                "status": self.status(),
+                "error": self._last_error,
+            }
+        result = self._start_enabled_routes()
+        self._last_error = result.get("error") if not result.get("ok") else None
+        return {
+            "ok": bool(result.get("ok")),
+            "access_key": key,
+            "status": self.status(),
+            "error": result.get("error"),
+        }
+
     def retry(self) -> dict[str, Any]:
         if not self._any_enabled():
             return {
                 "ok": False,
                 "status": self.status(),
-                "error": "先に外部WebアクセスまたはRemote MCPを有効にしてください。",
+                "error": "先に外部Webアクセス、デスクトップクライアント接続、またはRemote MCPを有効にしてください。",
             }
         if not self._start_remote_server():
             return {"ok": False, "status": self.status(), "error": self._last_error}
@@ -809,8 +892,9 @@ class RemoteAccessManager:
                 "error": result.get("error"),
             }
 
-        web_enabled = self.auth_store.is_enabled()
+        web_enabled = self._web_access_enabled()
         mcp_enabled = self.mcp_auth_store.is_enabled()
+        client_enabled = self.client_auth_store.is_enabled()
 
         # Serve and Funnel cannot own the same HTTPS port at the same time.
         # Stop the old Web route before starting the new mode. In Funnel mode
@@ -821,9 +905,14 @@ class RemoteAccessManager:
             if not stopped:
                 self._last_error = error
                 return {"ok": False, "status": self.status(), "error": error}
+        if client_enabled:
+            stopped, error = self._stop_client_route(force=True)
+            if not stopped:
+                self._last_error = error
+                return {"ok": False, "status": self.status(), "error": error}
 
         self.auth_store.set_remote_mode(normalized)
-        if self.auth_store.is_enabled() or mcp_enabled:
+        if self._any_enabled():
             if not self._start_remote_server():
                 return {"ok": False, "status": self.status(), "error": self._last_error}
 
@@ -841,8 +930,20 @@ class RemoteAccessManager:
         key = self.auth_store.rotate_access_key()
         return {"ok": True, "access_key": key, "status": self.status()}
 
+    def rotate_client(self) -> dict[str, Any]:
+        if not self.client_auth_store.is_enabled():
+            return {"ok": False, "status": self.status(), "error": "デスクトップクライアント接続は有効になっていません。"}
+        key = self.client_auth_store.rotate_access_key()
+        return {"ok": True, "access_key": key, "status": self.status()}
+
     def revoke_all(self) -> dict[str, Any]:
         self.auth_store.revoke_all()
+        return {"ok": True, "status": self.status()}
+
+    def revoke_client_all(self) -> dict[str, Any]:
+        if not self.client_auth_store.is_enabled():
+            return {"ok": False, "status": self.status(), "error": "デスクトップクライアント接続は有効になっていません。"}
+        self.client_auth_store.revoke_all()
         return {"ok": True, "status": self.status()}
 
     def rotate_mcp(self) -> dict[str, Any]:
@@ -860,7 +961,13 @@ class RemoteAccessManager:
         return {"ok": True, "status": self.status()}
 
     def _stop_public_route(self, force: bool = False) -> tuple[bool, Optional[str]]:
-        if not force and self._mcp_route_is_shared():
+        if not force and (
+            self._mcp_route_is_shared()
+            or (
+                self.client_auth_store.is_enabled()
+                and self._configured_web_mode() == WEB_MODE_FUNNEL
+            )
+        ):
             return True, None
         mode = self._configured_web_mode()
         port = SERVE_WEB_HTTPS_PORT if mode == WEB_MODE_SERVE else MCP_FUNNEL_HTTPS_PORT
@@ -941,12 +1048,13 @@ class RemoteAccessManager:
         if not self.auth_store.is_enabled():
             return {"ok": False, "status": self.status(), "error": "外部Webアクセスは有効になっていません。"}
         mcp_enabled = self.mcp_auth_store.is_enabled()
+        client_enabled = self.client_auth_store.is_enabled()
         stopped, error = self._stop_public_route()
         if not stopped:
             self._last_error = error
             return {"ok": False, "status": self.status(), "error": error}
         self.auth_store.disable()
-        if not mcp_enabled:
+        if not mcp_enabled and not client_enabled:
             self._stop_remote_server()
         self._last_error = None
         return {"ok": True, "status": self.status()}
@@ -954,7 +1062,7 @@ class RemoteAccessManager:
     def disable_mcp(self) -> dict[str, Any]:
         if not self.mcp_auth_store.is_enabled():
             return {"ok": False, "status": self.status(), "error": "Remote MCPは有効になっていません。"}
-        web_enabled = self.auth_store.is_enabled()
+        web_enabled = self._web_access_enabled()
         stopped, error = self._stop_mcp_route()
         if not stopped:
             self._last_error = error
@@ -962,6 +1070,21 @@ class RemoteAccessManager:
         self.mcp_auth_store.disable()
         self._reset_mcp_oauth()
         if not web_enabled:
+            self._stop_remote_server()
+        self._last_error = None
+        return {"ok": True, "status": self.status()}
+
+    def disable_client(self) -> dict[str, Any]:
+        if not self.client_auth_store.is_enabled():
+            return {"ok": False, "status": self.status(), "error": "デスクトップクライアント接続は有効になっていません。"}
+        web_enabled = self.auth_store.is_enabled()
+        mcp_enabled = self.mcp_auth_store.is_enabled()
+        stopped, error = self._stop_client_route()
+        if not stopped:
+            self._last_error = error
+            return {"ok": False, "status": self.status(), "error": error}
+        self.client_auth_store.disable()
+        if not web_enabled and not mcp_enabled:
             self._stop_remote_server()
         self._last_error = None
         return {"ok": True, "status": self.status()}
@@ -979,26 +1102,44 @@ class RemoteAccessManager:
         with self._lock:
             web_enabled = self.auth_store.is_enabled()
             mcp_enabled = self.mcp_auth_store.is_enabled()
-        if web_enabled and mcp_enabled and self._mcp_route_is_shared():
+            client_enabled = self.client_auth_store.is_enabled()
+        if self._configured_web_mode() == WEB_MODE_FUNNEL:
+            # Web, MCP, and the desktop-client gateway intentionally share
+            # the same authenticated RemoteGateway on Funnel HTTPS 443. Stop
+            # that route exactly once, regardless of which features are on.
             current = self._port_status(MCP_FUNNEL_HTTPS_PORT)
-            if current.get("active"):
+            if current.get("active") and current.get("target") == "remote":
                 self._stop_route(
                     "funnel",
                     REMOTE_TARGET,
                     MCP_FUNNEL_HTTPS_PORT,
                     current,
                 )
+            elif current.get("active") and current.get("target") == "main" and web_enabled:
+                # Remove only an old Web route if an upgraded installation
+                # still reports the legacy main-app target on 443.
+                self._stop_route(
+                    "funnel",
+                    self.main_target,
+                    MCP_FUNNEL_HTTPS_PORT,
+                    current,
+                )
         else:
+            # Serve mode keeps the main Web route, MCP route, and client route
+            # on distinct ports, so each can be stopped independently.
             if web_enabled:
-                self._stop_public_route()
+                self._stop_public_route(force=True)
             if mcp_enabled:
                 self._stop_mcp_route()
+            if client_enabled:
+                self._stop_client_route(force=True)
         self._stop_remote_server()
 
     def status(self) -> dict[str, Any]:
         web_enabled = self.auth_store.is_enabled()
         mcp_enabled = self.mcp_auth_store.is_enabled()
-        enabled = web_enabled or mcp_enabled
+        client_enabled = self.client_auth_store.is_enabled()
+        enabled = web_enabled or mcp_enabled or client_enabled
         web_mode = self._configured_web_mode()
         empty_route = {
             "available": True,
@@ -1006,29 +1147,37 @@ class RemoteAccessManager:
             "target": None,
             "public_url": None,
         }
-        web_route = self._web_status(web_mode) if web_enabled else dict(empty_route)
+        client_route = self._client_route_status(web_mode) if client_enabled else dict(empty_route)
+        if web_enabled:
+            web_route = self._web_status(web_mode)
+        elif client_enabled:
+            web_route = client_route
+        else:
+            web_route = dict(empty_route)
         mcp_route = self._mcp_route_status() if mcp_enabled else dict(empty_route)
 
         # Legacy fields remain available for older settings pages. New clients
         # should use web_route for Android/Web and mcp_route for Remote MCP.
         remote = mcp_route if mcp_enabled else (
-            web_route if web_enabled and web_mode == WEB_MODE_FUNNEL else dict(empty_route)
+            web_route if self._web_access_enabled() and web_mode == WEB_MODE_FUNNEL else dict(empty_route)
         )
         configured_mcp_url = self._configured_mcp_url()
         if mcp_enabled and not configured_mcp_url:
             configured_mcp_url = self._mcp_public_url(mcp_route)
         return {
-            "mode": web_mode if web_enabled else "tailscale",
+            "mode": web_mode if self._web_access_enabled() else "tailscale",
             "web_mode": web_mode,
             "auth": self.auth_store.status(),
             "mcp_auth": self.mcp_auth_store.status(),
+            "client_auth": self.client_auth_store.status(),
             "remote_server": bool(self._thread and self._thread.is_alive()),
             "mcp_url": configured_mcp_url,
             "web_route": web_route,
             "android": web_route,
             "mcp_route": mcp_route,
+            "client_route": client_route,
             "remote": remote,
-            "funnel": web_route if web_enabled and web_mode == WEB_MODE_FUNNEL else dict(empty_route),
-            "serve": web_route if web_enabled and web_mode == WEB_MODE_SERVE else dict(empty_route),
+            "funnel": web_route if self._web_access_enabled() and web_mode == WEB_MODE_FUNNEL else dict(empty_route),
+            "serve": web_route if self._web_access_enabled() and web_mode == WEB_MODE_SERVE else dict(empty_route),
             "last_error": self._last_error,
         }

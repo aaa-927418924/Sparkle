@@ -147,6 +147,57 @@
                 「この端末を信頼する」を選んだブラウザだけが、以後キーなしで利用できます。ブラウザのCookieを削除した場合やログアウトした場合は再入力が必要です。
               </p>
 
+              <div class="remote-client-server-settings">
+                <h3 class="modal-sub">デスクトップクライアント接続</h3>
+                <p class="file-save-desc">
+                  別のSparkleデスクトップクライアントから、このPCのクリップ・メモ・タスク・プロジェクト・Ask AIを利用できるようにします。Web公開やRemote MCPとは別のキーを使います。Serve方式ではクライアント専用のHTTPS 8444番を使用します。
+                </p>
+                <div id="remoteClientServerStatus" class="ai-export-status" role="status" aria-live="polite">
+                  状態を確認しています…
+                </div>
+                <p id="remoteClientServerUrl" class="remote-access-url" hidden>
+                  クライアント接続URL: <a id="remoteClientServerUrlLink" href="#" target="_blank" rel="noreferrer"></a>
+                </p>
+                <div id="remoteClientKeyPanel" class="remote-access-key-panel" hidden>
+                  <label class="modal-label" for="remoteClientAccessKey">今回のクライアント用アクセスキー</label>
+                  <div class="remote-access-key-row">
+                    <input id="remoteClientAccessKey" class="modal-input" type="text" readonly autocomplete="off" spellcheck="false" />
+                    <button id="remoteClientCopyKey" class="modal-btn ghost" type="button">コピー</button>
+                  </div>
+                  <p class="file-save-desc">キーは設定ファイルには保存されません。紛失した場合は再発行してください。</p>
+                </div>
+                <div class="settings-data-actions remote-access-actions">
+                  <button id="remoteClientEnable" class="modal-btn" type="button">クライアント接続を有効にする</button>
+                  <button id="remoteClientRetry" class="modal-btn ghost" type="button" hidden>接続を再試行</button>
+                  <button id="remoteClientRotate" class="modal-btn ghost" type="button" hidden>アクセスキーを再発行</button>
+                  <button id="remoteClientRevokeAll" class="modal-btn ghost" type="button" hidden>接続をすべて解除</button>
+                  <button id="remoteClientDisable" class="modal-btn ghost" type="button" hidden>クライアント接続を無効にする</button>
+                </div>
+              </div>
+
+              <div class="remote-client-data-settings">
+                <h3 class="modal-sub">データ接続先</h3>
+                <p class="file-save-desc">
+                  デフォルトはこのPCのローカルDBを使用します。オンにすると、このデスクトップクライアントの操作対象をサーバー側DBへ切り替えます。接続に失敗してもローカルDBへ自動切替しません。
+                </p>
+                <label class="setting-row">
+                  <span>サーバー側のデータを使用する</span>
+                  <input id="remoteDataEnabled" type="checkbox" />
+                </label>
+                <div id="remoteDataConfig" class="remote-data-config" hidden>
+                  <label class="modal-label" for="remoteDataServerUrl">サーバーURL</label>
+                  <input id="remoteDataServerUrl" class="modal-input" type="url" placeholder="https://server.tailnet.ts.net" autocomplete="off" spellcheck="false" />
+                  <label class="modal-label" for="remoteDataAccessKey">クライアント用アクセスキー</label>
+                  <input id="remoteDataAccessKey" class="modal-input" type="password" placeholder="サーバー側で発行したキー" autocomplete="new-password" spellcheck="false" />
+                  <div class="settings-data-actions remote-access-actions">
+                    <button id="remoteDataConnect" class="modal-btn" type="button">接続して適用</button>
+                    <button id="remoteDataTest" class="modal-btn ghost" type="button" hidden>接続テスト</button>
+                    <button id="remoteDataDisconnect" class="modal-btn ghost" type="button" hidden>ローカルDBに戻す</button>
+                  </div>
+                </div>
+                <div id="remoteDataStatus" class="ai-export-status" role="status" aria-live="polite">ローカルDBを使用中</div>
+              </div>
+
               <div class="remote-mcp-settings">
                 <h3 class="modal-sub">Remote MCP</h3>
                 <p class="file-save-desc">
@@ -329,5 +380,6 @@
     <script src="ai-provider-settings.js?v=ai-provider-settings-20260820-v2"></script>
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2"></script>
     <script src="remote-access.js?v=remote-access-20260820-v6"></script>
+    <script src="remote-client-settings.js?v=remote-client-settings-20260821-v1"></script>
   </body>
 </html>

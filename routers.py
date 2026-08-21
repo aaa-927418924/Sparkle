@@ -35,8 +35,10 @@ from sqlite3 import Connection
 from crud import get_or_create_category, get_or_create_tag
 from db import DB_PATH, get_connection, init_db
 from ai_export import (
+    EXPORT_FILENAMES,
     clear_exported_files,
     export_now,
+    get_ai_export_dir,
     get_status as get_ai_export_status,
     open_export_folder,
 )
@@ -2083,6 +2085,25 @@ def ai_export_now():
         raise HTTPException(status_code=500, detail=f"AI向けMarkdownの生成に失敗しました: {exc}") from exc
 
 
+@router.get("/data/ai-export/files")
+def ai_export_files():
+    directory = get_ai_export_dir()
+    return {
+        "files": [name for name in EXPORT_FILENAMES if (directory / name).is_file()],
+        "enabled": get_ai_export_status().get("enabled", False),
+    }
+
+
+@router.get("/data/ai-export/files/{filename}")
+def ai_export_file(filename: str):
+    if filename not in EXPORT_FILENAMES or Path(filename).name != filename:
+        raise HTTPException(status_code=404, detail="エクスポートファイルが見つかりません")
+    path = get_ai_export_dir() / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="エクスポートファイルが見つかりません")
+    return FileResponse(str(path), media_type="text/markdown", filename=filename)
+
+
 @router.post("/data/ai-export/open")
 def open_ai_export_folder():
     try:
@@ -2867,6 +2888,7 @@ async def upload_local_clip(
     comment: Optional[str] = Form(None),
     category: Optional[str] = Form(None),
     tags: str = Form(""),
+    is_folder: bool = Form(False),
     db: Connection = Depends(get_db),
 ):
     """Upload a local file as a clip (copy mode). File is stored in app folder."""
@@ -2893,9 +2915,9 @@ async def upload_local_clip(
         thumbnail_url = _generate_video_thumbnail(dest)
 
     cur = db.execute(
-        "INSERT INTO clips(url, title, thumbnail_url, comment, category_id, clip_type, file_ref, file_size) "
-        "VALUES (?, ?, ?, ?, ?, 'local', 'copy', ?)",
-        (url, clip_title, thumbnail_url, comment, category_id, len(content)),
+        "INSERT INTO clips(url, title, thumbnail_url, comment, category_id, clip_type, file_ref, file_size, is_folder) "
+        "VALUES (?, ?, ?, ?, ?, 'local', 'copy', ?, ?)",
+        (url, clip_title, thumbnail_url, comment, category_id, len(content), 1 if is_folder else 0),
     )
     clip_id = cur.lastrowid
     _set_tags(db, clip_id, tag_ids)

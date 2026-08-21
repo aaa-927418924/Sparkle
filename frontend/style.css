@@ -4413,6 +4413,42 @@ body.settings-operation-active {
   margin-top: 12px;
 }
 
+.remote-client-server-settings,
+.remote-client-data-settings {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.remote-data-mode-banner {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1200;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 7px 11px;
+  border: 1px solid color-mix(in srgb, var(--accent, #d98b6e) 55%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface, #242424) 94%, var(--accent, #d98b6e));
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.3;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
+  pointer-events: none;
+}
+
+.remote-data-config {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  max-width: 720px;
+}
+
+.remote-data-config .modal-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .remote-mcp-settings {
   margin-top: 24px;
   padding-top: 20px;

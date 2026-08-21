@@ -2,7 +2,7 @@
 
 import os
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
@@ -28,7 +28,9 @@ from setup import (
     mark_setup_complete,
     start_setup_tutorial,
 )
-from remote_auth import get_auth_store, get_mcp_auth_store
+from remote_auth import get_auth_store, get_client_auth_store, get_mcp_auth_store
+from remote_client import RemoteClientError, get_remote_client
+from remote_proxy import RemoteClientProxy
 
 UPLOADS_DIR = get_uploads_dir()
 get_thumbnails_dir()
@@ -47,8 +49,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+_remote_client_proxy = RemoteClientProxy(get_remote_client())
+
+
+@app.middleware("http")
+async def remote_client_proxy(request: Request, call_next):
+    return await _remote_client_proxy.dispatch(request, call_next)
+
 def _initialize_application_data() -> None:
     if getattr(app.state, "data_initialized", False):
+        return
+    if get_remote_client().is_enabled():
+        app.state.data_initialized = False
         return
     init_db()
     run_maintenance()
@@ -70,6 +82,11 @@ class InitialSetupPayload(BaseModel):
 
 class RemoteAccessModePayload(BaseModel):
     mode: str
+
+
+class RemoteClientConnectPayload(BaseModel):
+    server_url: str
+    access_key: str
 
 
 @app.get("/migration/status", include_in_schema=False)
@@ -169,6 +186,47 @@ def _remote_access_manager():
     return getattr(app.state, "remote_access_manager", None)
 
 
+@app.get("/settings/remote-client", include_in_schema=False)
+def remote_client_status():
+    return get_remote_client().status()
+
+
+@app.post("/settings/remote-client/connect", include_in_schema=False)
+def remote_client_connect(payload: RemoteClientConnectPayload):
+    try:
+        status = get_remote_client().configure(payload.server_url, payload.access_key)
+        try:
+            from ai_import import stop_watcher
+
+            stop_watcher()
+        except Exception:
+            pass
+        app.state.remote_data_mode = True
+        return {"ok": True, "status": status, "reload_required": True}
+    except RemoteClientError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@app.post("/settings/remote-client/test", include_in_schema=False)
+def remote_client_test():
+    try:
+        return {"ok": True, "status": get_remote_client().test_connection()}
+    except RemoteClientError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@app.post("/settings/remote-client/disconnect", include_in_schema=False)
+def remote_client_disconnect():
+    try:
+        get_remote_client().disconnect()
+    except RemoteClientError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    app.state.remote_data_mode = False
+    if not get_migration_status().get("required") and not get_setup_status().get("required"):
+        _initialize_application_data()
+    return {"ok": True, "status": get_remote_client().status(), "reload_required": True}
+
+
 @app.get("/settings/remote-access", include_in_schema=False)
 def remote_access_status():
     manager = _remote_access_manager()
@@ -179,6 +237,7 @@ def remote_access_status():
         "web_mode": "funnel",
         "auth": get_auth_store().status(),
         "mcp_auth": get_mcp_auth_store().status(),
+        "client_auth": get_client_auth_store().status(),
         "remote_server": False,
         "mcp_url": os.environ.get("SPARKLE_MCP_PUBLIC_URL"),
         "web_route": {
@@ -240,6 +299,11 @@ def remote_mcp_enable():
     return _require_remote_access_manager().enable_mcp()
 
 
+@app.post("/settings/remote-access/client/enable", include_in_schema=False)
+def remote_client_enable():
+    return _require_remote_access_manager().enable_client()
+
+
 @app.post("/settings/remote-access/mode", include_in_schema=False)
 def remote_access_set_mode(payload: RemoteAccessModePayload):
     return _require_remote_access_manager().set_mode(payload.mode)
@@ -283,6 +347,26 @@ def remote_mcp_rotate():
 @app.post("/settings/remote-access/mcp/revoke-all", include_in_schema=False)
 def remote_mcp_revoke_all():
     return _require_remote_access_manager().revoke_mcp_all()
+
+
+@app.post("/settings/remote-access/client/retry", include_in_schema=False)
+def remote_client_retry():
+    return _require_remote_access_manager().retry()
+
+
+@app.post("/settings/remote-access/client/disable", include_in_schema=False)
+def remote_client_disable():
+    return _require_remote_access_manager().disable_client()
+
+
+@app.post("/settings/remote-access/client/rotate", include_in_schema=False)
+def remote_client_rotate():
+    return _require_remote_access_manager().rotate_client()
+
+
+@app.post("/settings/remote-access/client/revoke-all", include_in_schema=False)
+def remote_client_revoke_all():
+    return _require_remote_access_manager().revoke_client_all()
 
 
 @app.get("/health")
@@ -376,4 +460,12 @@ def _startup() -> None:
     if get_migration_status().get("required") or get_setup_status().get("required"):
         app.state.data_initialized = False
         return
+    if get_remote_client().is_enabled():
+        # The client shell still serves its local HTML and connection settings,
+        # but must not run maintenance/export/watchers against the fallback DB
+        # while remote data mode is active.
+        app.state.data_initialized = False
+        app.state.remote_data_mode = True
+        return
+    app.state.remote_data_mode = False
     _initialize_application_data()

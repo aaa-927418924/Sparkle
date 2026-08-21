@@ -27,6 +27,7 @@ STATE_VERSION = 1
 DEFAULT_REMOTE_MODE = "funnel"
 REMOTE_MODES = frozenset({"funnel", "serve"})
 MCP_AUTH_FILE = "mcp-auth.json"
+CLIENT_AUTH_FILE = "client-auth.json"
 
 
 class InvalidAccessKey(ValueError):
@@ -331,6 +332,7 @@ class AuthStore:
 
 _default_store: Optional[AuthStore] = None
 _default_mcp_store: Optional[AuthStore] = None
+_default_client_store: Optional[AuthStore] = None
 _default_store_lock = threading.Lock()
 
 
@@ -350,3 +352,18 @@ def get_mcp_auth_store() -> AuthStore:
         if _default_mcp_store is None:
             _default_mcp_store = AuthStore(get_app_data_dir() / MCP_AUTH_FILE)
         return _default_mcp_store
+
+
+def get_client_auth_store() -> AuthStore:
+    """Return the credential store used by desktop clients.
+
+    Desktop-client access is deliberately independent from both the browser
+    Remote Web key and the read-only Remote MCP key.  A client can therefore
+    be revoked without signing out browser users or disconnecting MCP.
+    """
+
+    global _default_client_store
+    with _default_store_lock:
+        if _default_client_store is None:
+            _default_client_store = AuthStore(get_app_data_dir() / CLIENT_AUTH_FILE)
+        return _default_client_store

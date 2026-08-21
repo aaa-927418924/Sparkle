@@ -39,6 +39,39 @@
 })();
 
 (() => {
+  // Keep the active data owner visible on every page.  The local API proxy
+  // intentionally preserves the same-origin frontend, so this small badge is
+  // the clearest indication that CRUD and AI requests are currently going to
+  // the server database rather than the fallback local database.
+  async function showRemoteDataOwner() {
+    try {
+      const response = await fetch(`${window.location.origin}/settings/remote-client`, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!data?.enabled || document.querySelector(".remote-data-mode-banner")) return;
+      document.body.classList.add("remote-data-mode");
+      const banner = document.createElement("div");
+      banner.className = "remote-data-mode-banner";
+      banner.setAttribute("role", "status");
+      banner.textContent = `サーバーDB接続中${data.server_label ? `：${data.server_label}` : ""}`;
+      document.body.appendChild(banner);
+    } catch {
+      // The individual API calls surface connection failures.  The banner is
+      // only an additional owner indicator and must never block page startup.
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", showRemoteDataOwner, { once: true });
+  } else {
+    void showRemoteDataOwner();
+  }
+})();
+
+(() => {
   // WebView2/pywebview can lose the native selection owner while the pointer
   // moves. Keep Ctrl/Cmd+C working by copying the selected text through the
   // Windows clipboard API first, then use browser fallbacks in previews.

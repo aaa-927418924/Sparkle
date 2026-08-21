@@ -21,7 +21,13 @@ from pydantic import BaseModel, Field
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from paths import get_resource_dir
-from remote_auth import AuthStore, InvalidAccessKey, get_mcp_auth_store
+from remote_auth import (
+    AuthStore,
+    InvalidAccessKey,
+    get_client_auth_store,
+    get_mcp_auth_store,
+)
+from version import APP_VERSION
 
 
 LOGGER = logging.getLogger("sparkle.remote_gateway")
@@ -34,6 +40,11 @@ class RemoteLoginPayload(BaseModel):
     access_key: str = Field(..., min_length=1, max_length=256)
     trust_device: bool = False
     device_label: str = Field(default="ブラウザ", max_length=80)
+
+
+class RemoteClientLoginPayload(BaseModel):
+    access_key: str = Field(..., min_length=1, max_length=256)
+    device_label: str = Field(default="Sparkleデスクトップ", max_length=80)
 
 
 def _cookie_secure(request: Request) -> bool:
@@ -76,7 +87,16 @@ def _auth_from_request(request: Request, store: AuthStore) -> Optional[dict[str,
     return store.authenticate(request.cookies.get(SESSION_COOKIE))
 
 
-def _build_public_app(store: AuthStore) -> FastAPI:
+def _client_auth_from_request(request: Request, store: AuthStore) -> Optional[dict[str, Any]]:
+    authorization = request.headers.get("authorization", "")
+    scheme, separator, token = authorization.partition(" ")
+    if separator and scheme.lower() == "bearer":
+        return store.authenticate(token.strip())
+    token = request.headers.get("x-sparkle-client-token")
+    return store.authenticate(token.strip()) if token else None
+
+
+def _build_public_app(store: AuthStore, client_store: AuthStore) -> FastAPI:
     public_app = FastAPI(
         title="Sparkle Remote Web",
         docs_url=None,
@@ -155,6 +175,68 @@ def _build_public_app(store: AuthStore) -> FastAPI:
         _clear_auth_cookies(response, request)
         return response
 
+    @public_app.post("/remote-client/login", include_in_schema=False)
+    def remote_client_login(payload: RemoteClientLoginPayload):
+        try:
+            result = client_store.login(
+                payload.access_key,
+                trust_device=True,
+                device_label=payload.device_label,
+            )
+        except InvalidAccessKey:
+            return JSONResponse(
+                {"ok": False, "detail": "デスクトップクライアント用アクセスキーが正しくありません。"},
+                status_code=401,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "authenticated": True,
+                "token": result["token"],
+                "session_id": result["session_id"],
+                "expires_at": result["expires_at"],
+                "server": "Sparkle",
+                "version": APP_VERSION,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @public_app.post("/remote-client/logout", include_in_schema=False)
+    def remote_client_logout(request: Request):
+        authorization = request.headers.get("authorization", "")
+        _, separator, token = authorization.partition(" ")
+        if separator:
+            client_store.logout(token.strip())
+        return JSONResponse({"ok": True}, headers={"Cache-Control": "no-store"})
+
+    @public_app.get("/remote-client/status", include_in_schema=False)
+    def remote_client_status(request: Request):
+        record = _client_auth_from_request(request, client_store)
+        if record is None:
+            return JSONResponse(
+                {"authenticated": False},
+                status_code=401,
+                headers={"Cache-Control": "no-store"},
+            )
+        return JSONResponse(
+            {
+                "authenticated": True,
+                "expires_at": record.get("expires_at"),
+                "server": "Sparkle",
+                "version": APP_VERSION,
+                "features": {
+                    "clips": True,
+                    "search": True,
+                    "file_upload": True,
+                    "ask_ai": True,
+                    "ai_export": True,
+                },
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
     public_app.mount(
         "/remote/static",
         StaticFiles(directory=str(REMOTE_DIR), check_dir=True),
@@ -174,6 +256,11 @@ class RemoteGateway:
         "/remote/logout",
         "/health",
     }
+    _CLIENT_PUBLIC_PATHS = {
+        "/remote-client/login",
+        "/remote-client/logout",
+        "/remote-client/status",
+    }
     _SAFE_SETTINGS = {
         "auto_create_note_on_project",
         "task_auto_delete",
@@ -190,6 +277,23 @@ class RemoteGateway:
         "/thumbnail-proxy",
         "/uploads",
     }
+    _CLIENT_PROTECTED_ROOTS = {
+        "/clipboard",
+        "/clips",
+        "/categories",
+        "/tags",
+        "/tasks",
+        "/notes",
+        "/projects",
+        "/url-metadata",
+        "/thumbnail-proxy",
+        "/uploads",
+        "/ai",
+        "/profile",
+        "/settings",
+        "/data",
+        "/maintenance",
+    }
     _DENIED_PATHS = {
         "/clips/local/reference",
         "/clips/local/copy-path",
@@ -198,6 +302,20 @@ class RemoteGateway:
         "/dialog/inspect-paths",
     }
     _DENIED_SUFFIXES = ("/path", "/open", "/explorer")
+    _CLIENT_DENIED_PATHS = {
+        "/data/export-backup",
+        "/data/import-backup",
+        "/data/ai-export/open",
+        "/clips/local/reference",
+        "/clips/local/copy-path",
+        "/dialog/open-files",
+        "/dialog/open-folder",
+        "/dialog/inspect-paths",
+        "/update/status",
+        "/update/check",
+        "/update/download",
+        "/update/apply",
+    }
 
     def __init__(
         self,
@@ -205,11 +323,13 @@ class RemoteGateway:
         store: AuthStore,
         mcp_runtime: Any = None,
         mcp_auth_store: Optional[AuthStore] = None,
+        client_auth_store: Optional[AuthStore] = None,
         mcp_public_url: Optional[str] = None,
     ) -> None:
         self.main_app = main_app
         self.store = store
-        self.public_app = _build_public_app(store)
+        self.client_auth_store = client_auth_store or get_client_auth_store()
+        self.public_app = _build_public_app(store, self.client_auth_store)
         self.mcp_auth_store = mcp_auth_store or get_mcp_auth_store()
         self.mcp_runtime = mcp_runtime
         if self.mcp_runtime is None:
@@ -255,6 +375,19 @@ class RemoteGateway:
         if self._is_allowed_setting(path):
             return True
         return any(self._path_matches_root(path, root) for root in self._PROTECTED_ROOTS)
+
+    def _is_client_protected(self, path: str) -> bool:
+        if path in self._CLIENT_DENIED_PATHS:
+            return False
+        if path.startswith("/settings/remote-access") or path.startswith("/settings/remote-client"):
+            return False
+        if path.startswith("/remote-client/"):
+            return False
+        if path.startswith("/clips/") and any(
+            path.endswith(suffix) for suffix in self._DENIED_SUFFIXES
+        ):
+            return False
+        return any(self._path_matches_root(path, root) for root in self._CLIENT_PROTECTED_ROOTS)
 
     @staticmethod
     def _origin_is_same_request(scope: Scope) -> bool:
@@ -384,8 +517,41 @@ class RemoteGateway:
         if path == "/health":
             await JSONResponse({"status": "ok", "app": "Sparkle Remote"})(scope, receive, send)
             return
+        if path in self._CLIENT_PUBLIC_PATHS:
+            await self.public_app(scope, receive, send)
+            return
         if self._is_public(path):
             await self.public_app(scope, receive, send)
+            return
+
+        request_headers = {
+            key.decode("latin-1").lower(): value.decode("latin-1")
+            for key, value in scope.get("headers", [])
+        }
+        authorization = request_headers.get("authorization", "")
+        has_client_token = (
+            authorization.lower().startswith("bearer ")
+            or bool(request_headers.get("x-sparkle-client-token"))
+        )
+        if has_client_token and self._is_client_protected(path):
+            record = _client_auth_from_request(
+                Request(scope, receive),
+                self.client_auth_store,
+            )
+            if record is None:
+                await self._send_json(
+                    scope,
+                    receive,
+                    send,
+                    {"detail": "デスクトップクライアントの接続認証が必要です。"},
+                    401,
+                    {
+                        "Cache-Control": "no-store",
+                        "WWW-Authenticate": "Bearer",
+                    },
+                )
+                return
+            await self._forward_main(scope, receive, send, {**record, "client": True})
             return
 
         if not self._is_protected(path):

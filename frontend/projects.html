@@ -92,6 +92,10 @@
                 <h2 class="project-section-title">クリップ</h2>
                 <button id="addClipBtn" class="modal-btn ghost" type="button"><img class="icon icon-btn" src="icons/clip.svg" alt="" /> クリップ</button>
               </div>
+              <div id="detailClipSelectionBar" class="clip-selection-bar" role="status" aria-live="polite" hidden>
+                <span id="detailClipSelectionCount" class="clip-selection-count"></span>
+                <button id="clearDetailClipSelectionBtn" class="modal-btn ghost" type="button">選択解除</button>
+              </div>
               <div id="detailClips" class="grid"></div>
               <div id="detailClipsEmpty" class="empty" hidden>
                 <p class="empty-msg">このプロジェクトにクリップはありません</p>

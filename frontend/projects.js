@@ -22,6 +22,7 @@ const state = {
   editingId: null,
   doneFilter: "0",
   selectedIds: new Set(),
+  detailClipSelectedIds: new Set(),
   dragOccurred: false,
   routeRequestId: 0,
 };
@@ -40,6 +41,9 @@ const els = {
   detailDesc: $("detailDesc"),
   detailClips: $("detailClips"),
   detailClipsEmpty: $("detailClipsEmpty"),
+  detailClipSelectionBar: $("detailClipSelectionBar"),
+  detailClipSelectionCount: $("detailClipSelectionCount"),
+  clearDetailClipSelectionBtn: $("clearDetailClipSelectionBtn"),
   detailTasks: $("detailTasks"),
   detailTasksEmpty: $("detailTasksEmpty"),
   detailMemos: $("detailMemos"),
@@ -327,6 +331,7 @@ function bindPageEntryAnimation(container) {
 
 async function openDetail(projectId, { pushHistory = true } = {}) {
   const requestId = ++state.routeRequestId;
+  if (state.currentProjectId !== projectId) clearDetailClipSelection();
   state.currentProjectId = projectId;
   window.projectAssistant?.setProject?.(projectId);
   const proj = state.projects.find((p) => p.id === projectId);
@@ -347,6 +352,8 @@ async function openDetail(projectId, { pushHistory = true } = {}) {
 
 async function showProjectList({ syncUrl = true, reload = true } = {}) {
   ++state.routeRequestId;
+  clearDetailClipSelection();
+  cancelDetailClipRubberBand();
   state.currentProjectId = null;
   window.projectAssistant?.setProject?.(null);
   els.listView.hidden = false;
@@ -382,24 +389,35 @@ async function reloadDetail() {
   renderDetailMemos(notes);
 }
 function renderDetailClips(clips) {
+  const availableIds = new Set(clips.map((clip) => Number(clip.id)));
+  for (const clipId of state.detailClipSelectedIds) {
+    if (!availableIds.has(clipId)) state.detailClipSelectedIds.delete(clipId);
+  }
   els.detailClips.replaceChildren();
   els.detailClipsEmpty.hidden = clips.length > 0;
   els.detailClips.hidden = clips.length === 0;
+  updateDetailClipSelectionBar();
   if (clips.length === 0) return;
   els.detailClips.innerHTML = clips.map((c) => {
     const isLocal = c.url && c.url.startsWith("local://");
     const isText = isLocal && /\.(txt|md|log|csv|json|js|ts|py|html|css|xml|yaml|yml|toml|ini|cfg|conf|sh|bash|bat|ps1|rb|java|c|cpp|h|hpp|rs|go|swift|kt)$/i.test(c.url);
+    const title = c.title || c.url || "（無題）";
+    const selected = state.detailClipSelectedIds.has(Number(c.id));
     let phContent;
     const imgUrl = clipImageUrl(c);
     if (imgUrl) {
-      phContent = `<img class="card-img" src="${escapeHtml(imgUrl)}" alt="" />`;
+      phContent = `<img class="card-img" src="${escapeHtml(imgUrl)}" alt="" draggable="false" />`;
     } else if (isText) {
       phContent = `<div class="card-ph card-ph-text" data-clip-id="${c.id}"><span class="card-text-loading">読み込み中…</span></div>`;
     } else {
       phContent = `<div class="card-ph">${fileIconHtml(c.url)}</div>`;
     }
     return `
-      <div class="card" data-clip-id="${c.id}" data-url="${escapeHtml(c.url || "")}">
+      <div class="card${selected ? " selected" : ""}" data-clip-id="${c.id}" data-url="${escapeHtml(c.url || "")}">
+        <label class="card-select-toggle" title="${selected ? "選択を解除" : "選択"}">
+          <input type="checkbox" class="detail-clip-select-cb" data-id="${c.id}" ${selected ? "checked" : ""} aria-label="${escapeHtml(title)}を選択" />
+          <span aria-hidden="true"></span>
+        </label>
         ${phContent}
         <div class="card-actions">
           ${isLocal ? `<button class="act-btn" data-explorer="${c.id}" title="エクスプローラーで表示"><img class="icon icon-btn" src="icons/folder.svg" alt="表示" /></button>` : ""}
@@ -417,7 +435,12 @@ function renderDetailClips(clips) {
   els.detailClips.querySelectorAll(".card-ph-text[data-clip-id]").forEach(loadTextPreview);
   els.detailClips.querySelectorAll(".card").forEach((card) => {
     card.addEventListener("click", (e) => {
-      if (e.target.closest(".unlink-clip-btn")) return;
+      if (e.target.closest(".unlink-clip-btn, [data-explorer], .card-select-toggle")) return;
+      if (detailClipSuppressClick) {
+        detailClipSuppressClick = false;
+        e.preventDefault();
+        return;
+      }
       const clipId = Number(card.dataset.clipId);
       const url = card.dataset.url;
       if (url && url.startsWith("local://")) {
@@ -425,6 +448,12 @@ function renderDetailClips(clips) {
       } else if (url) {
         window.open(url);
       }
+    });
+  });
+  els.detailClips.querySelectorAll(".detail-clip-select-cb").forEach((checkbox) => {
+    checkbox.addEventListener("click", (e) => e.stopPropagation());
+    checkbox.addEventListener("change", () => {
+      setDetailClipSelected(Number(checkbox.dataset.id), checkbox.checked);
     });
   });
   els.detailClips.querySelectorAll(".unlink-clip-btn").forEach((btn) => {
@@ -944,6 +973,7 @@ function bindEvents() {
   $("addClipBtn").addEventListener("click", openClipModal);
   $("addTaskBtn").addEventListener("click", openTaskModal);
   $("addNoteBtn").addEventListener("click", openNoteModal);
+  els.clearDetailClipSelectionBtn?.addEventListener("click", clearDetailClipSelection);
 
   // Task modal
   $("taskModalCancel").addEventListener("click", () => { els.taskModal.hidden = true; });
@@ -977,9 +1007,11 @@ function bindEvents() {
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
-      if (state.selectedIds.size > 0) {
+      if (state.selectedIds.size > 0 || state.detailClipSelectedIds.size > 0 || rubberBandActive || detailClipRubberBandActive) {
         clearSelection();
+        clearDetailClipSelection();
         cancelRubberBand();
+        cancelDetailClipRubberBand();
         state.dragOccurred = false;
         return;
       }
@@ -995,6 +1027,15 @@ let rubberBandStartX = 0;
 let rubberBandStartY = 0;
 let rubberBandEl = null;
 let rubberBandAdditive = false;
+let detailClipRubberBandActive = false;
+let detailClipRubberBandStartX = 0;
+let detailClipRubberBandStartY = 0;
+let detailClipRubberBandEl = null;
+let detailClipRubberBandAdditive = false;
+let detailClipDragOccurred = false;
+let detailClipSuppressClick = false;
+
+const RUBBER_BAND_START_DISTANCE = 4;
 
 function rectsOverlap(a, b) {
   return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
@@ -1012,6 +1053,94 @@ function clearSelection() {
   state.selectedIds.clear();
   updateBatchBar();
   document.querySelectorAll(".project-card.selected").forEach((el) => el.classList.remove("selected"));
+}
+
+function updateDetailClipSelectionBar() {
+  const count = state.detailClipSelectedIds.size;
+  if (els.detailClipSelectionBar) els.detailClipSelectionBar.hidden = count === 0;
+  if (els.detailClipSelectionCount) {
+    els.detailClipSelectionCount.textContent = count > 0 ? `${count}件選択中` : "";
+  }
+}
+
+function setDetailClipSelected(id, selected) {
+  const clipId = Number(id);
+  if (!Number.isInteger(clipId) || clipId <= 0) return;
+  if (selected) state.detailClipSelectedIds.add(clipId);
+  else state.detailClipSelectedIds.delete(clipId);
+  const card = els.detailClips.querySelector(`.card[data-clip-id="${clipId}"]`);
+  card?.classList.toggle("selected", selected);
+  const checkbox = card?.querySelector(".detail-clip-select-cb");
+  if (checkbox) checkbox.checked = selected;
+  const toggle = card?.querySelector(".card-select-toggle");
+  if (toggle) toggle.title = selected ? "選択を解除" : "選択";
+  updateDetailClipSelectionBar();
+}
+
+function clearDetailClipSelection() {
+  state.detailClipSelectedIds.clear();
+  els.detailClips?.querySelectorAll(".card.selected").forEach((card) => card.classList.remove("selected"));
+  els.detailClips?.querySelectorAll(".detail-clip-select-cb").forEach((checkbox) => { checkbox.checked = false; });
+  els.detailClips?.querySelectorAll(".card-select-toggle").forEach((toggle) => { toggle.title = "選択"; });
+  updateDetailClipSelectionBar();
+}
+
+function cancelDetailClipRubberBand() {
+  detailClipRubberBandActive = false;
+  detailClipDragOccurred = false;
+  els.detailClips?.classList.remove("is-range-selecting");
+  if (detailClipRubberBandEl) {
+    detailClipRubberBandEl.remove();
+    detailClipRubberBandEl = null;
+  }
+}
+
+function updateDetailClipRubberBand(event) {
+  if (!detailClipRubberBandActive) return false;
+  const dx = event.clientX - detailClipRubberBandStartX;
+  const dy = event.clientY - detailClipRubberBandStartY;
+  if (!detailClipRubberBandEl && Math.hypot(dx, dy) < RUBBER_BAND_START_DISTANCE) return true;
+
+  if (!detailClipRubberBandEl) {
+    detailClipRubberBandEl = document.createElement("div");
+    detailClipRubberBandEl.className = "rubber-band";
+    document.body.appendChild(detailClipRubberBandEl);
+    els.detailClips?.classList.add("is-range-selecting");
+  }
+
+  detailClipDragOccurred = true;
+  const left = Math.min(detailClipRubberBandStartX, event.clientX);
+  const top = Math.min(detailClipRubberBandStartY, event.clientY);
+  detailClipRubberBandEl.style.left = `${left}px`;
+  detailClipRubberBandEl.style.top = `${top}px`;
+  detailClipRubberBandEl.style.width = `${Math.abs(dx)}px`;
+  detailClipRubberBandEl.style.height = `${Math.abs(dy)}px`;
+  event.preventDefault();
+  return true;
+}
+
+function finishDetailClipRubberBand(event) {
+  if (!detailClipRubberBandActive) return false;
+  const wasDragged = detailClipDragOccurred && detailClipRubberBandEl;
+  const bandRect = detailClipRubberBandEl?.getBoundingClientRect();
+  const preserveSelection = detailClipRubberBandAdditive || event.shiftKey || event.ctrlKey || event.metaKey;
+  const clickedCard = event.target.closest?.("#detailClips .card");
+  cancelDetailClipRubberBand();
+
+  if (!wasDragged || !bandRect) {
+    if (!clickedCard && !preserveSelection) clearDetailClipSelection();
+    return true;
+  }
+
+  detailClipSuppressClick = true;
+  window.setTimeout(() => { detailClipSuppressClick = false; }, 0);
+  if (!preserveSelection) clearDetailClipSelection();
+  els.detailClips.querySelectorAll(".card[data-clip-id]").forEach((card) => {
+    if (!rectsOverlap(bandRect, card.getBoundingClientRect())) return;
+    setDetailClipSelected(Number(card.dataset.clipId), true);
+  });
+  updateDetailClipSelectionBar();
+  return true;
 }
 
 function toggleSelection(id) {
@@ -1073,10 +1202,21 @@ async function batchDuplicateSelected() {
 
 const projMainEl = document.querySelector(".main");
 
+els.detailClips.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  if (e.target.closest("button, input, select, textarea, a, label")) return;
+  cancelDetailClipRubberBand();
+  detailClipRubberBandAdditive = e.shiftKey || e.ctrlKey || e.metaKey;
+  detailClipRubberBandActive = true;
+  detailClipDragOccurred = false;
+  detailClipRubberBandStartX = e.clientX;
+  detailClipRubberBandStartY = e.clientY;
+});
+
 projMainEl.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   cancelRubberBand();
-  if (e.target.closest(".project-card") || e.target.closest("button") || e.target.closest("select") || e.target.closest("input") || e.target.closest("a")) return;
+  if (e.target.closest("#detailClips") || e.target.closest(".project-card") || e.target.closest("button") || e.target.closest("select") || e.target.closest("input") || e.target.closest("a")) return;
   state.dragOccurred = false;
   rubberBandAdditive = e.shiftKey || e.ctrlKey || e.metaKey;
   rubberBandActive = true;
@@ -1093,6 +1233,7 @@ projMainEl.addEventListener("mousedown", (e) => {
 });
 
 document.addEventListener("mousemove", (e) => {
+  if (updateDetailClipRubberBand(e)) return;
   if (!rubberBandActive || !rubberBandEl) return;
   state.dragOccurred = true;
   const cx = e.clientX + window.scrollX;
@@ -1109,6 +1250,7 @@ document.addEventListener("mousemove", (e) => {
 });
 
 document.addEventListener("mouseup", (e) => {
+  if (finishDetailClipRubberBand(e)) return;
   if (rubberBandActive && rubberBandEl) {
     const bandRect = rubberBandEl.getBoundingClientRect();
     const preserveSelection = rubberBandAdditive || e.shiftKey || e.ctrlKey || e.metaKey;

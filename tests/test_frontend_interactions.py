@@ -32,6 +32,21 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertIn("#clipModal .pm-home-clip-card", css)
         self.assertIn("grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));", css)
 
+    def test_project_detail_clip_cards_support_scoped_range_selection(self):
+        html = (ROOT / "frontend" / "projects.html").read_text(encoding="utf-8")
+        source = (ROOT / "frontend" / "projects.js").read_text(encoding="utf-8")
+        css = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="detailClipSelectionBar"', html)
+        self.assertIn('id="clearDetailClipSelectionBtn"', html)
+        self.assertIn('class="card-select-toggle"', source)
+        self.assertIn("detailClipSelectedIds", source)
+        self.assertIn("els.detailClips.addEventListener(\"mousedown\"", source)
+        self.assertIn("function finishDetailClipRubberBand(event)", source)
+        self.assertIn('e.target.closest("#detailClips")', source)
+        self.assertIn("#detailClips.is-range-selecting", css)
+        self.assertIn(".card-select-toggle input:focus-visible", css)
+
     def test_project_assistant_drawer_uses_fast_transparent_toggle_composer(self):
         html = (ROOT / "frontend" / "projects.html").read_text(encoding="utf-8")
         js = (ROOT / "frontend" / "project-assistant.js").read_text(encoding="utf-8")

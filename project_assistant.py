@@ -1653,6 +1653,7 @@ def _delete_project_assistant_exchange(
     message_id: int,
     *,
     latest_user_only: bool = False,
+    delete_tail: bool = False,
 ) -> None:
     project = db.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not project:
@@ -1676,6 +1677,19 @@ def _delete_project_assistant_exchange(
         if not latest or int(latest["id"]) != int(message_id):
             raise ProjectAssistantError(409, "編集できるのは最後のユーザーメッセージだけです。")
 
+    if delete_tail:
+        db.execute(
+            "DELETE FROM project_assistant_messages WHERE project_id = ? AND id >= ?",
+            (project_id, message_id),
+        )
+        db.execute(
+            "DELETE FROM project_assistant_action_proposals "
+            "WHERE project_id = ? AND resolved_at IS NULL",
+            (project_id,),
+        )
+        db.commit()
+        return
+
     next_row = db.execute(
         "SELECT id, role FROM project_assistant_messages "
         "WHERE project_id = ? AND id > ? ORDER BY id ASC LIMIT 1",
@@ -1694,9 +1708,9 @@ def _delete_project_assistant_exchange(
 
 
 def delete_project_assistant_message(db: Connection, project_id: int, message_id: int) -> None:
-    """Delete one user turn and its immediately following assistant answer."""
+    """Delete the selected user turn and every later assistant history row."""
 
-    _delete_project_assistant_exchange(db, project_id, message_id)
+    _delete_project_assistant_exchange(db, project_id, message_id, delete_tail=True)
 
 
 def prepare_project_assistant_edit(db: Connection, project_id: int, message_id: int) -> None:

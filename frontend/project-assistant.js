@@ -13,6 +13,8 @@
     pendingGeneration: null,
     activeRequest: null,
     editingMessageId: null,
+    editingBubble: null,
+    editingEditor: null,
     backgroundResult: null,
   };
 
@@ -22,7 +24,6 @@
     availability: $("projectAssistantAvailability"),
     modal: $("projectAssistantModal"),
     dialog: document.querySelector("#projectAssistantModal .project-assistant-dialog"),
-    close: $("projectAssistantClose"),
     setup: $("projectAssistantSetup"),
     setupMessage: $("projectAssistantSetupMessage"),
     form: $("projectAssistantForm"),
@@ -35,7 +36,6 @@
     actionList: $("projectAssistantActionList"),
     clearHistory: $("projectAssistantClearHistory"),
     status: $("projectAssistantStatus"),
-    editCancel: $("projectAssistantEditCancel"),
     scopeProject: $("projectAssistantScopeProject"),
     scopeAll: $("projectAssistantScopeAll"),
   };
@@ -194,31 +194,128 @@
     return bubble;
   }
 
+  function createMessageIconButton(iconName, label) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `project-assistant-message-action project-assistant-message-icon-action is-${iconName}`;
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    const icon = document.createElement("span");
+    icon.className = `project-assistant-message-icon project-assistant-message-icon-${iconName}`;
+    icon.setAttribute("aria-hidden", "true");
+    button.append(icon);
+    return button;
+  }
+
   function appendUserMessageActions(bubble, message, canEdit) {
     const actions = document.createElement("div");
     actions.className = "project-assistant-message-actions";
-    const disabled = Boolean(state.activeRequest);
+    const disabled = Boolean(state.activeRequest || state.editingMessageId != null);
 
     if (canEdit) {
-      const edit = document.createElement("button");
-      edit.type = "button";
-      edit.className = "project-assistant-message-action modal-btn ghost";
-      edit.textContent = "編集";
-      edit.setAttribute("aria-label", "最後のユーザーメッセージを編集");
+      const edit = createMessageIconButton("pencil", "最後のユーザーメッセージを編集");
       edit.disabled = disabled;
-      edit.addEventListener("click", () => beginEditMessage(message));
+      edit.addEventListener("click", () => beginEditMessage(message, bubble));
       actions.append(edit);
     }
 
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "project-assistant-message-action modal-btn ghost";
-    remove.textContent = "削除";
-    remove.setAttribute("aria-label", "このユーザーメッセージを削除");
+    const remove = createMessageIconButton("trash", "このメッセージ以降の履歴を削除");
     remove.disabled = disabled;
     remove.addEventListener("click", () => deleteUserMessage(message.id));
     actions.append(remove);
     bubble.append(actions);
+  }
+
+  function clearInlineEditState() {
+    state.editingMessageId = null;
+    state.editingBubble = null;
+    state.editingEditor = null;
+    els.message.disabled = false;
+  }
+
+  function beginEditMessage(message, bubble) {
+    if (state.activeRequest || state.editingMessageId != null || !message || message.id == null || !bubble) return;
+    const body = bubble.querySelector(".project-assistant-message-content");
+    if (!body) return;
+
+    state.editingMessageId = Number(message.id);
+    state.editingBubble = bubble;
+    els.message.disabled = true;
+    bubble.classList.add("is-editing");
+
+    const editor = document.createElement("textarea");
+    editor.className = "project-assistant-inline-editor";
+    editor.rows = 4;
+    editor.maxLength = 2000;
+    editor.value = String(message.content || "");
+    editor.setAttribute("aria-label", "編集するユーザーメッセージ");
+
+    const controls = document.createElement("div");
+    controls.className = "project-assistant-inline-edit-actions";
+    const submit = document.createElement("button");
+    submit.type = "button";
+    submit.className = "modal-btn";
+    submit.textContent = "再送信";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "modal-btn ghost";
+    cancel.textContent = "キャンセル";
+    controls.append(submit, cancel);
+    body.replaceChildren(editor, controls);
+
+    state.editingEditor = editor;
+    submit.addEventListener("click", submitInlineEdit);
+    cancel.addEventListener("click", cancelInlineEdit);
+    editor.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+      event.preventDefault();
+      submitInlineEdit();
+    });
+    setStatus("このメッセージを編集しています。Enterで再送信、Shift+Enterで改行できます。", false);
+    editor.focus({ preventScroll: true });
+    const end = editor.value.length;
+    editor.setSelectionRange(end, end);
+  }
+
+  async function cancelInlineEdit() {
+    if (state.editingMessageId == null) return;
+    clearInlineEditState();
+    await loadHistory();
+    setStatus("編集をキャンセルしました。", false);
+    if (state.open) els.message.focus({ preventScroll: true });
+  }
+
+  async function submitInlineEdit() {
+    const editingId = state.editingMessageId;
+    const editor = state.editingEditor;
+    if (state.activeRequest || editingId == null || !editor) return;
+    const message = editor.value.trim();
+    if (!message) {
+      setStatus("質問・依頼を入力してください。", true);
+      editor.focus();
+      return;
+    }
+
+    const controls = state.editingBubble?.querySelectorAll(".project-assistant-inline-edit-actions button");
+    controls?.forEach((button) => { button.disabled = true; });
+    editor.disabled = true;
+    setStatus("編集中の履歴を更新しています…", false, true);
+    try {
+      const response = await fetch(`${API}/projects/${state.projectId}/assistant/history/${editingId}/edit`, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "編集対象を更新できませんでした。");
+      clearInlineEditState();
+      await loadHistory();
+      await startAssistantRequest(message);
+    } catch (error) {
+      editor.disabled = false;
+      controls?.forEach((button) => { button.disabled = false; });
+      setStatus(error.message || "編集対象を更新できませんでした。", true);
+      editor.focus();
+    }
   }
 
   function renderPendingRequest(request) {
@@ -242,28 +339,9 @@
     return true;
   }
 
-  function beginEditMessage(message) {
-    if (state.activeRequest || !message || message.id == null) return;
-    state.editingMessageId = Number(message.id);
-    els.message.value = String(message.content || "");
-    if (els.editCancel) els.editCancel.hidden = false;
-    setStatus("編集内容を入力してEnterで再送信してください。", false);
-    els.message.focus({ preventScroll: true });
-    const end = els.message.value.length;
-    els.message.setSelectionRange(end, end);
-  }
-
-  function cancelEdit() {
-    state.editingMessageId = null;
-    if (els.editCancel) els.editCancel.hidden = true;
-    els.message.value = "";
-    setStatus("編集をキャンセルしました。", false);
-    if (state.open && !els.message.disabled) els.message.focus({ preventScroll: true });
-  }
-
   async function deleteUserMessage(messageId) {
-    if (state.activeRequest || state.projectId == null || messageId == null) return;
-    if (!window.confirm("このユーザーメッセージと回答を削除します。続けますか？")) return;
+    if (state.activeRequest || state.editingMessageId != null || state.projectId == null || messageId == null) return;
+    if (!window.confirm("このメッセージ以降のAsk AI履歴を削除します。続けますか？")) return;
     try {
       const response = await fetch(`${API}/projects/${state.projectId}/assistant/history/${messageId}`, {
         method: "DELETE",
@@ -271,9 +349,8 @@
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || "メッセージを削除できませんでした。");
-      if (Number(state.editingMessageId) === Number(messageId)) cancelEdit();
       await loadHistory();
-      setStatus("メッセージを削除しました。", false);
+      setStatus("このメッセージ以降の履歴を削除しました。", false);
     } catch (error) {
       setStatus(error.message || "メッセージを削除できませんでした。", true);
     }
@@ -453,8 +530,7 @@
     setLayoutInert(true);
     els.modal.hidden = false;
     els.message.value = "";
-    state.editingMessageId = null;
-    if (els.editCancel) els.editCancel.hidden = true;
+    clearInlineEditState();
     closeActionDialog(false);
     els.form.hidden = true;
     els.setup.hidden = true;
@@ -482,8 +558,7 @@
   function closeAssistant() {
     if (!state.open) return;
     state.open = false;
-    state.editingMessageId = null;
-    if (els.editCancel) els.editCancel.hidden = true;
+    clearInlineEditState();
     closeActionDialog(false);
     els.modal.hidden = true;
     setLayoutInert(false);
@@ -495,6 +570,10 @@
   async function clearHistory() {
     if (state.activeRequest) {
       setStatus("生成中は履歴を消去できません。", true);
+      return;
+    }
+    if (state.editingMessageId != null) {
+      setStatus("編集中は履歴を消去できません。", true);
       return;
     }
     if (state.projectId == null || !window.confirm("このプロジェクトの専属AI履歴を消去します。続けますか？")) return;
@@ -511,44 +590,17 @@
     }
   }
 
-  async function askAssistant(event) {
-    event?.preventDefault();
-    if (state.projectId == null || els.message.disabled || state.activeRequest) return;
-    const message = els.message.value.trim();
-    if (!message) {
-      setStatus("質問・依頼を入力してください。", true);
-      els.message.focus();
-      return;
-    }
-
-    const editingId = state.editingMessageId;
-    if (editingId != null) {
-      els.message.disabled = true;
-      setStatus("編集中の履歴を更新しています…", false, true);
-      try {
-        const response = await fetch(`${API}/projects/${state.projectId}/assistant/history/${editingId}/edit`, {
-          method: "POST",
-          headers: { Accept: "application/json" },
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.detail || "編集対象を更新できませんでした。");
-        state.editingMessageId = null;
-        if (els.editCancel) els.editCancel.hidden = true;
-        await loadHistory();
-      } catch (error) {
-        els.message.disabled = false;
-        setStatus(error.message || "編集対象を更新できませんでした。", true);
-        return;
-      }
-    }
-
+  async function startAssistantRequest(message) {
+    if (state.projectId == null || state.activeRequest) return;
+    const cleanMessage = String(message || "").trim();
+    if (!cleanMessage) return;
     const requestId = ++state.requestId;
     const controller = new AbortController();
     const scope = els.scope.checked ? "all" : "project";
     const request = {
       id: requestId,
       projectId: state.projectId,
-      message,
+      message: cleanMessage,
       scope,
       controller,
       userBubble: null,
@@ -565,7 +617,7 @@
       const response = await fetch(`${API}/projects/${request.projectId}/assistant`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ message, scope }),
+        body: JSON.stringify({ message: cleanMessage, scope }),
         signal: controller.signal,
       });
       let data = {};
@@ -601,6 +653,18 @@
     }
   }
 
+  async function askAssistant(event) {
+    event?.preventDefault();
+    if (state.projectId == null || els.message.disabled || state.activeRequest || state.editingMessageId != null) return;
+    const message = els.message.value.trim();
+    if (!message) {
+      setStatus("質問・依頼を入力してください。", true);
+      els.message.focus();
+      return;
+    }
+    await startAssistantRequest(message);
+  }
+
   function setProject(projectId) {
     const numeric = projectId == null ? null : Number(projectId);
     const next = Number.isInteger(numeric) && numeric > 0 ? numeric : null;
@@ -610,7 +674,6 @@
   }
 
   els.button?.addEventListener("click", openAssistant);
-  els.close?.addEventListener("click", closeAssistant);
   els.form?.addEventListener("submit", askAssistant);
   els.scope?.addEventListener("change", updateScopeCopy);
   els.message?.addEventListener("keydown", (event) => {
@@ -619,7 +682,6 @@
     askAssistant();
   });
   els.clearHistory?.addEventListener("click", clearHistory);
-  els.editCancel?.addEventListener("click", cancelEdit);
   els.modal?.addEventListener("click", (event) => {
     if (event.target === els.modal || event.target.matches?.("[data-project-assistant-close]")) closeAssistant();
   });

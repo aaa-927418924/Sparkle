@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle — プロジェクト</title>
-    <link rel="stylesheet" href="style.css?v=project-assistant-source-history-20260821-v6" />
+    <link rel="stylesheet" href="style.css?v=project-assistant-source-history-20260821-v7" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
     <script>
       document.documentElement.setAttribute("data-theme", "dark");
@@ -242,19 +242,18 @@
             <p class="project-assistant-kicker">PROJECT ASSISTANT</p>
             <h2 id="projectAssistantTitle" class="modal-title">Ask AI</h2>
           </div>
-          <button id="projectAssistantClose" class="modal-btn ghost" type="button">閉じる</button>
-        </div>
-        <div class="project-assistant-toolbar">
-          <div class="project-assistant-scope-toggle">
-            <span id="projectAssistantScopeLabel" class="project-assistant-scope-label">参照範囲</span>
-            <span id="projectAssistantScopeProject" class="project-assistant-scope-option">プロジェクト内</span>
-            <label class="project-assistant-switch" title="参照範囲を切り替える">
-              <input id="projectAssistantScope" type="checkbox" role="switch" aria-labelledby="projectAssistantScopeLabel projectAssistantScopeProject projectAssistantScopeAll">
-              <span class="project-assistant-switch-track" aria-hidden="true"></span>
-            </label>
-            <span id="projectAssistantScopeAll" class="project-assistant-scope-option">全て</span>
+          <div class="project-assistant-toolbar">
+            <div class="project-assistant-scope-toggle">
+              <span id="projectAssistantScopeLabel" class="project-assistant-scope-label">参照範囲</span>
+              <span id="projectAssistantScopeProject" class="project-assistant-scope-option">プロジェクト内</span>
+              <label class="project-assistant-switch" title="参照範囲を切り替える">
+                <input id="projectAssistantScope" type="checkbox" role="switch" aria-labelledby="projectAssistantScopeLabel projectAssistantScopeProject projectAssistantScopeAll">
+                <span class="project-assistant-switch-track" aria-hidden="true"></span>
+              </label>
+              <span id="projectAssistantScopeAll" class="project-assistant-scope-option">全て</span>
+            </div>
+            <button id="projectAssistantClearHistory" class="modal-btn ghost" type="button">履歴を消去</button>
           </div>
-          <button id="projectAssistantClearHistory" class="modal-btn ghost" type="button">履歴を消去</button>
         </div>
         <p id="projectAssistantDescription" class="project-assistant-description">このプロジェクトに紐づくクリップ・メモ・タスクだけを参照して回答します。</p>
         <p id="projectAssistantPrivacy" class="project-assistant-privacy">質問すると、プロジェクトの内容が設定したAIプロバイダーへ送信されます。ローカルファイルの絶対パスは送信しません。</p>
@@ -276,7 +275,6 @@
           <textarea id="projectAssistantMessage" class="modal-input project-assistant-message" rows="3" maxlength="2000" placeholder="このプロジェクトについて質問・依頼してください…" autocomplete="off"></textarea>
           <div class="project-assistant-form-actions">
             <span id="projectAssistantStatus" class="project-assistant-status" role="status" aria-live="polite" aria-atomic="true"></span>
-            <button id="projectAssistantEditCancel" class="modal-btn ghost" type="button" hidden>編集をキャンセル</button>
           </div>
         </form>
 
@@ -362,7 +360,7 @@
 
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
     <script src="projects.js?v=projects-controls-20260803-batch-duplicate-v1"></script>
-    <script src="project-assistant.js?v=project-assistant-source-history-20260821-v6"></script>
+    <script src="project-assistant.js?v=project-assistant-source-history-20260821-v7"></script>
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2"></script>
     <script src="page-transition.js?v=page-swipe-20260821-focus-safe-v1"></script>
   </body>

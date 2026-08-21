@@ -47,16 +47,17 @@ class ProjectAssistantTests(unittest.TestCase):
         assistant_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
         return user_id, assistant_id
 
-    def test_delete_assistant_history_message_removes_only_that_turn(self):
+    def test_delete_assistant_history_message_removes_selected_turn_and_everything_after_it(self):
         connection = make_connection()
         try:
             connection.execute("INSERT INTO projects(name) VALUES (?)", ("対象",))
             project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
-            first_user_id, _ = self._insert_history_pair(connection, project_id, "最初の質問", "最初の回答")
             self._insert_history_pair(connection, project_id, "残す質問", "残す回答")
+            target_user_id, _ = self._insert_history_pair(connection, project_id, "削除対象", "削除対象の回答")
+            self._insert_history_pair(connection, project_id, "後続の質問", "後続の回答")
             connection.commit()
 
-            assistant.delete_project_assistant_message(connection, project_id, first_user_id)
+            assistant.delete_project_assistant_message(connection, project_id, target_user_id)
 
             history = assistant.get_project_assistant_history(connection, project_id)
             self.assertEqual([message.content for message in history.messages], ["残す質問", "残す回答"])

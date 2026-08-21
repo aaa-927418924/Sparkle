@@ -4039,6 +4039,12 @@ body.project-assistant-open {
   outline: none;
 }
 
+/* codex-shell.css applies a shared .modal-box radius after this stylesheet.
+   Keep the Ask AI drawer square without changing the other dialogs. */
+.project-assistant-modal .project-assistant-dialog {
+  border-radius: 0;
+}
+
 .project-assistant-header {
   flex: 0 0 auto;
 }

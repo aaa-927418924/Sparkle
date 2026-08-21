@@ -7,6 +7,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendInteractionTests(unittest.TestCase):
+    def test_clip_attachment_uses_card_grids_and_home_range_action(self):
+        home = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+        home_js = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+        projects = (ROOT / "frontend" / "projects.html").read_text(encoding="utf-8")
+        projects_js = (ROOT / "frontend" / "projects.js").read_text(encoding="utf-8")
+        css = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="batchProjectBtn"', home)
+        self.assertIn('id="projectAttachModal"', home)
+        self.assertIn("async function openProjectAttachModal()", home_js)
+        self.assertIn("attachSelectedClipsToProject", home_js)
+        self.assertIn("/projects/${projectId}/clips/${clipId}", home_js)
+        self.assertIn('class="pm-linked-list pm-clip-linked-list"', projects)
+        self.assertIn('type="button" class="pm-clip-item"', projects_js)
+        self.assertIn("#clipModal .pm-clip-linked-list", css)
+        self.assertIn("grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));", css)
+
     def test_project_assistant_drawer_uses_fast_transparent_toggle_composer(self):
         html = (ROOT / "frontend" / "projects.html").read_text(encoding="utf-8")
         js = (ROOT / "frontend" / "project-assistant.js").read_text(encoding="utf-8")
@@ -18,7 +35,7 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertNotIn("このプロジェクトについて質問や依頼を入力してください。変更操作は実行前に確認します。", html + js)
         self.assertIn(">Ask AI<", html)
         self.assertNotIn(">専属AI<", html)
-        self.assertIn("project-assistant-square-drawer-20260821-v9", html)
+        self.assertIn("project-clip-attach-grid-20260821-v1", html)
         self.assertNotIn('id="projectAssistantClose"', html)
         self.assertIn('class="project-assistant-toolbar"', html)
         self.assertIn('id="projectAssistantClearHistory"', html)

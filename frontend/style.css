@@ -2869,6 +2869,158 @@ html.projects-route-pending #listView {
   text-align: center;
 }
 
+/* クリップ添付モーダルは、一覧性を優先したカードグリッドで表示する。 */
+#clipModal .pm-clip-linked-list,
+#clipModal .pm-clip-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+#clipModal .pm-clip-linked-list {
+  max-height: 230px;
+}
+
+#clipModal .pm-clip-list {
+  max-height: min(450px, 52vh);
+}
+
+#clipModal .pm-linked-item,
+#clipModal .pm-clip-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+}
+
+#clipModal .pm-clip-item {
+  width: 100%;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+#clipModal .pm-linked-item:hover,
+#clipModal .pm-clip-item:hover {
+  border-color: var(--accent);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
+  transform: translateY(-1px);
+}
+
+#clipModal .pm-clip-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+#clipModal .pm-clip-thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 104px;
+  aspect-ratio: 16 / 9;
+  border-radius: 0;
+  object-fit: cover;
+}
+
+#clipModal .pm-clip-thumb.ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: var(--border);
+  font-size: 24px;
+}
+
+#clipModal .pm-clip-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 11px 11px;
+}
+
+#clipModal .pm-clip-title {
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.35;
+}
+
+#clipModal .pm-clip-comment {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.35;
+}
+
+#clipModal .pm-linked-item .item-unlink {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--surface) 60%, var(--border));
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  color: var(--muted);
+  font-size: 15px;
+}
+
+#clipModal .pm-linked-item .item-unlink:hover,
+#clipModal .pm-linked-item .item-unlink:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+#clipModal .pm-clip-list .pm-clip-empty {
+  grid-column: 1 / -1;
+}
+
+.pm-clip-help {
+  margin: -2px 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  #clipModal .pm-clip-filters {
+    flex-wrap: wrap;
+  }
+
+  #clipModal .pm-clip-filters input {
+    flex-basis: 100%;
+  }
+
+  #clipModal .pm-clip-filters select {
+    flex: 1 1 140px;
+  }
+
+  #clipModal .pm-clip-linked-list,
+  #clipModal .pm-clip-list {
+    grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+  }
+}
+
 /* ==================== 複数選択 ==================== */
 
 .rubber-band {
@@ -2916,6 +3068,139 @@ html.projects-route-pending #listView {
 .batch-bar .modal-btn {
   font-size: 13px;
   padding: 6px 14px;
+}
+
+/* ホームの範囲選択から開くプロジェクト選択モーダル */
+#projectAttachModal .project-attach-box {
+  width: min(760px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: min(760px, calc(100vh - 32px));
+}
+
+#projectAttachModal .project-attach-help {
+  margin: -4px 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+#projectAttachModal .project-attach-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  max-height: min(460px, 52vh);
+  margin-top: 10px;
+  padding: 2px;
+  overflow-y: auto;
+}
+
+#projectAttachModal .project-attach-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 72px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+#projectAttachModal .project-attach-item:hover {
+  border-color: var(--accent);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.14);
+  transform: translateY(-1px);
+}
+
+#projectAttachModal .project-attach-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+#projectAttachModal .project-attach-item:disabled {
+  cursor: wait;
+  opacity: 0.6;
+  transform: none;
+}
+
+#projectAttachModal .project-attach-item-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  gap: 4px;
+}
+
+#projectAttachModal .project-attach-item-name,
+#projectAttachModal .project-attach-item-description {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#projectAttachModal .project-attach-item-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+#projectAttachModal .project-attach-item-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+#projectAttachModal .project-attach-item-state {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+  padding: 5px 7px;
+}
+
+#projectAttachModal .project-attach-item-icon {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 20px;
+  line-height: 1;
+}
+
+#projectAttachModal .project-attach-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 24px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+#projectAttachModal .project-attach-status {
+  min-height: 1.4em;
+  margin: 10px 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  #batchBar {
+    max-width: calc(100vw - 24px);
+    flex-wrap: wrap;
+    justify-content: center;
+    white-space: normal;
+  }
 }
 
 /* 選択スタイル（index以外のページ用） */

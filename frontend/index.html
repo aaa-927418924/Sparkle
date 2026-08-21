@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle</title>
-    <link rel="stylesheet" href="style.css?v=home-edit-suggest-20260803-v3" />
+    <link rel="stylesheet" href="style.css?v=home-project-attach-20260821-v4" />
     <link rel="stylesheet" href="home-figma.css?v=home-ui-20260802-controls-drop-overlay-v1" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
     <script>
@@ -124,6 +124,7 @@
           <span id="batchCount" class="batch-count"></span>
           <button id="batchTagBtn" class="modal-btn ghost" type="button">タグ付け</button>
           <button id="batchCatBtn" class="modal-btn ghost" type="button">カテゴリ変更</button>
+          <button id="batchProjectBtn" class="modal-btn ghost" type="button">プロジェクトに添付</button>
           <button id="batchDelBtn" class="modal-btn ghost" type="button" style="color:#db7a5c">削除</button>
         </div>
 
@@ -187,6 +188,20 @@
         <div class="modal-actions">
           <button id="editCancel" class="modal-btn ghost">キャンセル</button>
           <button id="editSave" class="modal-btn">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="projectAttachModal" class="modal" hidden>
+      <div class="modal-box wide project-attach-box">
+        <h2 class="modal-title">プロジェクトに添付</h2>
+        <p id="projectAttachHelp" class="project-attach-help">選択したクリップを追加するプロジェクトを選択してください。</p>
+        <label class="modal-label" for="projectAttachSearch">プロジェクトを検索</label>
+        <input id="projectAttachSearch" class="modal-input" type="search" autocomplete="off" placeholder="プロジェクト名で検索…" />
+        <div id="projectAttachList" class="project-attach-list" aria-label="添付先プロジェクト"></div>
+        <p id="projectAttachStatus" class="project-attach-status" role="status" aria-live="polite"></p>
+        <div class="modal-actions">
+          <button id="projectAttachCancel" class="modal-btn ghost" type="button">キャンセル</button>
         </div>
       </div>
     </div>
@@ -351,7 +366,7 @@
 
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
     <script src="search-history.js"></script>
-    <script src="app.js?v=home-ui-20260803-edit-suggest-v1"></script>
+    <script src="app.js?v=home-project-attach-20260821-v2"></script>
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2"></script>
     <script src="page-transition.js?v=page-swipe-20260821-focus-safe-v1"></script>
   </body>

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle — プロジェクト</title>
-    <link rel="stylesheet" href="style.css?v=project-assistant-square-drawer-20260821-v9" />
+    <link rel="stylesheet" href="style.css?v=project-clip-attach-grid-20260821-v1" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1" />
     <script>
       document.documentElement.setAttribute("data-theme", "dark");
@@ -214,7 +214,7 @@
         <h2 class="modal-title">クリップを紐づけ</h2>
         <div class="pm-section">
           <label class="modal-label">このプロジェクトのクリップ</label>
-          <div id="clipLinked" class="pm-linked-list"></div>
+          <div id="clipLinked" class="pm-linked-list pm-clip-linked-list"></div>
           <div id="clipLinkedEmpty" class="pm-empty">まだクリップがありません</div>
         </div>
         <hr class="pm-divider" />
@@ -225,6 +225,7 @@
             <select id="clipCatFilter" class="modal-input"></select>
             <select id="clipTagFilter" class="modal-input"></select>
           </div>
+          <p class="pm-clip-help">カードをクリックすると、このプロジェクトにクリップを添付できます。</p>
           <div id="clipPickerList" class="pm-clip-list"></div>
         </div>
         <div class="modal-actions">
@@ -359,7 +360,7 @@
     </div>
 
     <script src="pins.js?v=pins-ui-20260810-tutorial-v1"></script>
-    <script src="projects.js?v=projects-controls-20260803-batch-duplicate-v1"></script>
+    <script src="projects.js?v=projects-clip-attach-grid-20260821-v1"></script>
     <script src="project-assistant.js?v=project-assistant-conversation-context-20260821-v8"></script>
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2"></script>
     <script src="page-transition.js?v=page-swipe-20260821-focus-safe-v1"></script>

@@ -34,7 +34,14 @@ const els = {
   batchCount: $("batchCount"),
   batchTagBtn: $("batchTagBtn"),
   batchCatBtn: $("batchCatBtn"),
+  batchProjectBtn: $("batchProjectBtn"),
   batchDelBtn: $("batchDelBtn"),
+  projectAttachModal: $("projectAttachModal"),
+  projectAttachHelp: $("projectAttachHelp"),
+  projectAttachSearch: $("projectAttachSearch"),
+  projectAttachList: $("projectAttachList"),
+  projectAttachStatus: $("projectAttachStatus"),
+  projectAttachCancel: $("projectAttachCancel"),
 };
 
 async function api(path) {
@@ -49,6 +56,10 @@ async function api(path) {
 let dataSignature = "";
 let loadInFlight = false;
 let clipGridHasRendered = false;
+let projectAttachProjects = [];
+let projectAttachReturnFocus = null;
+let projectAttachRequestId = 0;
+let projectAttachBusy = false;
 
 async function loadAll() {
   if (loadInFlight) return;
@@ -562,6 +573,7 @@ document.addEventListener("mouseup", (e) => {
 // Escape でラバーバンド中断＋選択解除
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
+    if (!els.projectAttachModal.hidden) return;
     cancelRubberBand();
     state.dragOccurred = false;
     suppressNextCardClick = false;
@@ -643,6 +655,141 @@ async function batchDelete(event) {
   await window.refreshAllPinned?.("clip");
   await window.refreshAllPinnedProjects?.();
   if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
+}
+
+// --- 選択中クリップをプロジェクトへ添付 ---
+function setProjectAttachBusy(busy) {
+  projectAttachBusy = busy;
+  els.projectAttachList.setAttribute("aria-busy", String(busy));
+  els.projectAttachSearch.disabled = busy;
+  els.projectAttachList.querySelectorAll("button").forEach((button) => {
+    button.disabled = busy;
+  });
+}
+
+function renderProjectAttachList() {
+  const query = els.projectAttachSearch.value.trim().toLocaleLowerCase();
+  const projects = projectAttachProjects.filter((project) => {
+    const name = String(project.name || "").toLocaleLowerCase();
+    const description = String(project.description || "").toLocaleLowerCase();
+    return !query || name.includes(query) || description.includes(query);
+  });
+
+  if (!projects.length) {
+    els.projectAttachList.innerHTML = projectAttachProjects.length
+      ? '<p class="project-attach-empty">検索条件に一致するプロジェクトがありません。</p>'
+      : '<p class="project-attach-empty">添付先のプロジェクトがありません。</p>';
+    return;
+  }
+
+  els.projectAttachList.innerHTML = projects.map((project) => {
+    const name = String(project.name || "（無題のプロジェクト）");
+    const description = String(project.description || "").trim();
+    const stateLabel = project.is_done ? "完了" : "進行中";
+    return `
+      <button type="button" class="project-attach-item" data-project-id="${Number(project.id)}" aria-label="${escapeHtml(name)}にクリップを添付">
+        <span class="project-attach-item-copy">
+          <strong class="project-attach-item-name">${escapeHtml(name)}</strong>
+          ${description ? `<span class="project-attach-item-description">${escapeHtml(description)}</span>` : ""}
+        </span>
+        <span class="project-attach-item-state">${stateLabel}</span>
+        <span class="project-attach-item-icon" aria-hidden="true">＋</span>
+      </button>
+    `;
+  }).join("");
+
+  els.projectAttachList.querySelectorAll(".project-attach-item").forEach((button) => {
+    button.addEventListener("click", () => attachSelectedClipsToProject(Number(button.dataset.projectId)));
+  });
+  if (projectAttachBusy) setProjectAttachBusy(true);
+}
+
+async function openProjectAttachModal() {
+  const selectedCount = state.selectedIds.size;
+  if (!selectedCount || projectAttachBusy) return;
+
+  projectAttachReturnFocus = document.activeElement;
+  const requestId = ++projectAttachRequestId;
+  projectAttachProjects = [];
+  els.projectAttachSearch.value = "";
+  els.projectAttachHelp.textContent = `${selectedCount}件のクリップを追加するプロジェクトを選択してください。`;
+  els.projectAttachStatus.textContent = "プロジェクトを読み込み中…";
+  els.projectAttachList.innerHTML = '<p class="project-attach-empty">読み込み中…</p>';
+  els.projectAttachModal.hidden = false;
+  els.projectAttachModal.setAttribute("aria-hidden", "false");
+  requestAnimationFrame(() => {
+    if (!els.projectAttachModal.hidden) els.projectAttachSearch.focus();
+  });
+
+  try {
+    const projects = await api("/projects");
+    if (requestId !== projectAttachRequestId || els.projectAttachModal.hidden) return;
+    projectAttachProjects = Array.isArray(projects) ? projects : [];
+    els.projectAttachStatus.textContent = `${selectedCount}件のクリップを添付します。`;
+    renderProjectAttachList();
+  } catch {
+    if (requestId !== projectAttachRequestId || els.projectAttachModal.hidden) return;
+    els.projectAttachStatus.textContent = "プロジェクトを読み込めませんでした。";
+    els.projectAttachList.innerHTML = '<p class="project-attach-empty">読み込みに失敗しました。もう一度お試しください。</p>';
+  }
+}
+
+function closeProjectAttachModal() {
+  ++projectAttachRequestId;
+  els.projectAttachModal.hidden = true;
+  els.projectAttachModal.setAttribute("aria-hidden", "true");
+  const returnFocus = projectAttachReturnFocus;
+  projectAttachReturnFocus = null;
+  if (returnFocus && typeof returnFocus.focus === "function" && document.contains(returnFocus)) {
+    returnFocus.focus({ preventScroll: true });
+  }
+}
+
+async function attachSelectedClipsToProject(projectId) {
+  if (projectAttachBusy || !Number.isInteger(projectId)) return;
+  const ids = [...state.selectedIds];
+  if (!ids.length) {
+    closeProjectAttachModal();
+    return;
+  }
+
+  setProjectAttachBusy(true);
+  const successfulIds = [];
+  let failed = 0;
+  for (let index = 0; index < ids.length; index += 1) {
+    const clipId = ids[index];
+    els.projectAttachStatus.textContent = `${index + 1} / ${ids.length}件を添付中…`;
+    try {
+      const response = await fetch(`${API}/projects/${projectId}/clips/${clipId}`, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      successfulIds.push(clipId);
+    } catch {
+      failed += 1;
+    }
+  }
+
+  successfulIds.forEach((id) => state.selectedIds.delete(id));
+  updateBatchBar();
+  try {
+    await loadAll();
+  } catch {
+    // 添付自体は完了しているため、一覧更新に失敗しても選択状態は確定させる。
+  }
+  render();
+  await Promise.all(successfulIds.map((id) => window.refreshPinnedData?.("clip", id)));
+  await window.refreshAllPinnedProjects?.();
+
+  setProjectAttachBusy(false);
+  if (failed === 0) {
+    closeProjectAttachModal();
+    return;
+  }
+
+  els.projectAttachStatus.textContent = `${successfulIds.length}件を添付しました。${failed}件は添付できなかったため選択を残しています。`;
+  renderProjectAttachList();
 }
 
 async function toggleFav(id, btn) {
@@ -1291,7 +1438,16 @@ els.clearTag.addEventListener("click", () => {
 // 一括操作ボタン
 els.batchTagBtn.addEventListener("click", batchTag);
 els.batchCatBtn.addEventListener("click", batchCategory);
+els.batchProjectBtn.addEventListener("click", openProjectAttachModal);
 els.batchDelBtn.addEventListener("click", batchDelete);
+els.projectAttachSearch.addEventListener("input", renderProjectAttachList);
+els.projectAttachCancel.addEventListener("click", closeProjectAttachModal);
+els.projectAttachModal.addEventListener("click", (event) => {
+  if (event.target === els.projectAttachModal) closeProjectAttachModal();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.projectAttachModal.hidden) closeProjectAttachModal();
+});
 
 // --- ローカルファイルを開く ---
 async function openLocalFile(id) {

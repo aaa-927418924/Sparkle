@@ -803,7 +803,7 @@ function renderClipLinked() {
     let thumb;
     const imgUrl = clipImageUrl(c);
     if (imgUrl) {
-      thumb = `<img class="pm-clip-thumb" src="${escapeHtml(imgUrl)}" alt="" />`;
+      thumb = `<img class="pm-clip-thumb" src="${escapeHtml(imgUrl)}" alt="" loading="lazy" />`;
     } else {
       thumb = `<div class="pm-clip-thumb ph">${fileIconHtml(c.url)}</div>`;
     }
@@ -811,9 +811,11 @@ function renderClipLinked() {
     return `
       <div class="pm-linked-item">
         ${thumb}
-        <span class="item-title">${escapeHtml(c.title || c.url || "（無題）")}</span>
-        ${catName ? `<span class="item-meta">${escapeHtml(catName)}</span>` : ""}
-        <button class="item-unlink" data-id="${c.id}" title="解除">✕</button>
+        <div class="pm-clip-info">
+          <div class="pm-clip-title">${escapeHtml(c.title || c.url || "（無題）")}</div>
+          ${catName ? `<div class="pm-clip-tags"><span class="pm-clip-cat">${escapeHtml(catName)}</span></div>` : ""}
+        </div>
+        <button type="button" class="item-unlink" data-id="${c.id}" title="解除" aria-label="${escapeHtml(c.title || c.url || "（無題）")}をプロジェクトから外す">✕</button>
       </div>
     `;
   }).join("");
@@ -854,7 +856,7 @@ async function renderClipPicker() {
     let thumb;
     const imgUrl = clipImageUrl(c);
     if (imgUrl) {
-      thumb = `<img class="pm-clip-thumb" src="${escapeHtml(imgUrl)}" alt="" />`;
+      thumb = `<img class="pm-clip-thumb" src="${escapeHtml(imgUrl)}" alt="" loading="lazy" />`;
     } else {
       thumb = `<div class="pm-clip-thumb ph">${fileIconHtml(c.url)}</div>`;
     }
@@ -871,7 +873,7 @@ async function renderClipPicker() {
       .map((name) => `<span class="pm-clip-tag">${escapeHtml(name)}</span>`)
       .join("");
     return `
-      <div class="pm-clip-item" data-id="${c.id}">
+      <button type="button" class="pm-clip-item" data-id="${c.id}" aria-label="${escapeHtml(c.title || c.url || "（無題）")}をプロジェクトに添付">
         ${thumb}
         <div class="pm-clip-info">
           <div class="pm-clip-title">${escapeHtml(c.title || c.url || "（無題）")}</div>
@@ -881,7 +883,7 @@ async function renderClipPicker() {
             ${tags}
           </div>
         </div>
-      </div>
+      </button>
     `;
   }).join("");
 

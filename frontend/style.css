@@ -708,65 +708,6 @@ select {
   box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow);
 }
 
-.card-select-toggle {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 6;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.card-select-toggle input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.card-select-toggle > span {
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid color-mix(in srgb, var(--text) 40%, transparent);
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
-  transition: background-color 0.12s, border-color 0.12s, transform 0.12s;
-}
-
-.card-select-toggle:hover > span {
-  transform: scale(1.04);
-  border-color: var(--accent);
-}
-
-.card-select-toggle input:checked + span {
-  border-color: var(--accent);
-  background: var(--accent);
-}
-
-.card-select-toggle input:checked + span::after {
-  content: "✓";
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.card-select-toggle input:focus-visible + span {
-  outline: 2px solid color-mix(in srgb, var(--accent) 80%, #fff);
-  outline-offset: 2px;
-}
-
 #detailClips.is-range-selecting,
 #detailClips.is-range-selecting .card {
   cursor: crosshair;
@@ -777,36 +718,6 @@ select {
 #detailClips.is-range-selecting .card {
   transform: none;
   transition: none;
-}
-
-.clip-selection-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 34px;
-  margin: -2px 0 12px;
-  padding: 6px 10px;
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--accent-soft) 65%, var(--surface));
-}
-
-.clip-selection-count {
-  flex: 1 1 auto;
-  color: var(--accent);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.clip-selection-bar .modal-btn {
-  padding: 5px 10px;
-  font-size: 12px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .card-select-toggle > span {
-    transition: none;
-  }
 }
 
 .card-img {

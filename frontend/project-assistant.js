@@ -163,6 +163,31 @@
     }
   }
 
+  function appendScopeDivider(scope, { live = false } = {}) {
+    if (!els.messages) return;
+    if (live) {
+      els.messages.querySelectorAll("[data-live-scope-divider]").forEach((divider) => divider.remove());
+    }
+    const normalizedScope = scope === "all" ? "all" : "project";
+    const divider = document.createElement("div");
+    divider.className = "project-assistant-scope-divider";
+    divider.dataset.scope = normalizedScope;
+    if (live) divider.dataset.liveScopeDivider = "true";
+    divider.setAttribute("role", "separator");
+    divider.setAttribute("aria-label", `参照範囲を${scopeLabels[normalizedScope]}に変更`);
+    const label = document.createElement("span");
+    label.textContent = `参照範囲を「${scopeLabels[normalizedScope]}」に変更`;
+    divider.append(label);
+    els.messages.append(divider);
+    els.messages.scrollTop = els.messages.scrollHeight;
+  }
+
+  function handleScopeChange() {
+    updateScopeCopy();
+    appendScopeDivider(els.scope?.checked ? "all" : "project", { live: true });
+    setStatus(`参照範囲を「${scopeLabels[els.scope?.checked ? "all" : "project"]}」に変更しました。履歴は保持されます。`);
+  }
+
   function showProviderSetup(providers) {
     const configured = configuredProviders();
     const available = providers?.available !== false;
@@ -184,6 +209,12 @@
     const meta = document.createElement("div");
     meta.className = "project-assistant-message-meta";
     meta.textContent = role === "user" ? "あなた" : (options.provider || "専属AI");
+    if (options.scope === "project" || options.scope === "all") {
+      const scope = document.createElement("span");
+      scope.className = "project-assistant-message-scope";
+      scope.textContent = `参照範囲: ${scopeLabels[options.scope]}`;
+      meta.append(" · ", scope);
+    }
     const body = document.createElement("div");
     body.className = "project-assistant-message-content";
     body.textContent = String(content ?? "");
@@ -323,10 +354,14 @@
     const marker = String(request.id);
     if (els.messages.querySelector(`[data-pending-request="${marker}"]`)) return;
 
-    request.userBubble = appendBubble("user", request.message, { pendingRequestId: request.id });
+    request.userBubble = appendBubble("user", request.message, {
+      pendingRequestId: request.id,
+      scope: request.scope,
+    });
     request.generation = appendBubble("assistant", "生成中…", {
       generating: true,
       pendingRequestId: request.id,
+      scope: request.scope,
     });
   }
 
@@ -335,6 +370,7 @@
     if (!request || request.projectId !== state.projectId) return false;
     renderPendingRequest(request);
     els.message.disabled = true;
+    if (els.scope) els.scope.disabled = true;
     setStatus("生成中…", false, true);
     return true;
   }
@@ -412,6 +448,7 @@
     const providerLabel = providerLabels[data.provider] || data.provider || "AI";
     const bubble = appendBubble("assistant", data.answer || "回答がありませんでした。", {
       provider: data.model ? `${providerLabel} / ${data.model}` : providerLabel,
+      scope: data.scope,
     });
     appendSources(bubble, data.sources);
     return bubble;
@@ -422,20 +459,21 @@
     const history = Array.isArray(messages) ? messages : [];
     const lastUserMessage = [...history].reverse().find((message) => message?.role === "user");
     const lastUserId = lastUserMessage?.id == null ? null : Number(lastUserMessage.id);
+    let previousScope = null;
     for (const message of history) {
+      const scope = message?.scope === "all" ? "all" : "project";
+      if (previousScope && previousScope !== scope) appendScopeDivider(scope);
       const bubble = appendBubble(message.role, message.content, {
         messageId: message.id,
         provider: message.provider ? `${providerLabels[message.provider] || message.provider}${message.model ? ` / ${message.model}` : ""}` : "専属AI",
+        scope,
       });
       if (message.role === "user") {
         appendUserMessageActions(bubble, message, Number(message.id) === lastUserId);
       } else if (message.role === "assistant") {
-        const scope = document.createElement("span");
-        scope.className = "project-assistant-message-scope";
-        scope.textContent = `参照範囲: ${scopeLabels[message.scope] || "プロジェクト内"}`;
-        bubble.querySelector(".project-assistant-message-meta")?.append(" · ", scope);
         appendSources(bubble, message.sources);
       }
+      previousScope = scope;
     }
   }
 
@@ -609,6 +647,7 @@
     state.activeRequest = request;
     state.controller = controller;
     els.message.disabled = true;
+    if (els.scope) els.scope.disabled = true;
     els.message.value = "";
     renderPendingRequest(request);
     state.pendingGeneration = request.generation;
@@ -642,12 +681,16 @@
       state.activeRequest = null;
       state.controller = null;
       if (state.open && state.projectId === request.projectId) {
-        appendBubble("assistant", error.message || "回答を取得できませんでした。", { error: true });
+        appendBubble("assistant", error.message || "回答を取得できませんでした。", {
+          error: true,
+          scope: request.scope,
+        });
         setStatus(error.message || "回答を取得できませんでした。", true);
       }
     } finally {
       if (requestId === state.requestId) {
         els.message.disabled = false;
+        if (els.scope) els.scope.disabled = false;
         if (state.controller === controller) state.controller = null;
       }
     }
@@ -675,7 +718,7 @@
 
   els.button?.addEventListener("click", openAssistant);
   els.form?.addEventListener("submit", askAssistant);
-  els.scope?.addEventListener("change", updateScopeCopy);
+  els.scope?.addEventListener("change", handleScopeChange);
   els.message?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
     event.preventDefault();

@@ -30,19 +30,19 @@ def make_connection():
 
 
 class ProjectAssistantTests(unittest.TestCase):
-    def _insert_history_pair(self, connection, project_id, user_content, answer_content):
+    def _insert_history_pair(self, connection, project_id, user_content, answer_content, scope="project"):
         connection.execute(
             "INSERT INTO project_assistant_messages "
             "(project_id, role, content, provider, model, scope, context_item_count) "
-            "VALUES (?, 'user', ?, 'ollama', 'test-model', 'project', 1)",
-            (project_id, user_content),
+            "VALUES (?, 'user', ?, 'ollama', 'test-model', ?, 1)",
+            (project_id, user_content, scope),
         )
         user_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
         connection.execute(
             "INSERT INTO project_assistant_messages "
             "(project_id, role, content, provider, model, scope, context_item_count) "
-            "VALUES (?, 'assistant', ?, 'ollama', 'test-model', 'project', 1)",
-            (project_id, answer_content),
+            "VALUES (?, 'assistant', ?, 'ollama', 'test-model', ?, 1)",
+            (project_id, answer_content, scope),
         )
         assistant_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
         return user_id, assistant_id
@@ -509,6 +509,87 @@ class ProjectAssistantTests(unittest.TestCase):
             history = assistant.get_project_assistant_history(connection, project_id)
             self.assertEqual([message.role for message in history.messages], ["user", "assistant"])
             self.assertEqual(history.messages[-1].scope, "all")
+        finally:
+            connection.close()
+
+    def test_conversation_history_prompt_keeps_last_five_turns_and_scope_labels(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("対象",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            for index in range(6):
+                self._insert_history_pair(
+                    connection,
+                    project_id,
+                    f"質問{index}",
+                    f"回答{index}",
+                    scope="all" if index == 1 else "project",
+                )
+            connection.commit()
+
+            prompt = assistant._conversation_history_prompt(connection, project_id, "project")
+
+            self.assertNotIn("質問0", prompt)
+            self.assertNotIn("回答0", prompt)
+            for index in range(1, 6):
+                self.assertIn(f"質問{index}", prompt)
+                self.assertIn(f"回答{index}", prompt)
+            self.assertIn("[参照範囲: 全て]", prompt)
+            self.assertIn("根拠に使用禁止", prompt)
+            self.assertGreaterEqual(prompt.count("[参照範囲: プロジェクト内]"), 8)
+        finally:
+            connection.close()
+
+    def test_project_scope_sends_history_as_context_but_current_project_data_as_grounding(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("対象",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("別",))
+            other_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.execute(
+                "INSERT INTO clips(url, title, comment, project_id) VALUES (?, ?, ?, ?)",
+                ("https://example.com/current", "現在のBGM", "現在の根拠", project_id),
+            )
+            connection.execute(
+                "INSERT INTO clips(url, title, comment, project_id) VALUES (?, ?, ?, ?)",
+                ("https://example.com/other", "外部のBGM", "送信対象外", other_id),
+            )
+            self._insert_history_pair(
+                connection,
+                project_id,
+                "さっきのBGMについて",
+                "全て範囲では外部のBGMも候補です。",
+                scope="all",
+            )
+            connection.commit()
+
+            captured = {}
+            fake_answer = json.dumps({"answer": "現在のBGMを確認しました。", "source_ids": [], "actions": []})
+
+            def fake_call(*args):
+                captured["system"] = args[2]
+                captured["user"] = args[3]
+                return fake_answer
+
+            with patch.object(assistant, "_secret_store", FakeSecretStore({"openai": "sk-test"})), patch.object(
+                assistant, "_call_provider", side_effect=fake_call
+            ):
+                assistant.ask_project_assistant(
+                    connection,
+                    project_id,
+                    assistant.ProjectAssistantRequest(message="さっきのBGMをもう一度確認して", provider="openai", scope="project"),
+                )
+
+            self.assertIn("さっきのBGMについて", captured["user"])
+            self.assertIn("[参照範囲: 全て]", captured["user"])
+            self.assertIn("<conversation_history>", captured["user"])
+            self.assertIn("<project_data>", captured["user"])
+            self.assertIn("現在のBGM", captured["user"])
+            current_data = captured["user"].split("<project_data>\n", 1)[1].split("\n</project_data>", 1)[0]
+            self.assertNotIn("外部のBGM", current_data)
+            self.assertIn("根拠に使用禁止", captured["system"])
+            self.assertIn("現在のプロジェクトの参照データだけ", captured["system"])
         finally:
             connection.close()
 

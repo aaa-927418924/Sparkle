@@ -4378,6 +4378,30 @@ body.project-assistant-open {
   font-weight: 500;
 }
 
+.project-assistant-scope-divider {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 12px 0 14px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  text-align: center;
+}
+
+.project-assistant-scope-divider::before,
+.project-assistant-scope-divider::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--border);
+}
+
+.project-assistant-scope-divider span {
+  flex: 0 1 auto;
+}
+
 .project-assistant-actions {
   position: absolute;
   top: 92px;

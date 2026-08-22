@@ -34,6 +34,10 @@ except (TypeError, ValueError):
 AI_TIMEOUT_SECONDS = max(10.0, min(_configured_timeout, 180.0))
 MAX_MESSAGE_CHARS = 2_000
 MAX_CONTEXT_CHARS = 50_000
+# Ollama models and Ollama-compatible gateways often use a smaller context
+# window than hosted providers. Keep local-model prompts below that boundary.
+MAX_OLLAMA_CONTEXT_CHARS = 6_000
+MAX_OLLAMA_HISTORY_CHARS = 2_000
 MAX_CONTEXT_ITEMS_PER_TYPE = 40
 MAX_CONVERSATION_HISTORY_TURNS = 5
 MAX_CONVERSATION_MESSAGE_CHARS = 2_000
@@ -614,6 +618,8 @@ def _conversation_history_prompt(
     db: Connection,
     project_id: int,
     current_scope: Literal["project", "all"],
+    *,
+    max_chars: Optional[int] = None,
 ) -> str:
     """Format stored turns as context while keeping current grounding separate."""
 
@@ -632,10 +638,73 @@ def _conversation_history_prompt(
             f"[参照範囲: {scope_label}]{restriction}\n"
             f"{speaker}: {item.content}"
         )
-    return "\n\n--- 過去の往復 ---\n\n".join(blocks)
+    separator = "\n\n--- 過去の往復 ---\n\n"
+    if max_chars is None:
+        return separator.join(blocks)
+
+    selected: list[str] = []
+    used_chars = 0
+    limit = max(1, int(max_chars))
+    for block in reversed(blocks):
+        next_size = used_chars + len(block) + (len(separator) if selected else 0)
+        if next_size > limit:
+            continue
+        selected.append(block)
+        used_chars = next_size
+    selected.reverse()
+    return separator.join(selected) or "（過去の会話履歴はありません）"
 
 
-def _project_context(db: Connection, project_id: int) -> _ProjectContext:
+def _bounded_context(
+    items: list[_ContextItem],
+    max_chars: int,
+    empty_message: str,
+    *,
+    balanced: bool = False,
+) -> _ProjectContext:
+    """Keep a prompt within its provider budget without starving later types."""
+
+    candidates = items
+    if balanced:
+        buckets: dict[str, list[_ContextItem]] = {}
+        for item in items:
+            buckets.setdefault(item.kind, []).append(item)
+        candidates = []
+        while any(buckets.values()):
+            for kind in ("project", "clip", "task", "note"):
+                bucket = buckets.get(kind)
+                if bucket:
+                    candidates.append(bucket.pop(0))
+
+    selected: list[_ContextItem] = []
+    blocks: list[str] = []
+    used_chars = 0
+    truncated = False
+    limit = max(1, int(max_chars))
+    separator = "\n\n---\n\n"
+    for item in candidates:
+        block = item.prompt_block()
+        next_size = used_chars + len(block) + (len(separator) if blocks else 0)
+        if next_size > limit:
+            truncated = True
+            continue
+        selected.append(item)
+        blocks.append(block)
+        used_chars = next_size
+
+    return _ProjectContext(
+        items=selected,
+        prompt=separator.join(blocks) or empty_message,
+        truncated=truncated,
+    )
+
+
+def _project_context(
+    db: Connection,
+    project_id: int,
+    *,
+    max_chars: int = MAX_CONTEXT_CHARS,
+) -> _ProjectContext:
     project = db.execute(
         "SELECT id FROM projects WHERE id = ?",
         (project_id,),
@@ -730,28 +799,19 @@ def _project_context(db: Connection, project_id: int) -> _ProjectContext:
             )
         )
 
-    selected: list[_ContextItem] = []
-    blocks: list[str] = []
-    used_chars = 0
-    truncated = False
-    for item in items:
-        block = item.prompt_block()
-        next_size = used_chars + len(block) + (2 if blocks else 0)
-        if next_size > MAX_CONTEXT_CHARS:
-            truncated = True
-            break
-        selected.append(item)
-        blocks.append(block)
-        used_chars = next_size
-
-    return _ProjectContext(
-        items=selected,
-        prompt="\n\n---\n\n".join(blocks) or "（参照可能な添付データはありません）",
-        truncated=truncated,
+    return _bounded_context(
+        items,
+        max_chars,
+        "（参照可能な添付データはありません）",
     )
 
 
-def _all_context(db: Connection, project_id: int) -> _ProjectContext:
+def _all_context(
+    db: Connection,
+    project_id: int,
+    *,
+    max_chars: int = MAX_CONTEXT_CHARS,
+) -> _ProjectContext:
     """Build a bounded context from all Sparkle projects and content."""
 
     current = db.execute(
@@ -876,25 +936,36 @@ def _all_context(db: Connection, project_id: int) -> _ProjectContext:
             )
         )
 
-    selected: list[_ContextItem] = []
-    blocks: list[str] = []
-    used_chars = 0
-    truncated = False
-    for item in items:
-        block = item.prompt_block()
-        next_size = used_chars + len(block) + (2 if blocks else 0)
-        if next_size > MAX_CONTEXT_CHARS:
-            truncated = True
-            break
-        selected.append(item)
-        blocks.append(block)
-        used_chars = next_size
-
-    return _ProjectContext(
-        items=selected,
-        prompt="\n\n---\n\n".join(blocks) or "（参照可能なデータはありません）",
-        truncated=truncated,
+    return _bounded_context(
+        items,
+        max_chars,
+        "（参照可能なデータはありません）",
+        balanced=True,
     )
+
+
+def _looks_like_context_limit_error(raw: bytes) -> bool:
+    if not raw:
+        return False
+    text = raw.decode("utf-8", errors="replace").casefold()
+    return any(
+        phrase in text
+        for phrase in (
+            "context length",
+            "context window",
+            "maximum context",
+            "prompt is too long",
+            "input length",
+            "exceeds the context",
+        )
+    )
+
+
+def _read_http_error_body(exc: urllib.error.HTTPError) -> bytes:
+    try:
+        return exc.read(MAX_PROVIDER_RESPONSE_BYTES)
+    except OSError:
+        return b""
 
 
 def _request_json(
@@ -914,7 +985,10 @@ def _request_json(
             raw = response.read(MAX_PROVIDER_RESPONSE_BYTES)
     except urllib.error.HTTPError as exc:
         status = int(exc.code or 502)
-        if status in {401, 403}:
+        error_body = _read_http_error_body(exc)
+        if provider.id == "ollama" and _looks_like_context_limit_error(error_body):
+            message = "参照データが多すぎるため、Ollamaのコンテキスト上限を超えました。"
+        elif status in {401, 403}:
             message = (
                 "Ollamaの認証設定を確認してください。"
                 if provider.id == "ollama"
@@ -956,11 +1030,10 @@ def _stream_request(
         return urllib.request.urlopen(request, timeout=AI_TIMEOUT_SECONDS)
     except urllib.error.HTTPError as exc:
         status = int(exc.code or 502)
-        try:
-            exc.read(MAX_PROVIDER_RESPONSE_BYTES)
-        except OSError:
-            pass
-        if status in {401, 403}:
+        error_body = _read_http_error_body(exc)
+        if provider.id == "ollama" and _looks_like_context_limit_error(error_body):
+            message = "参照データが多すぎるため、Ollamaのコンテキスト上限を超えました。"
+        elif status in {401, 403}:
             message = (
                 "Ollamaの認証設定を確認してください。"
                 if provider.id == "ollama"
@@ -2316,8 +2389,19 @@ def _prepare_assistant_request(
     if spec.requires_api_key and not api_key:
         raise ProjectAssistantError(409, _configuration_message(spec))
 
-    context = _all_context(db, project_id) if payload.scope == "all" else _project_context(db, project_id)
-    history_prompt = _conversation_history_prompt(db, project_id, payload.scope)
+    context_limit = MAX_OLLAMA_CONTEXT_CHARS if spec.id == "ollama" else MAX_CONTEXT_CHARS
+    context = (
+        _all_context(db, project_id, max_chars=context_limit)
+        if payload.scope == "all"
+        else _project_context(db, project_id, max_chars=context_limit)
+    )
+    history_limit = MAX_OLLAMA_HISTORY_CHARS if spec.id == "ollama" else None
+    history_prompt = _conversation_history_prompt(
+        db,
+        project_id,
+        payload.scope,
+        max_chars=history_limit,
+    )
     scope_label = "アプリ内の全て" if payload.scope == "all" else "このプロジェクト内"
     scope_instruction = "" if payload.scope == "all" else (
         "プロジェクト内の参照範囲では、現在のプロジェクト自体は参照項目に含めていません。"

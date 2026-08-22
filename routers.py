@@ -8,6 +8,7 @@ import hashlib
 import ipaddress
 import io
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -101,6 +102,9 @@ from schemas import (
     TaskUpdate,
     UrlMetadataOut,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _run_windows_forms_dialog(script: str) -> List[str]:
@@ -1222,8 +1226,31 @@ def delete_project(project_id: int, db: Connection = Depends(get_db)):
     row = db.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Project not found")
-    db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-    db.commit()
+    try:
+        # Keep the records themselves intact. A project is a grouping, so
+        # deleting it must only remove the grouping links and project-owned
+        # assistant history. Explicitly clear the legacy single-project
+        # columns before deleting the parent row so old databases whose
+        # foreign keys predate ON DELETE SET NULL can still be removed.
+        for table in ("clips", "tasks", "notes"):
+            db.execute(f"UPDATE {table} SET project_id = NULL WHERE project_id = ?", (project_id,))
+        for table in (
+            "project_clips",
+            "project_notes",
+            "project_tasks",
+            "project_assistant_messages",
+            "project_assistant_action_proposals",
+        ):
+            db.execute(f"DELETE FROM {table} WHERE project_id = ?", (project_id,))
+        db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        db.commit()
+    except sqlite3.Error as exc:
+        db.rollback()
+        LOGGER.exception("Project deletion failed for id=%s", project_id)
+        raise HTTPException(
+            status_code=409,
+            detail="プロジェクトを削除できませんでした。データベースの整合性を確認してください。",
+        ) from exc
 
 
 @router.post("/projects/{project_id}/clips/{clip_id}", response_model=ClipOut)

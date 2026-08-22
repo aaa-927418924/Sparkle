@@ -89,7 +89,18 @@ async function api(path, options = {}) {
     ...options,
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const payload = await res.json();
+      detail = typeof payload?.detail === "string" ? payload.detail.trim() : "";
+    } catch {
+      // Keep the status-based fallback for non-JSON error responses.
+    }
+    const error = new Error(detail || `HTTP ${res.status}`);
+    error.status = res.status;
+    throw error;
+  }
   return res.status === 204 ? null : res.json();
 }
 
@@ -564,6 +575,13 @@ async function refreshProjectPin(projectId = state.currentProjectId) {
   await window.refreshPinnedData?.("project", projectId);
 }
 
+function removeProjectPin(projectId) {
+  if (typeof isPinned !== "function" || !isPinned(projectId, "project")) return;
+  removePin(projectId, "project");
+  renderSidebarPins();
+  notifyPinChange();
+}
+
 function removeProjectLinkFromState(items, itemId, projectId) {
   const item = items.find((entry) => Number(entry.id) === Number(itemId));
   if (!item) return;
@@ -667,13 +685,25 @@ async function deleteProject(id, options = {}) {
     `「${proj.name}」を削除します。\nプロジェクト内のクリップ・タスク・メモは削除されません。`,
     options,
   ))) return;
-  await api(`/projects/${id}`, { method: "DELETE" });
-  if (state.currentProjectId === id) {
-    await showProjectList();
-    return;
+  try {
+    await api(`/projects/${id}`, { method: "DELETE" });
+  } catch (error) {
+    alert(error?.message || "プロジェクトを削除できませんでした。");
+    return false;
   }
-  await loadAll({ force: true });
+  removeProjectPin(id);
+  try {
+    if (state.currentProjectId === id) {
+      await showProjectList();
+      return true;
+    }
+    await loadAll({ force: true });
+  } catch (error) {
+    alert(`プロジェクトは削除されましたが、一覧の更新に失敗しました。${error?.message ? `\n${error.message}` : ""}`);
+    return true;
+  }
   void refreshProjectPin(id).catch(() => {});
+  return true;
 }
 
 async function duplicateProject(project) {
@@ -1059,6 +1089,16 @@ function clearSelection() {
   document.querySelectorAll(".project-card.selected").forEach((el) => el.classList.remove("selected"));
 }
 
+function restoreSelection(ids) {
+  state.selectedIds.clear();
+  ids.forEach((id) => {
+    if (!state.projects.some((project) => Number(project.id) === Number(id))) return;
+    state.selectedIds.add(Number(id));
+    els.projectGrid.querySelector(`.project-card[data-id="${Number(id)}"]`)?.classList.add("selected");
+  });
+  updateBatchBar();
+}
+
 function setDetailClipSelected(id, selected) {
   const clipId = Number(id);
   if (!Number.isInteger(clipId) || clipId <= 0) return;
@@ -1235,16 +1275,34 @@ async function batchDeleteSelected(event) {
     anchor: els.batchDelBtn,
     immediate: Boolean(event?.shiftKey),
   }))) return;
-  clearSelection();
-  let ok = 0, fail = 0;
+  let ok = 0;
+  const failedIds = [];
+  const failureMessages = [];
+  els.batchDelBtn.disabled = true;
   for (const id of ids) {
     try {
-      const res = await fetch(`${API}/projects/${id}`, { method: "DELETE" });
-      if (res.ok) ok++; else fail++;
-    } catch { fail++; }
+      await api(`/projects/${id}`, { method: "DELETE" });
+      ok++;
+      removeProjectPin(id);
+    } catch (error) {
+      failedIds.push(id);
+      if (error?.message) failureMessages.push(error.message);
+    }
   }
-  await loadAll({ force: true });
-  if (fail) alert(`${ok}件成功、${fail}件失敗しました。`);
+  els.batchDelBtn.disabled = false;
+  clearSelection();
+  try {
+    await loadAll({ force: true });
+  } catch (error) {
+    restoreSelection(failedIds);
+    alert(`削除結果の一覧更新に失敗しました。${error?.message ? `\n${error.message}` : ""}`);
+    return;
+  }
+  restoreSelection(failedIds);
+  if (failedIds.length) {
+    const detail = failureMessages.length ? `\n${failureMessages[0]}` : "";
+    alert(`${ok}件成功、${failedIds.length}件失敗しました。${detail}`);
+  }
 }
 
 async function batchDuplicateSelected() {

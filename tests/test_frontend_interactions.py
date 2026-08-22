@@ -54,6 +54,16 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertIn(".card.selected:hover", css)
         self.assertNotIn(".card-select-toggle", css)
 
+    def test_project_deletion_reports_errors_and_restores_failed_batch_selection(self):
+        source = (ROOT / "frontend" / "projects.js").read_text(encoding="utf-8")
+
+        self.assertIn("detail = typeof payload?.detail === \"string\"", source)
+        self.assertIn("function restoreSelection(ids)", source)
+        self.assertIn("function removeProjectPin(projectId)", source)
+        self.assertIn("await api(`/projects/${id}`, { method: \"DELETE\" })", source)
+        self.assertIn("const failedIds = []", source)
+        self.assertNotIn("const res = await fetch(`${API}/projects/${id}`, { method: \"DELETE\" })", source)
+
     def test_project_assistant_drawer_uses_fast_transparent_toggle_composer(self):
         html = (ROOT / "frontend" / "projects.html").read_text(encoding="utf-8")
         js = (ROOT / "frontend" / "project-assistant.js").read_text(encoding="utf-8")

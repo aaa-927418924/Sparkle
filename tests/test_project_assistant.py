@@ -1,6 +1,8 @@
+import io
 import json
 import sqlite3
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 import project_assistant as assistant
@@ -123,6 +125,48 @@ class ProjectAssistantTests(unittest.TestCase):
             self.assertNotIn("別クリップ", context.prompt)
             self.assertNotIn("C:/Users/example/secret.mov", context.prompt)
             self.assertIn("ローカルファイル（パスは送信しません）", context.prompt)
+        finally:
+            connection.close()
+
+    def test_ollama_all_scope_stays_within_budget_and_keeps_context_types(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("対象",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            for index in range(3):
+                connection.execute("INSERT INTO projects(name) VALUES (?)", (f"別{index}",))
+                other_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+                connection.execute(
+                    "INSERT INTO clips(url, title, project_id) VALUES (?, ?, ?)",
+                    (f"https://example.com/{index}", f"クリップ{index}", other_id),
+                )
+                connection.execute("INSERT INTO tasks(title, project_id) VALUES (?, ?)", (f"タスク{index}", other_id))
+                connection.execute(
+                    "INSERT INTO notes(title, body, project_id) VALUES (?, ?, ?)",
+                    (f"メモ{index}", "長い本文" * 600, other_id),
+                )
+            connection.execute(
+                "INSERT OR REPLACE INTO settings(key, value) VALUES ('ai_active_provider', 'ollama')"
+            )
+            connection.execute(
+                "INSERT OR REPLACE INTO settings(key, value) VALUES ('ai_base_url_ollama', 'http://server-pc:11434')"
+            )
+            connection.execute(
+                "INSERT OR REPLACE INTO settings(key, value) VALUES ('ai_model_ollama', 'test-model')"
+            )
+            connection.commit()
+
+            with patch.object(assistant, "_secret_store", FakeSecretStore()):
+                prepared = assistant._prepare_assistant_request(
+                    connection,
+                    project_id,
+                    assistant.ProjectAssistantRequest(message="全体を確認して", provider="ollama", scope="all"),
+                )
+
+            kinds = {item.kind for item in prepared.context.items}
+            self.assertLessEqual(len(prepared.context.prompt), assistant.MAX_OLLAMA_CONTEXT_CHARS)
+            self.assertTrue(prepared.context.truncated)
+            self.assertEqual({"project", "clip", "task", "note"}, kinds)
         finally:
             connection.close()
 
@@ -482,6 +526,24 @@ class ProjectAssistantTests(unittest.TestCase):
         self.assertEqual(result, "ollama answer")
         self.assertEqual(requests[0][1], "http://server-pc:11434/v1/chat/completions")
         self.assertNotIn("Authorization", requests[0][2])
+
+    def test_ollama_context_limit_error_is_explained(self):
+        error = urllib.error.HTTPError(
+            "http://server-pc:11434/v1/chat/completions",
+            500,
+            "server error",
+            {},
+            io.BytesIO(b"input length exceeds the context length"),
+        )
+        with patch.object(assistant.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(assistant.ProviderRequestError) as raised:
+                assistant._request_json(
+                    assistant.PROVIDER_MAP["ollama"],
+                    "http://server-pc:11434/v1/chat/completions",
+                    {},
+                    {},
+                )
+        self.assertIn("コンテキスト上限", raised.exception.message)
 
     def test_scope_all_and_history_are_persisted(self):
         connection = make_connection()

@@ -165,8 +165,153 @@ class ProjectAssistantTests(unittest.TestCase):
 
             kinds = {item.kind for item in prepared.context.items}
             self.assertLessEqual(len(prepared.context.prompt), assistant.MAX_OLLAMA_CONTEXT_CHARS)
-            self.assertTrue(prepared.context.truncated)
             self.assertEqual({"project", "clip", "task", "note"}, kinds)
+            self.assertEqual(prepared.context.total_items, 13)
+        finally:
+            connection.close()
+
+    def test_retrieval_searches_older_matches_without_a_fixed_forty_item_cap(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("対象",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.execute(
+                "INSERT INTO clips(url, title, project_id) VALUES (?, ?, ?)",
+                ("https://example.com/kimi", "Meet Kimi K3", project_id),
+            )
+            kimi_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            for index in range(55):
+                connection.execute(
+                    "INSERT INTO clips(url, title, project_id) VALUES (?, ?, ?)",
+                    (f"https://example.com/filler-{index}", f"別クリップ{index}", project_id),
+                )
+            connection.commit()
+
+            context = assistant._retrieval_context(
+                connection,
+                project_id,
+                "project",
+                "タイトルにKimiが入っているクリップを探して",
+                max_chars=assistant.MAX_OLLAMA_CONTEXT_CHARS,
+            )
+
+            self.assertEqual(context.total_items, 1)
+            self.assertIn(f"clip:{kimi_id}", {item.key for item in context.items})
+            self.assertEqual(context.clip_search.fields, ["title"])
+        finally:
+            connection.close()
+
+    def test_project_scope_search_does_not_include_matching_clip_from_another_project(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("対象",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("別",))
+            other_project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.execute(
+                "INSERT INTO clips(url, title, project_id) VALUES (?, ?, ?)",
+                ("https://example.com/current", "Kimi対象", project_id),
+            )
+            current_clip_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.execute(
+                "INSERT INTO clips(url, title, project_id) VALUES (?, ?, ?)",
+                ("https://example.com/other", "Kimi外部", other_project_id),
+            )
+            connection.commit()
+
+            context = assistant._retrieval_context(
+                connection,
+                project_id,
+                "project",
+                "Kimiのクリップを探して",
+                max_chars=assistant.MAX_OLLAMA_CONTEXT_CHARS,
+            )
+
+            self.assertEqual([item.key for item in context.items], [f"clip:{current_clip_id}"])
+        finally:
+            connection.close()
+
+    def test_follow_up_attachment_reuses_the_previous_user_search_terms(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("対象",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.execute(
+                "INSERT INTO clips(url, title) VALUES (?, ?)",
+                ("https://example.com/kimi", "Meet Kimi K3"),
+            )
+            clip_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            self._insert_history_pair(connection, project_id, "タイトルにKimiが入っているものを探して", "Kimiを見つけました。")
+            connection.commit()
+
+            context = assistant._retrieval_context(
+                connection,
+                project_id,
+                "all",
+                "それをすべて添付して",
+                max_chars=assistant.MAX_OLLAMA_CONTEXT_CHARS,
+            )
+
+            self.assertEqual(context.search_terms, ("Kimi",))
+            self.assertIn(f"clip:{clip_id}", {item.key for item in context.items})
+            self.assertEqual(context.clip_search.fields, ["title"])
+        finally:
+            connection.close()
+
+    def test_tag_search_and_all_attachment_use_a_query_proposal(self):
+        connection = make_connection()
+        try:
+            connection.execute("INSERT INTO projects(name) VALUES (?)", ("対象",))
+            project_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.execute("INSERT INTO tags(name) VALUES (?)", ("AMV",))
+            tag_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            for index in range(125):
+                connection.execute(
+                    "INSERT INTO clips(url, title) VALUES (?, ?)",
+                    (f"https://example.com/amv-{index}", f"編集素材 {index}"),
+                )
+                clip_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+                connection.execute("INSERT INTO clip_tags(clip_id, tag_id) VALUES (?, ?)", (clip_id, tag_id))
+            connection.commit()
+
+            fake_answer = json.dumps({"answer": "AMVを検索しました。", "source_ids": [], "actions": []}, ensure_ascii=False)
+            with patch.object(assistant, "_secret_store", FakeSecretStore({"openai": "sk-test"})), patch.object(
+                assistant, "_call_provider", return_value=fake_answer
+            ):
+                result = assistant.ask_project_assistant(
+                    connection,
+                    project_id,
+                    assistant.ProjectAssistantRequest(
+                        message="タグがAMVのクリップをすべて添付して",
+                        provider="openai",
+                        scope="all",
+                    ),
+                )
+
+            self.assertEqual(len(result.actions), 1)
+            action = result.actions[0]
+            self.assertEqual(action.operation, "attach_clip")
+            self.assertEqual(action.clip_ids, [])
+            self.assertEqual(action.matched_count, 125)
+            self.assertIsNotNone(action.clip_search)
+            self.assertEqual(action.clip_search.fields, ["tags"])
+
+            execution = assistant.execute_project_assistant_action(
+                connection,
+                project_id,
+                assistant.ProjectAssistantActionDecisionRequest(
+                    proposal_id=action.proposal_id,
+                    decision="once",
+                ),
+            )
+            self.assertEqual(execution.status, "executed")
+            self.assertEqual(len(execution.affected_ids), 125)
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM project_clips WHERE project_id = ?", (project_id,)
+                ).fetchone()[0],
+                125,
+            )
         finally:
             connection.close()
 

@@ -617,7 +617,11 @@
   function showCompletedResult(data) {
     renderActionPlans(data.actions);
     const count = Number(data.context_item_count || 0);
-    setStatus(`${scopeLabels[data.scope] || scopeLabels.project}の${count}件を参照しました。${data.context_truncated ? "一部は上限により省略されています。" : ""}`);
+    const total = Number(data.context_total_count || count);
+    const suffix = data.context_truncated
+      ? `検索対象${total}件のうち、${count}件の候補を表示しました。`
+      : `${total}件を参照しました。`;
+    setStatus(`${scopeLabels[data.scope] || scopeLabels.project}の${suffix}`);
   }
 
   async function openAssistant() {

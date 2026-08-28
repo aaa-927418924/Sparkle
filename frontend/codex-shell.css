@@ -1,7 +1,8 @@
 /* Shared Windows workbench shell. Keep the existing page-specific layouts,
    but give every screen the same quiet, Codex-inspired visual language. */
 :root {
-  --bg: #181818;
+  --bg: #050505;
+  --sidebar-bg: #101010;
   --surface: #202020;
   --surface-raised: #252525;
   --surface-hover: #2b2b2b;
@@ -19,6 +20,7 @@
 
 html:not([data-theme="dark"]) {
   --bg: #f4f3ef;
+  --sidebar-bg: #101010;
   --surface: #ffffff;
   --surface-raised: #fbfaf7;
   --surface-hover: #f0eee9;
@@ -95,7 +97,7 @@ a {
   gap: 8px;
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  background: var(--sidebar-bg);
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
@@ -146,6 +148,7 @@ a {
 
 .main {
   min-width: 0;
+  background: #050505;
   padding: 32px 40px 72px 104px;
 }
 
@@ -819,7 +822,7 @@ html.page-transition-enter-back #mainContent {
   gap: 8px;
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  background: var(--sidebar-bg);
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16);
 }
 
@@ -991,6 +994,7 @@ html.page-transition-enter-back #mainContent {
   overscroll-behavior-x: none;
   touch-action: pan-y;
   border-radius: 0;
+  background: var(--sidebar-bg);
 }
 
 .sidebar-titlebar,
@@ -1464,7 +1468,7 @@ body:not(.profile-sidebar-loaded) .sidebar-tools .side-btn-profile .side-usernam
 }
 
 .notes-page .sidebar {
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  background: var(--sidebar-bg);
 }
 
 /* Keep Notes content surfaces consistent with the Projects cards. */

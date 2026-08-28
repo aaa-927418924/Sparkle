@@ -7,6 +7,29 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendInteractionTests(unittest.TestCase):
+    def test_home_tag_filters_render_as_individual_removable_buttons(self):
+        home = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+        source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+        home_css = (ROOT / "frontend" / "home-figma.css").read_text(encoding="utf-8")
+        shell_css = (ROOT / "frontend" / "codex-shell.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="activeTag" class="active-tags"', home)
+        active_markup = home[home.index('<div id="activeTag"') : home.index('</div>', home.index('<div id="activeTag"'))]
+        self.assertNotIn("タグ:", active_markup)
+        self.assertIn("function renderActiveTags()", source)
+        self.assertIn('class="active-tag-filter"', source)
+        self.assertIn("state.activeTags = state.activeTags.filter", source)
+        self.assertIn('aria-pressed="${active}"', source)
+        self.assertIn("border-color: #9c9c9c;", home_css)
+        self.assertIn("color: #9c9c9c;", home_css)
+        self.assertIn("border-color: #ffffff;", home_css)
+        self.assertIn("color: #ffffff;", home_css)
+        self.assertIn("background: #050505;", shell_css)
+        self.assertIn("--sidebar-bg: #101010;", shell_css)
+        self.assertIn(".home-page .cat-btn.active", home_css)
+        self.assertIn("color: #9c9c9c;", home_css)
+        self.assertIn("color: #ffffff;", home_css)
+
     def test_clip_attachment_uses_card_grids_and_home_range_action(self):
         home = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
         home_js = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")

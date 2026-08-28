@@ -25,8 +25,6 @@ const els = {
   gridWrap: $("gridWrap"),
   empty: $("empty"),
   activeTag: $("activeTag"),
-  activeTagName: $("activeTagName"),
-  clearTag: $("clearTag"),
   addLocalBtn: $("addLocalBtn"),
   fileSaveMethod: $("fileSaveMethod"),
   fileSaveMethodDesc: $("fileSaveMethodDesc"),
@@ -240,7 +238,10 @@ function cardHtml(clip, { animate = false, index = 0 } = {}) {
   const favIcon = clip.is_favorite ? "★" : "☆";
 
   const tags = (clip.tags || [])
-    .map((t) => `<button class="tag-chip" data-tag="${escapeAttr(t.name)}">${escapeHtml(t.name)}</button>`)
+    .map((t) => {
+      const active = state.activeTags.includes(t.name);
+      return `<button class="tag-chip${active ? " active" : ""}" type="button" data-tag="${escapeAttr(t.name)}" aria-pressed="${active}" aria-label="タグ「${escapeAttr(t.name)}」で絞り込む">${escapeHtml(t.name)}</button>`;
+    })
     .join("");
 
   const sel = state.selectedIds.has(clip.id) ? " selected" : "";
@@ -323,12 +324,7 @@ function render() {
     clipGridHasRendered = true;
   }
 
-  if (state.activeTags.length) {
-    els.activeTag.hidden = false;
-    els.activeTagName.textContent = state.activeTags.join(", ");
-  } else {
-    els.activeTag.hidden = true;
-  }
+  renderActiveTags();
 
   els.empty.hidden = list.length > 0;
 
@@ -463,6 +459,25 @@ function render() {
   });
 
   updateBatchBar();
+}
+
+function renderActiveTags() {
+  els.activeTag.hidden = state.activeTags.length === 0;
+  els.activeTag.innerHTML = state.activeTags
+    .map(
+      (tag) =>
+        `<button class="active-tag-filter" type="button" data-active-tag="${escapeAttr(tag)}" aria-pressed="true" aria-label="タグ「${escapeAttr(tag)}」の選択を解除">${escapeHtml(tag)}</button>`
+    )
+    .join("");
+
+  els.activeTag.querySelectorAll(".active-tag-filter").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const tag = button.dataset.activeTag;
+      state.activeTags = state.activeTags.filter((activeTag) => activeTag !== tag);
+      render();
+    });
+  });
 }
 
 function bindPageEntryAnimation(container) {
@@ -1433,11 +1448,6 @@ document.addEventListener("mouseout", (e) => {
 els.favOnly.addEventListener("click", () => {
   state.favOnly = !state.favOnly;
   els.favOnly.classList.toggle("active", state.favOnly);
-  render();
-});
-
-els.clearTag.addEventListener("click", () => {
-  state.activeTags = [];
   render();
 });
 

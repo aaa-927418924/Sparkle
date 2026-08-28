@@ -16,8 +16,8 @@
 }
 
 html[data-theme="dark"] .notes-page {
-  --notes-bg: #18181b;
-  --notes-sidebar: #232327;
+  --notes-bg: #050505;
+  --notes-sidebar: #101010;
   --notes-panel: #f4f3ee;
   --notes-card: transparent;
   --notes-border: #ffffff;

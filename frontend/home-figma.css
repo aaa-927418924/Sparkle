@@ -2,12 +2,12 @@
 .home-page {
   min-height: 100vh;
   overflow-x: hidden;
-  background: #f4f3ee;
+  background: #050505;
 }
 
 .home-page .layout {
-  --home-bg: #fff8f3;
-  --home-sidebar: #fff;
+  --home-bg: #050505;
+  --home-sidebar: #101010;
   --home-surface: rgba(244, 243, 238, 0.2);
   --home-text: #3f3f3f;
   --home-muted: #6b6a64;
@@ -20,12 +20,12 @@
 }
 
 html[data-theme="dark"] .home-page {
-  background: #18181b;
+  background: #050505;
 }
 
 html[data-theme="dark"] .home-page .layout {
-  --home-bg: #18181b;
-  --home-sidebar: #232327;
+  --home-bg: #050505;
+  --home-sidebar: #101010;
   --home-surface: rgba(244, 243, 238, 0.2);
   --home-text: #f4f3ee;
   --home-muted: #b1ada1;
@@ -210,22 +210,30 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
   padding: 7px 14px;
   border: 1px solid transparent;
   border-radius: 999px;
-  color: var(--home-text);
+  color: #9c9c9c;
   background: transparent;
   font-size: 12px;
   font-weight: 500;
 }
 
-.home-page .cat-btn:hover {
-  border-color: var(--home-border);
-  color: var(--home-accent);
+.home-page .cat-btn:hover,
+.home-page .cat-btn:focus-visible {
+  border-color: #9c9c9c;
+  color: #9c9c9c;
   background: rgba(244, 243, 238, 0.16);
 }
 
-.home-page .cat-btn.active {
-  border-color: var(--home-border);
-  background: var(--home-surface);
-  color: var(--home-accent);
+.home-page .cat-btn.active,
+.home-page .cat-btn.active:hover,
+.home-page .cat-btn.active:focus-visible {
+  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.home-page .cat-btn:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
 }
 
 .home-page .section-heading {
@@ -304,15 +312,24 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
 }
 
 .home-page .tag-chip {
-  border-color: color-mix(in srgb, var(--home-border) 70%, transparent);
-  color: var(--home-muted);
+  border-color: #9c9c9c;
+  color: #9c9c9c;
   background: transparent;
 }
 
-.home-page .tag-chip:hover {
-  border-color: var(--home-accent);
-  background: color-mix(in srgb, var(--home-accent) 14%, transparent);
-  color: var(--home-accent);
+.home-page .tag-chip:hover,
+.home-page .tag-chip:focus-visible {
+  border-color: #9c9c9c;
+  background: rgba(255, 255, 255, 0.06);
+  color: #9c9c9c;
+}
+
+.home-page .tag-chip.active,
+.home-page .tag-chip.active:hover,
+.home-page .tag-chip.active:focus-visible {
+  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
 }
 
 .home-page .card-actions {

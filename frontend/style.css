@@ -10,7 +10,7 @@
 }
 
 [data-theme="dark"] {
-  --bg: #18181b;
+  --bg: #050505;
   --surface: #232327;
   --border: #35353b;
   --text: #e4e4e7;
@@ -596,31 +596,47 @@ body {
   animation: fadeInUp 0.5s ease both;
 }
 
-.active-tag {
-  font-size: 13px;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--surface) 85%, transparent);
-  border: 1px solid var(--accent-soft);
-  border-radius: 999px;
-  padding: 4px 10px;
-  display: inline-flex;
+.active-tags {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  box-shadow: 0 0 0 1px var(--accent-soft);
+  gap: 8px;
+  min-height: 30px;
 }
 
-.active-tag[hidden] {
+.active-tags[hidden] {
   display: none;
 }
 
-.clear-tag {
-  border: none;
-  background: none;
-  color: var(--accent);
+.active-tag-filter {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 4px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  background: transparent;
+  color: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.2;
   cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-  padding: 0;
+  transition-property: background-color, color, border-color;
+  transition-duration: 150ms;
+}
+
+.active-tag-filter:hover,
+.active-tag-filter:focus-visible {
+  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.10);
+  color: #ffffff;
+}
+
+.active-tag-filter:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
 }
 
 /* カテゴリタブ */
@@ -643,7 +659,7 @@ select {
 
 .cat-btn {
   background: transparent;
-  color: var(--muted);
+  color: #9c9c9c;
   padding: 6px 8px 8px;
   font-size: 13px;
   font-weight: 600;
@@ -654,8 +670,8 @@ select {
 }
 
 .cat-btn:hover {
-  border-bottom-color: var(--accent-soft);
-  color: var(--text);
+  border-bottom-color: rgba(156, 156, 156, 0.55);
+  color: #9c9c9c;
 }
 
 .cat-btn.is-pressed {
@@ -663,8 +679,8 @@ select {
 }
 
 .cat-btn.active {
-  border-bottom-color: var(--accent);
-  color: var(--accent);
+  border-bottom-color: #ffffff;
+  color: #ffffff;
 }
 
 /* マゾンリーグリッド */
@@ -827,20 +843,35 @@ select {
 }
 
 .tag-chip {
-  border: none;
-  background: none;
   border: 1px solid var(--border);
-  color: var(--muted);
+  background: transparent;
+  color: #9c9c9c;
   border-radius: 999px;
   padding: 3px 9px;
   font-size: 11px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition-property: background-color, color, border-color;
+  transition-duration: 150ms;
 }
 
-.tag-chip:hover {
-  background: var(--accent-soft);
-  color: var(--accent);
+.tag-chip:hover,
+.tag-chip:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: #9c9c9c;
+  color: #9c9c9c;
+}
+
+.tag-chip.active,
+.tag-chip.active:hover,
+.tag-chip.active:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #ffffff;
+  color: #ffffff;
+}
+
+.tag-chip:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
 }
 
 .fav-btn {

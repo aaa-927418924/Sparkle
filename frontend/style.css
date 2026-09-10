@@ -1927,12 +1927,15 @@ body.note-editor-page .main.editor-main {
   padding: 20px 24px;
   border: 0;
   border-radius: 0;
-  background: var(--bg);
+  background: transparent;
   box-shadow: none;
-  color: var(--text);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--text);
   resize: none;
   outline: none;
   overflow: auto;
+  transition: none;
 }
 
 .note-editor-page .editor-textarea:focus,
@@ -1941,6 +1944,10 @@ body.note-editor-page .main.editor-main {
   background: transparent;
   box-shadow: none;
   outline: none;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--text);
+  transition: none;
 }
 
 /* VS Code-like Markdown editor surface. The native textarea is transparent
@@ -1983,15 +1990,23 @@ body.note-editor-page .main.editor-main {
   color: var(--text);
 }
 
+.note-editor-page .markdown-editor,
+.note-editor-page .markdown-editor * {
+  transition: none;
+  animation: none;
+}
+
 .note-editor-page .editor-line-numbers,
 .note-editor-page .editor-canvas,
 .note-editor-page .editor-highlight,
+.note-editor-page .editor-highlight *,
 .note-editor-page .editor-textarea {
-  font-family: Consolas, "Cascadia Mono", "Cascadia Code", "SFMono-Regular",
-    "Liberation Mono", Menlo, "Yu Gothic UI", "Noto Sans JP", sans-serif;
+  font-family: "Cascadia Mono", Consolas, "Courier New", Meiryo, "Segoe UI",
+    monospace;
   font-size: 15px;
   line-height: 1.6;
   font-weight: 400;
+  font-synthesis: none;
   tab-size: 4;
 }
 
@@ -2037,7 +2052,7 @@ body.note-editor-page .main.editor-main {
   padding: 20px 24px;
   border: 0;
   color: var(--text);
-  background: var(--bg);
+  background: transparent;
   white-space: pre;
   overflow: visible;
   pointer-events: none;
@@ -2047,13 +2062,12 @@ body.note-editor-page .main.editor-main {
   will-change: transform;
 }
 
-.note-editor-page .editor-highlight,
-.note-editor-page .editor-highlight * {
-  transition: none;
-}
-
 .note-editor-page .editor-highlight code {
+  display: block;
   font: inherit;
+  font-weight: 400;
+  color: inherit;
+  background: transparent;
 }
 
 .note-editor-page .editor-textarea {
@@ -2084,6 +2098,7 @@ body.note-editor-page .main.editor-main {
   word-break: normal;
   tab-size: 4;
   text-align: start;
+  transition: none;
 }
 
 .note-editor-page .editor-textarea::placeholder {
@@ -2099,21 +2114,28 @@ body.note-editor-page .main.editor-main {
 }
 
 /* Keep the textarea translucent while focused so the Highlight.js layer is
-   still visible. This selector intentionally outranks the legacy focus rule
-   above without relying on !important. */
+   still visible. Outranks the legacy focus rule and shell form styles. */
+.note-editor-page .editor-canvas > .editor-textarea:hover,
 .note-editor-page .editor-canvas > .editor-textarea:focus,
 .note-editor-page .editor-canvas > .editor-textarea:focus-visible {
+  border: 0;
   background: transparent;
+  box-shadow: none;
+  outline: none;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--text);
+  transition: none;
 }
 
 .note-editor-page .editor-highlight .hljs-section {
   color: var(--editor-heading);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .note-editor-page .editor-highlight .hljs-strong {
   color: var(--editor-strong);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .note-editor-page .editor-highlight .hljs-emphasis {

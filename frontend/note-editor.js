@@ -42,12 +42,17 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => MARKDOWN_HTML_ESCAPES[character]);
 }
 
+function getHighlighter() {
+  const engine = window.hljs || globalThis.hljs || null;
+  return engine && typeof engine.highlight === "function" ? engine : null;
+}
+
 function highlightMarkdown(source) {
   source = String(source ?? "");
   try {
-    const hljs = window.hljs;
-    if (hljs && typeof hljs.highlight === "function" && typeof hljs.getLanguage === "function" && hljs.getLanguage("markdown")) {
-      return hljs.highlight(source, { language: "markdown", ignoreIllegals: true }).value;
+    const engine = getHighlighter();
+    if (engine && typeof engine.getLanguage === "function" && engine.getLanguage("markdown")) {
+      return engine.highlight(source, { language: "markdown", ignoreIllegals: true }).value;
     }
   } catch (error) {
     console.warn("Markdown highlight failed; showing plain text", error);
@@ -58,6 +63,9 @@ function highlightMarkdown(source) {
 function updateMarkdownEditor(value = els.bodyRaw?.value || "") {
   if (!els.bodyHighlightCode || !els.lineNumbersContent || !els.lineNumbers) return;
   const source = String(value ?? "");
+  // Keep Highlight.js from re-parsing this live overlay via highlightAll().
+  els.bodyHighlightCode.classList.add("hljs", "language-markdown");
+  els.bodyHighlightCode.dataset.highlighted = "yes";
   els.bodyHighlightCode.innerHTML = highlightMarkdown(source);
 
   const lineCount = Math.max(1, source.split("\n").length);

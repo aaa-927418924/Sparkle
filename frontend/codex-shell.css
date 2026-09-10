@@ -677,7 +677,7 @@ html.page-transition-enter-back #mainContent {
 .setting-select:focus,
 .task-add input:focus,
 .editor-title:focus,
-.editor-textarea:focus {
+body:not(.note-editor-page) .editor-textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
   outline: none;
@@ -765,8 +765,8 @@ html.page-transition-enter-back #mainContent {
 }
 
 .editor-title,
-.editor-textarea,
-.editor-preview {
+.editor-preview,
+body:not(.note-editor-page) .editor-textarea {
   color: var(--text);
   background: var(--surface);
 }
@@ -1817,6 +1817,51 @@ html[data-theme="dark"] #projectModal #projectModalSave {
 /* Projects and Notes share the same top edge for filters and content. */
 .projects-page .main {
   padding-top: 22px;
+}
+
+/* Note editor overlay: codex-shell loads after style.css, so keep the
+   transparent textarea / no-fade / regular-weight rules here as the final word. */
+body.note-editor-page .markdown-editor,
+body.note-editor-page .markdown-editor * {
+  transition: none !important;
+  animation: none !important;
+}
+
+body.note-editor-page .editor-line-numbers,
+body.note-editor-page .editor-canvas,
+body.note-editor-page .editor-highlight,
+body.note-editor-page .editor-highlight code,
+body.note-editor-page .editor-textarea {
+  font-family: "Cascadia Mono", Consolas, "Courier New", Meiryo, "Segoe UI", monospace;
+  font-size: 15px;
+  line-height: 1.6;
+  font-weight: 400;
+  font-synthesis: none;
+}
+
+body.note-editor-page .editor-canvas > .editor-textarea,
+body.note-editor-page .editor-canvas > .editor-textarea:hover,
+body.note-editor-page .editor-canvas > .editor-textarea:focus,
+body.note-editor-page .editor-canvas > .editor-textarea:focus-visible {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  caret-color: var(--text);
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+body.note-editor-page .editor-highlight,
+body.note-editor-page .editor-highlight code {
+  color: var(--text);
+  background: transparent;
+  font-weight: 400;
+}
+
+body.note-editor-page .editor-highlight .hljs-section,
+body.note-editor-page .editor-highlight .hljs-strong {
+  font-weight: 600;
 }
 
 /* Notes has a page-specific modal palette; keep the settings dialog identical

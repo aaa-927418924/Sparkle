@@ -67,7 +67,9 @@ if errorlevel 1 (
 
 echo.
 echo Building exe from a clean PyInstaller cache...
-"%PYINSTALLER%" --clean --noconfirm Sparkle.spec
+REM Prefer python -m PyInstaller: the Scripts\pyinstaller.exe trampoline can
+REM fail after the project folder moves (uv canonicalize error).
+"%PYTHON%" -m PyInstaller --clean --noconfirm Sparkle.spec
 
 if errorlevel 1 (
   echo.

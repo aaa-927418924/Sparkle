@@ -308,6 +308,67 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertNotIn("PostMessageW", native_api)
         self.assertIn("HTCAPTION", native_api)
 
+    def test_note_editor_is_body_only_and_keeps_title_in_state(self):
+        html = (ROOT / "frontend" / "note-editor.html").read_text(encoding="utf-8")
+        source = (ROOT / "frontend" / "note-editor.js").read_text(encoding="utf-8")
+        css = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+
+        for removed_id in (
+            "backLink",
+            "noteTitle",
+            "modeEdit",
+            "modeView",
+            "mdToolbar",
+            "noteBodyPreview",
+            "mdCheatsheet",
+        ):
+            self.assertNotIn(f'id="{removed_id}"', html)
+        self.assertNotIn("vendor/marked.min.js", html)
+        self.assertIn('id="noteBodyRaw"', html)
+        self.assertIn('id="settingsModal"', html)
+        self.assertIn('title: ""', source)
+        self.assertIn("state.title", source)
+        self.assertIn('"無題のメモ"', source)
+        self.assertNotIn("MD_ACTIONS", source)
+        self.assertNotIn("setMode", source)
+        editor_css = css[css.index("body.note-editor-page .main.editor-main") :]
+        self.assertIn("max-width: none;", editor_css)
+        self.assertIn("margin-inline-start: 240px;", editor_css)
+        self.assertIn("padding: 0;", editor_css)
+        self.assertIn("height: 100%;", editor_css)
+        self.assertIn("background: var(--bg);", editor_css)
+        self.assertIn("resize: none;", editor_css)
+        self.assertIn("box-shadow: none;", editor_css)
+
+    def test_notes_memos_have_inline_rename_action_and_conflict_safe_modal(self):
+        html = (ROOT / "frontend" / "notes.html").read_text(encoding="utf-8")
+        source = (ROOT / "frontend" / "notes.js").read_text(encoding="utf-8")
+        css = (ROOT / "frontend" / "notes-figma.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="noteRenameModal"', html)
+        self.assertIn('for="noteRenameTitle"', html)
+        self.assertIn('id="noteRenameCancel"', html)
+        self.assertIn('id="noteRenameSave"', html)
+        pin = source.index('data-pin="${n.id}"')
+        rename = source.index('data-rename="${n.id}"')
+        delete = source.index('data-del="${n.id}"')
+        self.assertLess(pin, rename)
+        self.assertLess(rename, delete)
+        self.assertIn('src="icons/pencil.svg"', source)
+        self.assertIn('title="名前を変更"', source)
+        self.assertIn('aria-label="名前を変更"', source)
+        self.assertIn("expected_updated_at: noteRenameExpectedUpdatedAt", source)
+        self.assertIn('e?.status === 409', source)
+        self.assertIn("最新の内容を確認してから", source)
+        self.assertIn("window.refreshPinnedDataInBackground?.(\"note\", updated.id)", source)
+        self.assertIn("window.refreshAllPinnedProjectsInBackground?.()", source)
+        self.assertIn("els.noteRenameTitle.focus()", source)
+        self.assertIn("els.noteRenameTitle.select()", source)
+        self.assertIn("if (trigger?.isConnected) trigger.focus()", source)
+        self.assertIn("@media (hover: none)", css)
+        self.assertIn("opacity: 1;", css[css.index("@media (hover: none)") :])
+        self.assertIn("pointer-events: auto;", css[css.index("@media (hover: none)") :])
+
 
 if __name__ == "__main__":
     unittest.main()

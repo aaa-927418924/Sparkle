@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>メモを編集 — Sparkle</title>
-    <link rel="stylesheet" href="style.css?v=editor-tall-20260803-v1-black-background-v1-bg161616-sidebar212121-v1" />
+    <link rel="stylesheet" href="style.css?v=editor-tall-20260803-v1-black-background-v1-bg161616-sidebar212121-v1-note-editor-full-surface-v1" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1-black-background-v1-bg161616-sidebar212121-v1-surface-raised-202020-v1-custom-titlebar-history-v4-fixed" />
     <script>document.documentElement.setAttribute("data-theme", "dark");
       try {
@@ -51,73 +51,10 @@
       </nav>
 
       <main id="mainContent" class="main editor-main">
-        <div class="editor-top">
-          <a id="backLink" class="back-link" href="/Notes">← 戻る</a>
-          <input id="noteTitle" class="editor-title" type="text" placeholder="タイトル" autocomplete="off" />
-          <div class="mode-toggle">
-            <button id="modeEdit" class="mode-btn active" type="button">🖊 テキスト編集</button>
-            <button id="modeView" class="mode-btn" type="button">👁 プレビュー表示</button>
-          </div>
-        </div>
-
- 
-        <div id="mdToolbar" class="md-toolbar">
-          <button class="md-tb-btn" data-md="bold" title="太字 (Ctrl+B)"><b>B</b></button>
-          <button class="md-tb-btn" data-md="italic" title="斜体 (Ctrl+I)"><i>I</i></button>
-          <button class="md-tb-btn" data-md="strike" title="打消し線"><s>S</s></button>
-          <span class="md-tb-divider"></span>
-          <button class="md-tb-btn" data-md="h1" title="見出し1">H1</button>
-          <button class="md-tb-btn" data-md="h2" title="見出し2">H2</button>
-          <button class="md-tb-btn" data-md="h3" title="見出し3">H3</button>
-          <span class="md-tb-divider"></span>
-          <button class="md-tb-btn" data-md="ul" title="箇条書き">UL</button>
-          <button class="md-tb-btn" data-md="ol" title="番号付きリスト">OL</button>
-          <span class="md-tb-divider"></span>
-          <button class="md-tb-btn" data-md="code" title="インラインコード">code</button>
-          <button class="md-tb-btn" data-md="codeblock" title="コードブロック">```</button>
-          <span class="md-tb-divider"></span>
-          <button class="md-tb-btn icon-only" data-md="quote" title="引用">💬</button>
-          <button class="md-tb-btn" data-md="hr" title="区切り線">—</button>
-          <button class="md-tb-btn icon-only" data-md="mark" title="ハイライト">🖍</button>
-          <span class="md-tb-divider"></span>
-          <button id="mdCheatsheetBtn" class="md-tb-btn icon-only" title="Markdown記法一覧">?</button>
-        </div>
         <div class="editor-body">
           <textarea id="noteBodyRaw" class="editor-textarea" placeholder="Markdownで記入…" spellcheck="false" autocomplete="off"></textarea>
-          <div id="noteBodyPreview" class="editor-preview md-preview" hidden></div>
         </div>
       </main>
-    </div>
-
-    <!-- Markdown チートシートモーダル -->
-    <div id="mdCheatsheet" class="md-cheatsheet" hidden>
-      <div class="md-cheatsheet-box">
-        <h2 class="modal-title">Markdown 記法一覧</h2>
-        <table class="md-cheatsheet-table">
-          <tr><td><code># 見出し1</code></td><td>大見出し</td></tr>
-          <tr><td><code>## 見出し2</code></td><td>中見出し</td></tr>
-          <tr><td><code>### 見出し3</code></td><td>小見出し</td></tr>
-          <tr><td><code>**太字**</code></td><td><b>太字</b></td></tr>
-          <tr><td><code>*斜体*</code></td><td><i>斜体</i></td></tr>
-          <tr><td><code>~~打消し~~</code></td><td><s>打消し</s></td></tr>
-          <tr><td><code><mark>ハイライト</mark></code></td><td><mark>ハイライト</mark></td></tr>
-          <tr><td><code>- リスト</code></td><td>箇条書き</td></tr>
-          <tr><td><code>1. リスト</code></td><td>番号付きリスト</td></tr>
-
-          <tr><td><code>`コード`</code></td><td>インラインコード</td></tr>
-          <tr><td><code>```</code> で囲む</td><td>コードブロック</td></tr>
-          <tr><td><code>&gt; 引用</code></td><td>引用</td></tr>
-          <tr><td><code>---</code></td><td>区切り線</td></tr>
-        </table>
-        <div class="modal-actions">
-          <label class="cheatsheet-hide-label">
-            <input type="checkbox" id="mdCheatsheetHide" />
-            次回から表示しない
-          </label>
-          <div class="modal-spacer"></div>
-          <button id="mdCheatsheetClose" class="modal-btn">閉じる</button>
-        </div>
-      </div>
     </div>
 
     <!-- 設定モーダル -->
@@ -187,8 +124,7 @@
     </div>
 
     <script src="pins.js?v=pins-ui-20260821-remote-latency-v1"></script>
-    <script src="vendor/marked.min.js?v=12.0.0"></script>
-    <script src="note-editor.js?v=note-editor-ui-20260803-remote-latency-v1"></script>
+    <script src="note-editor.js?v=note-editor-ui-20260803-remote-latency-v1-full-surface-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v2"></script>
     <script src="page-transition.js?v=page-swipe-20260821-focus-safe-v1"></script>
   </body>

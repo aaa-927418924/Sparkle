@@ -1785,8 +1785,8 @@ textarea.modal-input {
 /* ===== メモ編集ページ (note-editor.html) ===== */
 
 .editor-main {
-  max-width: 760px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
 }
 
 .editor-top {
@@ -1885,14 +1885,62 @@ textarea.modal-input {
   overflow-y: auto;
 }
 
-/* The editor surface itself owns the fixed height; keep its wrapper
-   transparent so mode changes cannot expose a second background layer. */
-.note-editor-page .editor-body {
-  height: 480px;
-  min-height: 480px;
-  background: transparent;
-  border-color: transparent;
+/* The note editor is a borderless, full-height writing surface. The fixed
+   sidebar is out of flow, so the editor keeps its responsive inset explicitly. */
+body.note-editor-page .main.editor-main {
+  box-sizing: border-box;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  margin: 0;
+  margin-inline-start: 240px;
+  padding: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   overflow: hidden;
+}
+
+.note-editor-page .editor-body {
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  flex: 1 1 auto;
+  background: var(--bg);
+  border: 0;
+  overflow: hidden;
+}
+
+.note-editor-page .editor-textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  padding: 20px 24px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg);
+  box-shadow: none;
+  color: var(--text);
+  resize: none;
+  outline: none;
+  overflow: auto;
+}
+
+.note-editor-page .editor-textarea:focus,
+.note-editor-page .editor-textarea:focus-visible {
+  border: 0;
+  background: var(--bg);
+  box-shadow: none;
+  outline: none;
 }
 
 /* Note editor is a fixed work surface: only the editor content itself may
@@ -1910,11 +1958,22 @@ body.note-editor-page .layout {
   box-sizing: border-box;
 }
 
-/* Keep the editor's max-width as its content width. The sidebar inset is
-   intentionally outside that width, matching the original editor layout. */
+/* Keep the editor surface below the titlebar and beside the fixed sidebar. */
 body.note-editor-page .main.editor-main {
-  height: 100vh;
+  height: 100%;
   min-height: 0;
+}
+
+@media (max-width: 900px) {
+  body.note-editor-page .main.editor-main {
+    margin-inline-start: 216px;
+  }
+}
+
+@media (max-width: 640px) {
+  body.note-editor-page .main.editor-main {
+    margin-inline-start: 64px;
+  }
 }
 
 /* ノート編集画面はスクロール自体を保ちつつ、スクロールバーだけ隠す。 */

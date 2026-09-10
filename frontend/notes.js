@@ -29,6 +29,10 @@ const els = {
   taskEditStars: $("taskEditStars"),
   taskEditCancel: $("taskEditCancel"),
   taskEditSave: $("taskEditSave"),
+  noteRenameModal: $("noteRenameModal"),
+  noteRenameTitle: $("noteRenameTitle"),
+  noteRenameCancel: $("noteRenameCancel"),
+  noteRenameSave: $("noteRenameSave"),
   batchBar: $("batchBar"),
   batchCount: $("batchCount"),
   batchDuplicateBtn: $("batchDuplicateBtn"),
@@ -40,7 +44,11 @@ async function api(path, options = {}) {
     ...options,
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const error = new Error(`HTTP ${res.status}`);
+    error.status = res.status;
+    throw error;
+  }
   return res.status === 204 ? null : res.json();
 }
 
@@ -370,6 +378,77 @@ els.taskEditSave.addEventListener("click", async () => {
   }
 });
 
+// --- メモ名変更モーダル ---
+let noteRenameTargetId = null;
+let noteRenameExpectedUpdatedAt = "";
+let noteRenameTrigger = null;
+
+function openNoteRenameModal(id, trigger = document.activeElement) {
+  const note = state.notes.find((item) => item.id === id);
+  if (!note) return;
+  noteRenameTargetId = id;
+  noteRenameExpectedUpdatedAt = String(note.updated_at || "");
+  noteRenameTrigger = trigger;
+  els.noteRenameTitle.value = String(note.title || "");
+  els.noteRenameModal.hidden = false;
+  els.noteRenameTitle.focus();
+  els.noteRenameTitle.select();
+}
+
+function closeNoteRenameModal({ restoreFocus = true } = {}) {
+  els.noteRenameModal.hidden = true;
+  noteRenameTargetId = null;
+  noteRenameExpectedUpdatedAt = "";
+  const trigger = noteRenameTrigger;
+  noteRenameTrigger = null;
+  if (!restoreFocus) return;
+  if (trigger?.isConnected) trigger.focus();
+}
+
+els.noteRenameCancel.addEventListener("click", closeNoteRenameModal);
+els.noteRenameModal.addEventListener("click", (e) => {
+  if (e.target === els.noteRenameModal) closeNoteRenameModal();
+});
+
+els.noteRenameSave.addEventListener("click", async () => {
+  if (noteRenameTargetId == null) return;
+  const title = els.noteRenameTitle.value.trim();
+  if (!title) {
+    alert("タイトルを入力してください。");
+    els.noteRenameTitle.focus();
+    return;
+  }
+  try {
+    const updated = await api(`/notes/${noteRenameTargetId}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        title,
+        expected_updated_at: noteRenameExpectedUpdatedAt,
+      }),
+    });
+    const idx = state.notes.findIndex((item) => item.id === updated.id);
+    if (idx >= 0) state.notes[idx] = updated;
+    closeNoteRenameModal({ restoreFocus: false });
+    renderNotes();
+    els.memoGrid.querySelector(`.memo-rename-btn[data-rename="${updated.id}"]`)?.focus();
+    window.refreshPinnedDataInBackground?.("note", updated.id);
+    window.refreshAllPinnedProjectsInBackground?.();
+  } catch (e) {
+    if (e?.status === 409) {
+      alert("このメモは別の端末で更新されています。最新の内容を確認してから、もう一度名前を変更してください。");
+    } else {
+      alert("メモ名を変更できませんでした。もう一度お試しください。");
+    }
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !els.noteRenameModal.hidden) {
+    e.preventDefault();
+    closeNoteRenameModal();
+  }
+});
+
 els.taskAdd.addEventListener("submit", async (e) => {
   e.preventDefault();
   const title = els.taskInput.value.trim();
@@ -431,6 +510,7 @@ function renderNotes() {
         <article class="memo-card${selected}${entryClass}"${entryStyle} data-id="${n.id}">
           <div class="memo-card-actions" aria-label="メモ操作">
             <button class="act-btn pin-btn${pinned ? ' on' : ''}" data-pin="${n.id}" data-pin-type="note" title="${pinned ? "ピン止めを解除" : "ピン止め"}" aria-label="${pinned ? "ピン止めを解除" : "ピン止め"}"><img class="icon icon-btn" src="icons/pin.svg" alt="" /></button>
+            <button class="act-btn memo-rename-btn" data-rename="${n.id}" title="名前を変更" aria-label="名前を変更"><img class="icon icon-btn" src="icons/pencil.svg" alt="" /></button>
             <button class="act-btn memo-del-btn" data-del="${n.id}" title="削除" aria-label="削除"><img class="icon icon-btn" src="icons/trash.svg" alt="" /></button>
           </div>
           ${clips ? `<div class="memo-clips">${clips}</div>` : ""}
@@ -469,6 +549,12 @@ function renderNotes() {
         anchor: btn.closest(".memo-card"),
         immediate: e.shiftKey,
       });
+    });
+  });
+  els.memoGrid.querySelectorAll(".memo-rename-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openNoteRenameModal(Number(btn.dataset.rename), btn);
     });
   });
   els.memoGrid.querySelectorAll("[data-pin]").forEach((btn) => {

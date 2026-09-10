@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle — タスク・メモ</title>
     <link rel="stylesheet" href="style.css?v=editor-tall-20260803-v1-black-background-v1-bg161616-sidebar212121-v1" />
-    <link rel="stylesheet" href="notes-figma.css?v=notes-ui-20260803-no-memo-hover-v1-black-background-v1-bg161616-sidebar212121-v1" />
+    <link rel="stylesheet" href="notes-figma.css?v=notes-ui-20260803-no-memo-hover-v1-black-background-v1-bg161616-sidebar212121-v1-memo-rename-v1" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-no-memo-hover-v1-black-background-v1-bg161616-sidebar212121-v1-surface-raised-202020-v1-custom-titlebar-history-v4-fixed" />
     <script>document.documentElement.setAttribute("data-theme", "dark");
       try {
@@ -175,9 +175,22 @@
       </div>
     </div>
 
+    <!-- メモ名変更モーダル -->
+    <div id="noteRenameModal" class="modal" hidden>
+      <div class="modal-box">
+        <h2 class="modal-title">メモ名を変更</h2>
+        <label class="modal-label" for="noteRenameTitle">タイトル</label>
+        <input id="noteRenameTitle" class="modal-input" type="text" autocomplete="off" />
+        <div class="modal-actions">
+          <button id="noteRenameCancel" class="modal-btn ghost" type="button">キャンセル</button>
+          <button id="noteRenameSave" class="modal-btn" type="button">保存</button>
+        </div>
+      </div>
+    </div>
+
     <script src="pins.js?v=pins-ui-20260821-remote-latency-v1"></script>
     <script src="vendor/marked.min.js?v=12.0.0"></script>
-    <script src="notes.js?v=notes-ui-20260803-remote-latency-v1"></script>
+    <script src="notes.js?v=notes-ui-20260803-remote-latency-v1-memo-rename-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v2"></script>
     <script src="page-transition.js?v=page-swipe-20260821-focus-safe-v1"></script>
   </body>

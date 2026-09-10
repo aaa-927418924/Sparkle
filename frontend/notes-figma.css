@@ -462,6 +462,15 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
   background: var(--surface-hover);
 }
 
+/* Touch devices have no hover state, so keep memo actions reachable without
+   changing the desktop hover/focus-within presentation. */
+@media (hover: none) {
+  .notes-page .memo-card-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .notes-page .empty {
   height: 100%;
   color: var(--notes-muted);

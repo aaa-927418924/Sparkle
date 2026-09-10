@@ -2,8 +2,8 @@ const API = window.location.origin;
 
 const state = {
   noteId: null, // null = 新規作成
+  title: "", // タイトルは一覧画面から管理し、編集画面では内部状態だけ保持する
   pickedClips: [], // 既存の関連付けを保存時に維持するためのデータ
-  mode: "edit", // "edit" | "view"
   history: [], // undo/redo stack: [{value, start, end}]
   historyIdx: -1,
   autoSaveTimer: null,
@@ -17,12 +17,7 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const els = {
-  title: $("noteTitle"),
   bodyRaw: $("noteBodyRaw"),
-  bodyPreview: $("noteBodyPreview"),
-  modeEdit: $("modeEdit"),
-  modeView: $("modeView"),
-  backLink: $("backLink"),
 };
 
 async function api(path, options = {}) {
@@ -40,7 +35,7 @@ async function api(path, options = {}) {
 
 function snapshot() {
   return JSON.stringify({
-    title: els.title.value,
+    title: state.title,
     body: els.bodyRaw.value,
     clipIds: state.pickedClips.map((c) => c.id).slice().sort((a, b) => a - b),
   });
@@ -79,7 +74,7 @@ function readNoteDraft() {
 
 function saveNoteDraft() {
   try {
-    const title = els.title.value;
+    const title = state.title;
     const body = els.bodyRaw.value;
     const clips = state.pickedClips.map((c) => ({
       id: c.id,
@@ -122,10 +117,10 @@ function restoreNoteDraft() {
   const currentClipIds = state.pickedClips.map((c) => c.id).sort((a, b) => a - b);
   const draftClipIds = draft.clipIds ? draft.clipIds.slice().sort((a, b) => a - b) : null;
   const clipsDiffer = draftClipIds !== null && JSON.stringify(draftClipIds) !== JSON.stringify(currentClipIds);
-  const differs = draft.title !== els.title.value || draft.body !== els.bodyRaw.value || clipsDiffer;
+  const differs = draft.title !== state.title || draft.body !== els.bodyRaw.value || clipsDiffer;
   if (!differs) return false;
 
-  els.title.value = draft.title;
+  state.title = draft.title;
   els.bodyRaw.value = draft.body;
   if (draftClipIds !== null) state.pickedClips = draft.clips;
   state.dirty = true;
@@ -134,8 +129,9 @@ function restoreNoteDraft() {
 }
 
 function notePayload() {
+  const title = String(state.title || "").trim();
   return {
-    title: els.title.value.trim(),
+    title: title || (state.noteId == null ? "無題のメモ" : ""),
     body: els.bodyRaw.value || null,
     clip_ids: state.pickedClips.map((c) => c.id),
   };
@@ -153,9 +149,6 @@ function scheduleNoteAutoSave() {
 async function autoSaveNote() {
   if (!state.dirty || state.autoSaveInFlight || state.saveBlockedByConflict) return;
   const payload = notePayload();
-  // A new note needs a title before it can become a database record.
-  // Until then, the local draft still preserves its body and clip choices.
-  if (state.noteId == null && !payload.title) return;
 
   const version = state.autoSaveVersion;
   const draftKeyBeforeSave = noteDraftKey();
@@ -165,6 +158,7 @@ async function autoSaveNote() {
     if (state.noteId == null) {
       const saved = await api("/notes", { method: "POST", body: JSON.stringify(payload) });
       state.noteId = Number(saved.id);
+      state.title = String(saved.title || payload.title || "無題のメモ");
       state.serverUpdatedAt = String(saved.updated_at || "");
       savedNoteId = state.noteId;
       history.replaceState(null, "", "?id=" + state.noteId);
@@ -207,68 +201,6 @@ function markNoteDirty() {
   saveNoteDraft();
   scheduleNoteAutoSave();
 }
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (m) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  }[m]));
-}
-function escapeAttr(s) {
-  return escapeHtml(s);
-}
-
-function linkifyText(raw) {
-  if (!raw) return "";
-  const urlRe = /(https?:\/\/[^\s<>"']+)/g;
-  let out = "";
-  let last = 0;
-  let m;
-  while ((m = urlRe.exec(raw))) {
-    out += escapeHtml(raw.slice(last, m.index));
-    const url = m[0];
-    out += `<a href="${escapeAttr(url)}" target="_blank" rel="noopener" class="body-link">${escapeHtml(url)}</a>`;
-    last = m.index + url.length;
-  }
-  out += escapeHtml(raw.slice(last));
-  return out;
-}
-
-if (typeof marked !== "undefined") {
-  marked.setOptions({ gfm: true, breaks: true });
-}
-
-// --- モード切り替え ---
-function setMode(mode) {
-  state.mode = mode;
-  const isEdit = mode === "edit";
-  els.bodyRaw.hidden = !isEdit;
-  els.bodyPreview.hidden = isEdit;
-  els.modeEdit.classList.toggle("active", isEdit);
-  els.modeView.classList.toggle("active", !isEdit);
-  const tb = document.getElementById("mdToolbar");
-  if (tb) tb.classList.toggle("hidden", !isEdit);
-  if (!isEdit) {
-    const raw = els.bodyRaw.value;
-    // 既存のmarkdownリンク記法([text](url))はそのまま活かし、
-    // 素のURLだけを <url> 形式に変換してmarkedにautolinkさせる
-    const autoLinked = raw.replace(
-      /(^|[\s(])(https?:\/\/[^\s<>()]+)/g,
-      (m, pre, url) => `${pre}<${url}>`
-    );
-    let html = marked ? marked.parse(autoLinked) : escapeHtml(raw);
-    // すべてのリンクを新しいタブで開くようにする
-    html = html.replace(/<a /g, '<a target="_blank" rel="noopener" ');
-    els.bodyPreview.innerHTML = html;
-  }
-}
-
-els.modeEdit.addEventListener("click", () => setMode("edit"));
-els.modeView.addEventListener("click", () => setMode("view"));
-
-els.title.addEventListener("input", markNoteDirty);
 els.bodyRaw.addEventListener("input", () => {
   pushHistory();
   markNoteDirty();
@@ -293,25 +225,19 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
-  // Ctrl+E でモードトグル
-  if (e.ctrlKey && (e.key === "e" || e.key === "E")) {
-    e.preventDefault();
-    setMode(state.mode === "edit" ? "view" : "edit");
-  }
 });
 
 // --- 初期化 ---
 async function init() {
   const params = new URLSearchParams(location.search);
   const id = params.get("id");
-  setMode("edit");
 
   if (id) {
     state.noteId = Number(id);
     try {
       const note = await api(`/notes/${id}`);
       state.serverUpdatedAt = String(note.updated_at || "");
-      els.title.value = note.title || "";
+      state.title = String(note.title || "");
       els.bodyRaw.value = note.body || "";
       state.pickedClips = (note.clips || []).map((c) => ({
         id: c.id,
@@ -326,118 +252,16 @@ async function init() {
     }
   } else {
     state.noteId = null;
+    state.title = "";
     state.serverUpdatedAt = "";
-    els.title.value = "";
     els.bodyRaw.value = "";
     state.pickedClips = [];
   }
   const restored = restoreNoteDraft();
   initialSnapshot = snapshot();
   pushHistory();
-  setupMdToolbar();
   if (restored) scheduleNoteAutoSave();
 }
-
-els.backLink.addEventListener("click", async (e) => {
-  e.preventDefault();
-  if (state.autoSaveTimer !== null) {
-    clearTimeout(state.autoSaveTimer);
-    state.autoSaveTimer = null;
-  }
-  if (state.dirty) await autoSaveNote();
-  location.href = "/Notes";
-});
-// ==================== Markdown ツールバー ====================
-
-function mdWrap(prefix, suffix, placeholder) {
-  const ta = els.bodyRaw;
-  const start = ta.selectionStart;
-  const end = ta.selectionEnd;
-  const sel = ta.value.slice(start, end);
-  const before = ta.value.slice(0, start);
-  const after = ta.value.slice(end);
-  const wrapped = prefix + (sel || placeholder) + suffix;
-  ta.value = before + wrapped + after;
-  const newPos = start + prefix.length + (sel ? sel.length : (placeholder || "").length);
-  ta.selectionStart = ta.selectionEnd = newPos;
-  ta.focus();
-}
-
-function mdLine(prefix) {
-  const ta = els.bodyRaw;
-  const start = ta.selectionStart;
-  const end = ta.selectionEnd;
-  let sel = ta.value.slice(start, end);
-  if (!sel) {
-    const lineStart = ta.value.lastIndexOf("\n", start - 1) + 1;
-    sel = ta.value.slice(lineStart, end) || "text";
-    const before = ta.value.slice(0, lineStart);
-    const after = ta.value.slice(end);
-    ta.value = before + prefix + sel + after;
-    ta.selectionStart = ta.selectionEnd = end + prefix.length;
-  } else {
-    const lines = sel.split("\n");
-    const wrapped = lines.map((l) => prefix + l).join("\n");
-    const before = ta.value.slice(0, start);
-    const after = ta.value.slice(end);
-    ta.value = before + wrapped + after;
-    ta.selectionStart = ta.selectionEnd = end + prefix.length * lines.length;
-  }
-  ta.focus();
-}
-
-function mdMultiLine(prefix, suffix) {
-  const ta = els.bodyRaw;
-  const start = ta.selectionStart;
-  const end = ta.selectionEnd;
-  const sel = ta.value.slice(start, end) || "text";
-  const before = ta.value.slice(0, start);
-  const after = ta.value.slice(end);
-  ta.value = before + prefix + "\n" + sel + "\n" + suffix + after;
-  const newPos = start + prefix.length + 1 + sel.length + 1 + suffix.length;
-  ta.selectionStart = ta.selectionEnd = newPos;
-  ta.focus();
-}
-
-function mdPrompt(prefix, suffix, q, placeholder) {
-  const ta = els.bodyRaw;
-  const start = ta.selectionStart;
-  const end = ta.selectionEnd;
-  const sel = ta.value.slice(start, end);
-  const input = prompt(q);
-  if (!input) return;
-  const wrapped = prefix + (sel || placeholder) + input + suffix;
-  ta.value = ta.value.slice(0, start) + wrapped + ta.value.slice(end);
-  const newPos = start + wrapped.length;
-  ta.selectionStart = ta.selectionEnd = newPos;
-  ta.focus();
-}
-
-const MD_ACTIONS = {
-  bold() { mdWrap("**", "**", "テキスト"); },
-  italic() { mdWrap("*", "*", "テキスト"); },
-  strike() { mdWrap("~~", "~~", "テキスト"); },
-  mark() { mdWrap("<mark>", "</mark>", "テキスト"); },
-  h1() { mdLine("# "); },
-  h2() { mdLine("## "); },
-  h3() { mdLine("### "); },
-  ul() { mdLine("- "); },
-  ol() { mdLine("1. "); },
-  link() { mdPrompt("[", "](url)", "URLを入力してください：", "テキスト"); },
-  image() { mdPrompt("![", "](url)", "画像URLを入力してください：", "代替テキスト"); },
-  code() { mdWrap("`", "`", "コード"); },
-  codeblock() { mdMultiLine("```", "```"); },
-  quote() { mdLine("> "); },
-  hr() {
-    const ta = els.bodyRaw;
-    const start = ta.selectionStart;
-    const before = ta.value.slice(0, start);
-    const after = ta.value.slice(start);
-    ta.value = before + "\n---\n" + after;
-    ta.selectionStart = ta.selectionEnd = start + 5;
-    ta.focus();
-  },
-};
 
 // ---------- undo / redo ----------
 
@@ -470,45 +294,6 @@ function redo() {
   ta.selectionStart = entry.start;
   ta.selectionEnd = entry.end;
   ta.focus();
-}
-
-function setupMdToolbar() {
-  document.querySelectorAll("[data-md]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const action = btn.dataset.md;
-      if (MD_ACTIONS[action]) {
-        MD_ACTIONS[action]();
-        pushHistory();
-        markNoteDirty();
-      }
-    });
-  });
-  // チートシート
-  const cheatBtn = document.getElementById("mdCheatsheetBtn");
-  const cheatModal = document.getElementById("mdCheatsheet");
-  const cheatClose = document.getElementById("mdCheatsheetClose");
-  const cheatHide = document.getElementById("mdCheatsheetHide");
-  const cheatHideLabel = document.querySelector(".cheatsheet-hide-label");
-  if (cheatBtn && cheatModal && cheatClose && cheatHide && cheatHideLabel) {
-    // ? ボタン → 常に開く、「次回から表示しない」を非表示
-    cheatBtn.addEventListener("click", () => {
-      cheatHideLabel.hidden = true;
-      cheatModal.hidden = false;
-    });
-    cheatClose.addEventListener("click", () => {
-      if (!cheatHideLabel.hidden && cheatHide.checked) localStorage.setItem("hideAutoCheatsheet", "1");
-      cheatModal.hidden = true;
-    });
-    cheatModal.addEventListener("click", (e) => {
-      if (e.target === cheatModal) cheatModal.hidden = true;
-    });
-    // 初期表示（初回のみ）
-    if (localStorage.getItem("hideAutoCheatsheet") !== "1") {
-      cheatHideLabel.hidden = false;
-      cheatHide.checked = false;
-      cheatModal.hidden = false;
-    }
-  }
 }
 
 // サイドバー設定

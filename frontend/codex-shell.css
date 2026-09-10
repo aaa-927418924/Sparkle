@@ -1,8 +1,8 @@
 /* Shared Windows workbench shell. Keep the existing page-specific layouts,
    but give every screen the same quiet, Codex-inspired visual language. */
 :root {
-  --bg: #050505;
-  --sidebar-bg: #101010;
+  --bg: #161616;
+  --sidebar-bg: #212121;
   --surface: #202020;
   --surface-raised: #202020;
   --surface-hover: #2b2b2b;
@@ -20,7 +20,7 @@
 
 html:not([data-theme="dark"]) {
   --bg: #f4f3ef;
-  --sidebar-bg: #101010;
+  --sidebar-bg: #212121;
   --surface: #ffffff;
   --surface-raised: #fbfaf7;
   --surface-hover: #f0eee9;
@@ -124,7 +124,7 @@ a {
 .side-btn.active {
   color: var(--accent);
   background: var(--surface-active);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
+  box-shadow: none;
 }
 
 .side-btn.active .icon-nav,
@@ -148,7 +148,7 @@ a {
 
 .main {
   min-width: 0;
-  background: #050505;
+  background: var(--bg);
   padding: 32px 40px 72px 104px;
 }
 
@@ -1196,7 +1196,7 @@ body.native-titlebar .window-resize-handle {
 .sidebar.sidebar--index .side-btn.active {
   color: #fff;
   background: var(--surface-active);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
+  box-shadow: none;
 }
 
 .sidebar .side-btn .icon-nav,

@@ -2,12 +2,12 @@
 .home-page {
   min-height: 100vh;
   overflow-x: hidden;
-  background: #050505;
+  background: #161616;
 }
 
 .home-page .layout {
-  --home-bg: #050505;
-  --home-sidebar: #101010;
+  --home-bg: #161616;
+  --home-sidebar: #212121;
   --home-surface: rgba(244, 243, 238, 0.2);
   --home-text: #3f3f3f;
   --home-muted: #6b6a64;
@@ -20,12 +20,12 @@
 }
 
 html[data-theme="dark"] .home-page {
-  background: #050505;
+  background: #161616;
 }
 
 html[data-theme="dark"] .home-page .layout {
-  --home-bg: #050505;
-  --home-sidebar: #101010;
+  --home-bg: #161616;
+  --home-sidebar: #212121;
   --home-surface: rgba(244, 243, 238, 0.2);
   --home-text: #f4f3ee;
   --home-muted: #b1ada1;

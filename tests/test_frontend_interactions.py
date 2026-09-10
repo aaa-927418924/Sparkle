@@ -243,6 +243,24 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertIn(".app-titlebar-history-icon", css)
         self.assertIn(".app-titlebar .window-control:focus-visible", css)
         self.assertIn("outline-offset: 0;", css)
+        titlebar_rule = css[css.index(".app-titlebar {"):css.index(".app-titlebar-drag-space")]
+        self.assertIn("position: sticky;", titlebar_rule)
+        self.assertIn("top: 0;", titlebar_rule)
+        self.assertIn("z-index: 1100;", titlebar_rule)
+        for page in (
+            "index.html",
+            "notes.html",
+            "projects.html",
+            "note-editor.html",
+            "profile.html",
+            "settings.html",
+            "migration.html",
+            "setup.html",
+            "tutorial.html",
+            "extension-guide.html",
+        ):
+            html = (ROOT / "frontend" / page).read_text(encoding="utf-8")
+            self.assertIn("custom-titlebar-history-v3-sticky", html)
 
     def test_sidebar_rejects_horizontal_overflow_and_touch_pan(self):
         source = (ROOT / "frontend" / "codex-shell.css").read_text(encoding="utf-8")

@@ -26,6 +26,7 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertIn("color: #ffffff;", home_css)
         self.assertIn("background: #050505;", shell_css)
         self.assertIn("--sidebar-bg: #101010;", shell_css)
+        self.assertIn("--surface-raised: #202020;", shell_css)
         self.assertIn(".home-page .cat-btn.active", home_css)
         self.assertIn("color: #9c9c9c;", home_css)
         self.assertIn("color: #ffffff;", home_css)

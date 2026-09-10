@@ -848,7 +848,12 @@
 
   function resizeWindowFromPointer(event, direction) {
     const api = window.pywebview?.api;
-    const hasNativeResize = typeof api?.begin_native_resize === "function";
+    // The custom titlebar must not restore WS_THICKFRAME: that native frame
+    // creates a top non-client inset above the WebView. Use the existing
+    // pointer fallback in custom mode; native hit-test resizing is reserved
+    // for the standard Windows caption mode.
+    const hasNativeTitlebar = document.documentElement.classList.contains("native-titlebar");
+    const hasNativeResize = hasNativeTitlebar && typeof api?.begin_native_resize === "function";
     const hasFallbackResize = typeof api?.begin_window_resize === "function"
       && typeof api?.resize_window === "function";
     if (!api || (!hasNativeResize && !hasFallbackResize)) return;

@@ -110,7 +110,6 @@ exit_requested = threading.Event()
 window_state = {
     "maximized": False,
     "profile": DEFAULT_WINDOW_PROFILE,
-    "native_resize_handle": None,
     "native_titlebar": None,
     "native_titlebar_handle": None,
 }
@@ -578,15 +577,17 @@ def _apply_window_caption(window, native_titlebar: bool) -> None:
 
     # A real caption needs more than WS_CAPTION: without SYSMENU, MIN/MAXBOX
     # and THICKFRAME, the native bar renders empty (no minimize/maximize/close
-    # buttons). Custom mode drops the caption but keeps THICKFRAME so the
-    # custom edge handles can delegate resizing to Windows. The DWM frame
-    # margin remains zero in custom mode, so this does not add a visible bar.
+    # buttons). Custom mode drops both the caption and THICKFRAME. Keeping the
+    # native sizing frame in a frameless window creates a non-client inset at
+    # the top of the WebView, which leaves a visible gap above the custom bar.
+    # Custom edge handles use the WebView fallback; the native frame is only
+    # needed when the standard Windows caption is enabled.
     _apply_window_style(
         handle,
         (
             lambda style: (style | 0x00C00000 | 0x00080000 | 0x00020000 | 0x00010000 | 0x00040000)
             if native_titlebar
-            else ((style & ~0x00C00000) | 0x00040000)
+            else (style & ~(0x00C00000 | 0x00040000))
         ),
     )
     _apply_dwm_frame_margin(handle, native_titlebar)
@@ -712,30 +713,6 @@ def _apply_corner_preference(handle, native_titlebar: bool) -> None:
         set_window_attr(ctypes.c_void_p(handle), 33, ctypes.byref(value), 4)
     except Exception:
         pass
-
-
-def _enable_native_resize(window) -> None:
-    """Restore the Windows sizing frame that frameless pywebview removes."""
-    if os.name != "nt":
-        return
-
-    handle = _get_native_window_handle(window)
-    if handle is None:
-        return
-
-    handle_key = int(handle)
-    if window_state.get("native_resize_handle") == handle_key:
-        return
-
-    _apply_window_style(
-        handle,
-        lambda style: (style & ~0x00C00000)  # WS_CAPTION
-        | 0x00040000
-        | 0x00020000
-        | 0x00010000
-        | 0x00080000,  # THICKFRAME | MIN/MAXBOX | SYSMENU
-    )
-    window_state["native_resize_handle"] = handle_key
 
 
 def _resize_window_for_profile(profile: str):
@@ -1162,7 +1139,6 @@ def _apply_native_chrome() -> None:
     window = window_ref.get("window")
     if window is None:
         return
-    _enable_native_resize(window)
     _apply_window_caption(window, _get_window_titlebar_setting())
 
 

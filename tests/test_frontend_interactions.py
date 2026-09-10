@@ -262,10 +262,17 @@ class FrontendInteractionTests(unittest.TestCase):
     def test_native_resize_is_preferred_and_native_handles_are_hidden(self):
         js_source = (ROOT / "frontend" / "codex-shell.js").read_text(encoding="utf-8")
         css_source = (ROOT / "frontend" / "codex-shell.css").read_text(encoding="utf-8")
+        native_source = (ROOT / "app_entry.py").read_text(encoding="utf-8")
 
         self.assertIn("api.begin_native_resize(direction)", js_source)
+        self.assertIn(
+            'const hasNativeResize = hasNativeTitlebar && typeof api?.begin_native_resize === "function";',
+            js_source,
+        )
         self.assertIn("function startWindowResizeFallback", js_source)
         self.assertIn("html.native-titlebar .window-resize-handle", css_source)
+        self.assertIn("else (style & ~(0x00C00000 | 0x00040000))", native_source)
+        self.assertNotIn('"native_resize_handle"', native_source)
 
     def test_native_window_api_uses_ui_thread_non_client_messages(self):
         source = (ROOT / "app_entry.py").read_text(encoding="utf-8")

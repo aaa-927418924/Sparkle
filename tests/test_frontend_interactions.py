@@ -357,7 +357,7 @@ class FrontendInteractionTests(unittest.TestCase):
 
         highlight_script = html.index('src="vendor/highlight.min.js?v=highlightjs-11.12.0"')
         markdown_script = html.index('src="vendor/highlight-markdown.min.js?v=highlightjs-11.12.0-markdown"')
-        editor_script = html.index('src="note-editor.js?v=note-editor-ui-20260803-remote-latency-v1-full-surface-v1-highlightjs-11.12.0"')
+        editor_script = html.index('src="note-editor.js?v=note-editor-ui-20260803-remote-latency-v1-full-surface-v1-highlightjs-11.12.0-focus-transparent-regular-v1"')
         self.assertLess(highlight_script, markdown_script)
         self.assertLess(markdown_script, editor_script)
         self.assertTrue((vendor_dir / "highlight.min.js").is_file())
@@ -381,6 +381,17 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertIn("color: transparent;", css)
         self.assertIn("caret-color: var(--text);", css)
         self.assertIn("background: var(--bg);", css)
+        self.assertIn("font-family: Consolas, \"Cascadia Mono\", \"Cascadia Code\", \"SFMono-Regular\",", css)
+        self.assertIn("font-weight: 400;", css)
+        focus_start = css.index(".note-editor-page .editor-canvas > .editor-textarea:focus,")
+        focus_end = css.index("}", focus_start)
+        focus_rule = css[focus_start : focus_end + 1]
+        self.assertIn("background: transparent;", focus_rule)
+        legacy_focus_start = css.index(".note-editor-page .editor-textarea:focus,")
+        self.assertLess(legacy_focus_start, focus_start)
+        self.assertIn("background: transparent;", css[legacy_focus_start : css.index("}", legacy_focus_start) + 1])
+        self.assertIn(".note-editor-page .editor-highlight .hljs-section", css)
+        self.assertIn(".note-editor-page .editor-highlight .hljs-strong", css)
         self.assertIn("--editor-heading: #569cd6;", css)
         self.assertIn("--editor-code: #ce9178;", css)
         for token_class in ("hljs-section", "hljs-strong", "hljs-emphasis", "hljs-code", "hljs-link", "hljs-quote", "hljs-bullet"):

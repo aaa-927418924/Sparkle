@@ -1938,7 +1938,7 @@ body.note-editor-page .main.editor-main {
 .note-editor-page .editor-textarea:focus,
 .note-editor-page .editor-textarea:focus-visible {
   border: 0;
-  background: var(--bg);
+  background: transparent;
   box-shadow: none;
   outline: none;
 }
@@ -1987,10 +1987,11 @@ body.note-editor-page .main.editor-main {
 .note-editor-page .editor-canvas,
 .note-editor-page .editor-highlight,
 .note-editor-page .editor-textarea {
-  font-family: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas,
-    "Liberation Mono", Menlo, monospace;
+  font-family: Consolas, "Cascadia Mono", "Cascadia Code", "SFMono-Regular",
+    "Liberation Mono", Menlo, "Yu Gothic UI", "Noto Sans JP", sans-serif;
   font-size: 15px;
   line-height: 1.6;
+  font-weight: 400;
   tab-size: 4;
 }
 
@@ -2097,6 +2098,14 @@ body.note-editor-page .main.editor-main {
   background: rgba(86, 156, 214, 0.34);
 }
 
+/* Keep the textarea translucent while focused so the Highlight.js layer is
+   still visible. This selector intentionally outranks the legacy focus rule
+   above without relying on !important. */
+.note-editor-page .editor-canvas > .editor-textarea:focus,
+.note-editor-page .editor-canvas > .editor-textarea:focus-visible {
+  background: transparent;
+}
+
 .note-editor-page .editor-highlight .hljs-section {
   color: var(--editor-heading);
   font-weight: 700;
@@ -2125,7 +2134,7 @@ body.note-editor-page .main.editor-main {
 
 .note-editor-page .editor-highlight .hljs-quote {
   color: var(--editor-quote);
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .note-editor-page .editor-highlight .hljs-bullet,

@@ -6,7 +6,7 @@
     <title>Sparkle</title>
     <link rel="stylesheet" href="style.css?v=home-project-attach-20260821-v4-tag-filter-v1-bg161616-sidebar212121-v1" />
     <link rel="stylesheet" href="home-figma.css?v=home-ui-20260802-controls-drop-overlay-v1-tag-filter-v1-bg161616-sidebar212121-v1" />
-    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1-black-background-v1-bg161616-sidebar212121-v1-surface-raised-202020-v1-custom-titlebar-history-v1" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1-black-background-v1-bg161616-sidebar212121-v1-surface-raised-202020-v1-custom-titlebar-history-v2" />
     <script>
       document.documentElement.setAttribute("data-theme", "dark");
     </script>
@@ -21,6 +21,14 @@
   </head>
   <body class="home-page">
     <header class="app-titlebar window-drag-region" aria-label="ウィンドウタイトルバー">
+      <div class="app-titlebar-history" aria-label="ページ履歴">
+        <button class="app-titlebar-history-btn" type="button" title="戻る" aria-label="戻る" data-history-action="back">
+          <svg class="app-titlebar-history-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5" /></svg>
+        </button>
+        <button class="app-titlebar-history-btn" type="button" title="進む" aria-label="進む" data-history-action="forward">
+          <svg class="app-titlebar-history-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="m7.5 4.5 5.5 5.5-5.5 5.5" /></svg>
+        </button>
+      </div>
       <div class="app-titlebar-drag-space" aria-hidden="true"></div>
       <div class="window-controls" aria-label="ウィンドウ操作">
         <button class="window-control" type="button" title="最小化" aria-label="最小化" data-window-action="minimize_window">
@@ -36,14 +44,6 @@
     </header>
     <div class="layout">
       <nav class="sidebar" aria-label="メインナビゲーション">
-        <div class="sidebar-history" aria-label="ページ履歴">
-          <button class="sidebar-history-btn" type="button" title="戻る" aria-label="戻る" data-history-action="back">
-            <svg class="sidebar-history-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5" /></svg>
-          </button>
-          <button class="sidebar-history-btn" type="button" title="進む" aria-label="進む" data-history-action="forward">
-            <svg class="sidebar-history-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="m7.5 4.5 5.5 5.5-5.5 5.5" /></svg>
-          </button>
-        </div>
         <a class="side-btn active" title="ホーム" data-nav="home" href="/Home">
           <img class="icon icon-nav" src="icons/home.svg" alt="" />
           <span class="side-label">ホーム</span>
@@ -369,7 +369,7 @@
     <script src="pins.js?v=pins-ui-20260821-remote-latency-v1"></script>
     <script src="search-history.js"></script>
     <script src="app.js?v=home-project-attach-20260821-remote-latency-v1-tag-filter-v1"></script>
-    <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v1"></script>
+    <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v2"></script>
     <script src="page-transition.js?v=page-swipe-20260821-focus-safe-v1"></script>
   </body>
 </html>

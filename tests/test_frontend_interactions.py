@@ -225,8 +225,11 @@ class FrontendInteractionTests(unittest.TestCase):
         for page in pages:
             html = (ROOT / "frontend" / page).read_text(encoding="utf-8")
             self.assertIn('class="app-titlebar window-drag-region"', html)
+            self.assertIn('class="app-titlebar-history"', html)
             self.assertIn('data-history-action="back"', html)
             self.assertIn('data-history-action="forward"', html)
+            self.assertLess(html.index('class="app-titlebar-history"'), html.index('class="layout"'))
+            self.assertNotIn('class="sidebar-history"', html)
             self.assertNotIn('class="sidebar-titlebar"', html)
             self.assertNotIn('class="sidebar-brand-icon"', html)
 
@@ -237,7 +240,9 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertIn("--app-titlebar-height: 32px;", css)
         self.assertIn("background: var(--sidebar-bg);", css)
         self.assertIn("border-top: 0;", css)
-        self.assertIn(".sidebar-history-icon", css)
+        self.assertIn(".app-titlebar-history-icon", css)
+        self.assertIn(".app-titlebar .window-control:focus-visible", css)
+        self.assertIn("outline-offset: 0;", css)
 
     def test_sidebar_rejects_horizontal_overflow_and_touch_pan(self):
         source = (ROOT / "frontend" / "codex-shell.css").read_text(encoding="utf-8")

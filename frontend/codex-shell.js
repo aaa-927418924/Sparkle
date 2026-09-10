@@ -738,7 +738,7 @@
   function isSmallSidebarGap(event, sidebar) {
     const x = event.clientX;
     const y = event.clientY;
-    return [...sidebar.querySelectorAll(".sidebar-history, .side-btn, .sidebar-tools")].some((element) => {
+    return [...sidebar.querySelectorAll(".side-btn, .sidebar-tools")].some((element) => {
       const rect = element.getBoundingClientRect();
       return x >= rect.left && x <= rect.right && y >= rect.top - 4 && y <= rect.bottom + 4;
     });
@@ -747,7 +747,7 @@
   function canStartSidebarDrag(event, sidebar) {
     const target = event.target;
     if (target?.closest?.("[data-window-action], [data-history-action], .side-btn, .sidebar-tools, .window-controls")) return false;
-    if (target?.closest?.(".sidebar-history, .side-spacer")) return true;
+    if (target?.closest?.(".side-spacer")) return true;
     if (target !== sidebar) return false;
     return !isSmallSidebarGap(event, sidebar);
   }

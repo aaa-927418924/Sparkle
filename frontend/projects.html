@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle — プロジェクト</title>
     <link rel="stylesheet" href="style.css?v=project-clip-picker-home-card-20260821-v2-assistant-thinking-preview-v1-black-background-v1-bg161616-sidebar212121-v1" />
-    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1-black-background-v1-bg161616-sidebar212121-v1-surface-raised-202020-v1-custom-titlebar-history-v1" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1-black-background-v1-bg161616-sidebar212121-v1-surface-raised-202020-v1-custom-titlebar-history-v2" />
     <script>
       document.documentElement.setAttribute("data-theme", "dark");
       document.documentElement.classList.add("projects-route-pending");
@@ -21,6 +21,14 @@
   </head>
   <body class="projects-page">
     <header class="app-titlebar window-drag-region" aria-label="ウィンドウタイトルバー">
+      <div class="app-titlebar-history" aria-label="ページ履歴">
+        <button class="app-titlebar-history-btn" type="button" title="戻る" aria-label="戻る" data-history-action="back">
+          <svg class="app-titlebar-history-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5" /></svg>
+        </button>
+        <button class="app-titlebar-history-btn" type="button" title="進む" aria-label="進む" data-history-action="forward">
+          <svg class="app-titlebar-history-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="m7.5 4.5 5.5 5.5-5.5 5.5" /></svg>
+        </button>
+      </div>
       <div class="app-titlebar-drag-space" aria-hidden="true"></div>
       <div class="window-controls" aria-label="ウィンドウ操作">
         <button class="window-control" type="button" title="最小化" aria-label="最小化" data-window-action="minimize_window">
@@ -36,14 +44,6 @@
     </header>
     <div class="layout">
       <nav class="sidebar sidebar--index" aria-label="メインナビゲーション">
-        <div class="sidebar-history" aria-label="ページ履歴">
-          <button class="sidebar-history-btn" type="button" title="戻る" aria-label="戻る" data-history-action="back">
-            <svg class="sidebar-history-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5" /></svg>
-          </button>
-          <button class="sidebar-history-btn" type="button" title="進む" aria-label="進む" data-history-action="forward">
-            <svg class="sidebar-history-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="m7.5 4.5 5.5 5.5-5.5 5.5" /></svg>
-          </button>
-        </div>
         <a class="side-btn" title="ホーム" data-nav="home" href="/Home"><img class="icon icon-nav" src="icons/home.svg" alt="" /><span class="side-label">ホーム</span></a>
         <a class="side-btn" title="タスク・メモ" data-nav="memo" href="/Notes"><img class="icon icon-nav" src="icons/memo.svg" alt="" /><span class="side-label">タスク・メモ</span></a>
         <a class="side-btn active" title="プロジェクト" data-nav="projects" href="/Projects"><img class="icon icon-nav" src="icons/project.svg" alt="" /><span class="side-label">プロジェクト</span></a>
@@ -393,7 +393,7 @@
     <script src="pins.js?v=pins-ui-20260821-remote-latency-v1"></script>
     <script src="projects.js?v=projects-clip-picker-home-card-20260821-remote-latency-v1"></script>
     <script src="project-assistant.js?v=project-assistant-streaming-20260821-v1-thinking-preview-v2-retrieval-v1"></script>
-    <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v1"></script>
+    <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v2"></script>
     <script src="page-transition.js?v=page-swipe-20260821-focus-safe-v1"></script>
   </body>
 </html>

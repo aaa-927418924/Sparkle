@@ -1058,8 +1058,10 @@ body.native-titlebar .app-titlebar {
 }
 
 .app-titlebar {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 1100;
   display: flex;
   align-items: stretch;
@@ -1179,16 +1181,18 @@ body.native-titlebar .app-titlebar {
   justify-content: flex-end;
   height: var(--app-titlebar-height);
   min-height: var(--app-titlebar-height);
-  margin-top: -18px;
-  margin-right: -22px;
-  margin-left: -22px;
-  width: calc(100% + 44px);
-  margin-bottom: 16px;
+  margin: 0;
+  width: auto;
+}
+
+html:not(.native-titlebar) .migration-window {
+  padding-top: calc(var(--app-titlebar-height) + 16px);
 }
 
 html:not(.native-titlebar) .app-titlebar + .layout {
   height: calc(100vh - var(--app-titlebar-height));
   min-height: calc(100vh - var(--app-titlebar-height));
+  margin-top: var(--app-titlebar-height);
 }
 
 html:not(.native-titlebar) .app-titlebar + .layout > .sidebar {

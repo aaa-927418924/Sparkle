@@ -18,7 +18,67 @@ const state = {
 const $ = (id) => document.getElementById(id);
 const els = {
   bodyRaw: $("noteBodyRaw"),
+  editorCanvas: $("noteEditorCanvas"),
+  bodyHighlight: $("noteBodyHighlight"),
+  bodyHighlightCode: $("noteBodyHighlightCode"),
+  lineNumbers: $("noteLineNumbers"),
+  lineNumbersContent: $("noteLineNumbersContent"),
 };
+
+// The textarea remains the single source of truth for editing. This renderer
+// only paints a safe, non-interactive copy behind it so keyboard input, IME,
+// selection, undo/redo, and assistive technology keep native textarea
+// behaviour. Highlight.js is bundled locally so note editing never needs a
+// runtime CDN request.
+const MARKDOWN_HTML_ESCAPES = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => MARKDOWN_HTML_ESCAPES[character]);
+}
+
+function highlightMarkdown(source) {
+  source = String(source ?? "");
+  try {
+    const hljs = window.hljs;
+    if (hljs && typeof hljs.highlight === "function" && typeof hljs.getLanguage === "function" && hljs.getLanguage("markdown")) {
+      return hljs.highlight(source, { language: "markdown", ignoreIllegals: true }).value;
+    }
+  } catch (error) {
+    console.warn("Markdown highlight failed; showing plain text", error);
+  }
+  return escapeHtml(source);
+}
+
+function updateMarkdownEditor(value = els.bodyRaw?.value || "") {
+  if (!els.bodyHighlightCode || !els.lineNumbersContent || !els.lineNumbers) return;
+  const source = String(value ?? "");
+  els.bodyHighlightCode.innerHTML = highlightMarkdown(source);
+
+  const lineCount = Math.max(1, source.split("\n").length);
+  els.lineNumbersContent.textContent = Array.from(
+    { length: lineCount },
+    (_, index) => String(index + 1),
+  ).join("\n");
+  els.lineNumbers.style.setProperty("--editor-gutter-width", `${Math.max(2, String(lineCount).length)}ch`);
+  syncMarkdownEditorScroll();
+}
+
+function syncMarkdownEditorScroll() {
+  if (!els.bodyRaw || !els.bodyHighlight || !els.lineNumbersContent) return;
+  const x = Number(els.bodyRaw.scrollLeft) || 0;
+  const y = Number(els.bodyRaw.scrollTop) || 0;
+  els.bodyHighlight.style.transform = `translate(${-x}px, ${-y}px)`;
+  els.lineNumbersContent.style.transform = `translateY(${-y}px)`;
+}
+
+window.highlightMarkdown = highlightMarkdown;
+window.updateMarkdownEditor = updateMarkdownEditor;
 
 async function api(path, options = {}) {
   const res = await fetch(API + path, {
@@ -202,9 +262,12 @@ function markNoteDirty() {
   scheduleNoteAutoSave();
 }
 els.bodyRaw.addEventListener("input", () => {
+  updateMarkdownEditor();
   pushHistory();
   markNoteDirty();
 });
+els.bodyRaw.addEventListener("scroll", syncMarkdownEditorScroll, { passive: true });
+window.addEventListener("resize", syncMarkdownEditorScroll);
 
 window.addEventListener("beforeunload", saveNoteDraft);
 document.addEventListener("visibilitychange", () => {
@@ -258,6 +321,7 @@ async function init() {
     state.pickedClips = [];
   }
   const restored = restoreNoteDraft();
+  updateMarkdownEditor();
   initialSnapshot = snapshot();
   pushHistory();
   if (restored) scheduleNoteAutoSave();
@@ -282,6 +346,7 @@ function undo() {
   ta.value = entry.value;
   ta.selectionStart = entry.start;
   ta.selectionEnd = entry.end;
+  updateMarkdownEditor();
   ta.focus();
 }
 
@@ -293,6 +358,7 @@ function redo() {
   ta.value = entry.value;
   ta.selectionStart = entry.start;
   ta.selectionEnd = entry.end;
+  updateMarkdownEditor();
   ta.focus();
 }
 

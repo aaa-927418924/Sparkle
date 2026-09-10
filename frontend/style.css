@@ -1943,6 +1943,216 @@ body.note-editor-page .main.editor-main {
   outline: none;
 }
 
+/* VS Code-like Markdown editor surface. The native textarea is transparent
+   so the safe, aria-hidden syntax layer beneath it remains visible while the
+   textarea still owns focus, IME, selection, clipboard, and undo/redo. */
+.note-editor-page {
+  --editor-gutter-text: #858585;
+  --editor-heading: #569cd6;
+  --editor-marker: #d7ba7d;
+  --editor-emphasis: #c586c0;
+  --editor-strong: #dcdcaa;
+  --editor-strikethrough: #f44747;
+  --editor-code: #ce9178;
+  --editor-link: #4fc1ff;
+  --editor-quote: #6a9955;
+  --editor-html: #4ec9b0;
+}
+
+.editor-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.note-editor-page .markdown-editor {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.note-editor-page .editor-line-numbers,
+.note-editor-page .editor-canvas,
+.note-editor-page .editor-highlight,
+.note-editor-page .editor-textarea {
+  font-family: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas,
+    "Liberation Mono", Menlo, monospace;
+  font-size: 15px;
+  line-height: 1.6;
+  tab-size: 4;
+}
+
+.note-editor-page .editor-line-numbers {
+  box-sizing: border-box;
+  width: calc(var(--editor-gutter-width, 2ch) + 40px);
+  min-width: calc(var(--editor-gutter-width, 2ch) + 40px);
+  height: 100%;
+  padding-block: 20px;
+  padding-inline: 16px 12px;
+  overflow: hidden;
+  color: var(--editor-gutter-text);
+  text-align: end;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.note-editor-page .editor-line-numbers-content {
+  min-height: 100%;
+  white-space: pre;
+  font-variant-numeric: tabular-nums;
+  will-change: transform;
+}
+
+.note-editor-page .editor-canvas {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.note-editor-page .editor-highlight {
+  position: absolute;
+  z-index: 0;
+  inset: 0 auto auto 0;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 20px 24px;
+  border: 0;
+  color: var(--text);
+  background: var(--bg);
+  white-space: pre;
+  overflow: visible;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transform: translate(0, 0);
+  will-change: transform;
+}
+
+.note-editor-page .editor-highlight,
+.note-editor-page .editor-highlight * {
+  transition: none;
+}
+
+.note-editor-page .editor-highlight code {
+  font: inherit;
+}
+
+.note-editor-page .editor-textarea {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  padding: 20px 24px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--text);
+  resize: none;
+  outline: none;
+  overflow: auto;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  tab-size: 4;
+  text-align: start;
+}
+
+.note-editor-page .editor-textarea::placeholder {
+  color: var(--muted);
+  -webkit-text-fill-color: var(--muted);
+  opacity: 1;
+}
+
+.note-editor-page .editor-textarea::selection {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background: rgba(86, 156, 214, 0.34);
+}
+
+.note-editor-page .editor-highlight .hljs-section {
+  color: var(--editor-heading);
+  font-weight: 700;
+}
+
+.note-editor-page .editor-highlight .hljs-strong {
+  color: var(--editor-strong);
+  font-weight: 700;
+}
+
+.note-editor-page .editor-highlight .hljs-emphasis {
+  color: var(--editor-emphasis);
+  font-style: italic;
+}
+
+.note-editor-page .editor-highlight .hljs-code {
+  color: var(--editor-code);
+}
+
+.note-editor-page .editor-highlight .hljs-link,
+.note-editor-page .editor-highlight .hljs-string {
+  color: var(--editor-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.note-editor-page .editor-highlight .hljs-quote {
+  color: var(--editor-quote);
+  font-weight: 600;
+}
+
+.note-editor-page .editor-highlight .hljs-bullet,
+.note-editor-page .editor-highlight .hljs-symbol,
+.note-editor-page .editor-highlight .hljs-literal,
+.note-editor-page .editor-highlight .hljs-meta {
+  color: var(--editor-marker);
+}
+
+.note-editor-page .editor-highlight .hljs-tag,
+.note-editor-page .editor-highlight .hljs-name,
+.note-editor-page .editor-highlight .hljs-attr {
+  color: var(--editor-html);
+}
+
+@media (forced-colors: active) {
+  .note-editor-page .editor-highlight {
+    display: none;
+  }
+
+  .note-editor-page .editor-textarea {
+    color: CanvasText;
+    -webkit-text-fill-color: CanvasText;
+    background: Canvas;
+  }
+}
+
 /* Note editor is a fixed work surface: only the editor content itself may
    scroll, never the empty page area around the controls. */
 html.note-editor-document,

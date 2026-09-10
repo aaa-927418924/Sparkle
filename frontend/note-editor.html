@@ -52,7 +52,16 @@
 
       <main id="mainContent" class="main editor-main">
         <div class="editor-body">
-          <textarea id="noteBodyRaw" class="editor-textarea" placeholder="Markdownで記入…" spellcheck="false" autocomplete="off"></textarea>
+          <label class="editor-sr-only" for="noteBodyRaw">メモ本文（Markdown）</label>
+          <div class="markdown-editor" id="markdownEditor">
+            <div class="editor-line-numbers" id="noteLineNumbers" aria-hidden="true">
+              <div class="editor-line-numbers-content" id="noteLineNumbersContent"></div>
+            </div>
+            <div class="editor-canvas" id="noteEditorCanvas">
+              <pre class="editor-highlight" id="noteBodyHighlight" aria-hidden="true"><code id="noteBodyHighlightCode"></code></pre>
+              <textarea id="noteBodyRaw" class="editor-textarea" placeholder="Markdownで記入…" aria-label="メモ本文（Markdown）" spellcheck="false" autocomplete="off" wrap="off"></textarea>
+            </div>
+          </div>
         </div>
       </main>
     </div>
@@ -124,7 +133,9 @@
     </div>
 
     <script src="pins.js?v=pins-ui-20260821-remote-latency-v1"></script>
-    <script src="note-editor.js?v=note-editor-ui-20260803-remote-latency-v1-full-surface-v1"></script>
+    <script src="vendor/highlight.min.js?v=highlightjs-11.12.0"></script>
+    <script src="vendor/highlight-markdown.min.js?v=highlightjs-11.12.0-markdown"></script>
+    <script src="note-editor.js?v=note-editor-ui-20260803-remote-latency-v1-full-surface-v1-highlightjs-11.12.0"></script>
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v2"></script>
     <script src="page-transition.js?v=page-swipe-20260821-focus-safe-v1"></script>
   </body>

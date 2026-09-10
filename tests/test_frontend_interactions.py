@@ -217,6 +217,28 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertIn("function startWindowDragFallback", source)
         self.assertIn("window.removeEventListener(\"mousemove\", onMouseMove)", source)
 
+    def test_custom_titlebar_and_sidebar_history_controls_are_present(self):
+        shell = (ROOT / "frontend" / "codex-shell.js").read_text(encoding="utf-8")
+        css = (ROOT / "frontend" / "codex-shell.css").read_text(encoding="utf-8")
+        pages = ("index.html", "notes.html", "projects.html", "note-editor.html", "profile.html", "settings.html")
+
+        for page in pages:
+            html = (ROOT / "frontend" / page).read_text(encoding="utf-8")
+            self.assertIn('class="app-titlebar window-drag-region"', html)
+            self.assertIn('data-history-action="back"', html)
+            self.assertIn('data-history-action="forward"', html)
+            self.assertNotIn('class="sidebar-titlebar"', html)
+            self.assertNotIn('class="sidebar-brand-icon"', html)
+
+        self.assertIn("window.history.back()", shell)
+        self.assertIn("window.history.forward()", shell)
+        self.assertIn("[data-history-action]", shell)
+        self.assertIn("[data-history-action]", shell[shell.index("function canStartSidebarDrag"):])
+        self.assertIn("--app-titlebar-height: 32px;", css)
+        self.assertIn("background: var(--sidebar-bg);", css)
+        self.assertIn("border-top: 0;", css)
+        self.assertIn(".sidebar-history-icon", css)
+
     def test_sidebar_rejects_horizontal_overflow_and_touch_pan(self):
         source = (ROOT / "frontend" / "codex-shell.css").read_text(encoding="utf-8")
         shell_rules = source[source.index("/* Expanded navigation:"):]

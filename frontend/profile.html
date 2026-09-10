@@ -6,7 +6,7 @@
     <title>Sparkle — プロフィール</title>
     <link rel="stylesheet" href="style.css?v=profile-20260803-v1-black-background-v1-bg161616-sidebar212121-v1" />
     <link rel="stylesheet" href="profile-figma.css?v=profile-ui-20260803-v1" />
-    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1-black-background-v1-bg161616-sidebar212121-v1-surface-raised-202020-v1" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1-black-background-v1-bg161616-sidebar212121-v1-surface-raised-202020-v1-custom-titlebar-history-v1" />
     <script>document.documentElement.setAttribute("data-theme", "dark");
       try {
         document.documentElement.classList.toggle(
@@ -17,24 +17,29 @@
     </script>
   </head>
   <body class="profile-page profile-loading">
+    <header class="app-titlebar window-drag-region" aria-label="ウィンドウタイトルバー">
+      <div class="app-titlebar-drag-space" aria-hidden="true"></div>
+      <div class="window-controls" aria-label="ウィンドウ操作">
+        <button class="window-control" type="button" title="最小化" aria-label="最小化" data-window-action="minimize_window">
+          <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
+        </button>
+        <button class="window-control" type="button" title="最大化" aria-label="最大化" data-window-action="toggle_maximize_window">
+          <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z" /></svg>
+        </button>
+        <button class="window-control window-control-close" type="button" title="閉じる" aria-label="閉じる" data-window-action="close_window">
+          <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+        </button>
+      </div>
+    </header>
     <div class="layout">
       <nav class="sidebar sidebar--index" aria-label="メインナビゲーション">
-        <div class="sidebar-titlebar">
-          <div class="sidebar-brand">
-            <img class="sidebar-brand-icon" src="/icon.png" alt="" draggable="false" />
-            <strong class="sidebar-title">Sparkle</strong>
-          </div>
-          <div class="window-controls" aria-label="ウィンドウ操作">
-            <button class="window-control" type="button" title="最小化" aria-label="最小化" data-window-action="minimize_window">
-              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
-            </button>
-            <button class="window-control" type="button" title="最大化" aria-label="最大化" data-window-action="toggle_maximize_window">
-              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z" /></svg>
-            </button>
-            <button class="window-control window-control-close" type="button" title="閉じる" aria-label="閉じる" data-window-action="close_window">
-              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
-            </button>
-          </div>
+        <div class="sidebar-history" aria-label="ページ履歴">
+          <button class="sidebar-history-btn" type="button" title="戻る" aria-label="戻る" data-history-action="back">
+            <svg class="sidebar-history-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5" /></svg>
+          </button>
+          <button class="sidebar-history-btn" type="button" title="進む" aria-label="進む" data-history-action="forward">
+            <svg class="sidebar-history-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="m7.5 4.5 5.5 5.5-5.5 5.5" /></svg>
+          </button>
         </div>
         <a class="side-btn" title="ホーム" data-nav="home" href="/Home"><img class="icon icon-nav" src="icons/home.svg" alt="" /><span class="side-label">ホーム</span></a>
         <a class="side-btn" title="タスク・メモ" data-nav="memo" href="/Notes"><img class="icon icon-nav" src="icons/memo.svg" alt="" /><span class="side-label">タスク・メモ</span></a>
@@ -131,6 +136,6 @@
 
     <script src="pins.js?v=pins-ui-20260821-remote-latency-v1"></script>
     <script src="profile.js?v=profile-ui-20260803-v1"></script>
-    <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2"></script>
+    <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v1"></script>
   </body>
 </html>

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkleの初期設定</title>
-    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1-black-background-v1-bg161616-sidebar212121-v1-surface-raised-202020-v1" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1-black-background-v1-bg161616-sidebar212121-v1-surface-raised-202020-v1-custom-titlebar-history-v1" />
     <link rel="stylesheet" href="migration.css?v=migration-ui-20260802-v2" />
     <link rel="stylesheet" href="setup.css?v=setup-ui-20260803-debug-note-v1" />
     <script>
@@ -18,11 +18,8 @@
   </head>
   <body class="migration-page setup-page">
     <main class="migration-window">
-      <header class="migration-titlebar window-drag-region">
-        <div class="migration-brand">
-          <img src="/icon.png" alt="" aria-hidden="true" />
-          <strong>Sparkle</strong>
-        </div>
+      <header class="migration-titlebar app-titlebar window-drag-region" aria-label="ウィンドウタイトルバー">
+        <div class="app-titlebar-drag-space" aria-hidden="true"></div>
         <div class="window-controls" aria-label="ウィンドウ操作">
           <button class="window-control" type="button" title="最小化" aria-label="最小化" data-window-action="minimize_window">
             <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
@@ -90,7 +87,7 @@
         </div>
       </section>
     </main>
-    <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2"></script>
+    <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v1"></script>
     <script src="setup.js?v=setup-ui-20260810-tutorial-order-v1"></script>
   </body>
 </html>

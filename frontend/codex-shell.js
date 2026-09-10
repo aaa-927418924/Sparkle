@@ -725,10 +725,20 @@
     });
   }
 
+  function installHistoryControls() {
+    document.querySelectorAll("[data-history-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const action = button.dataset.historyAction;
+        if (action === "back") window.history.back();
+        if (action === "forward") window.history.forward();
+      });
+    });
+  }
+
   function isSmallSidebarGap(event, sidebar) {
     const x = event.clientX;
     const y = event.clientY;
-    return [...sidebar.querySelectorAll(".sidebar-titlebar, .side-btn, .sidebar-tools")].some((element) => {
+    return [...sidebar.querySelectorAll(".sidebar-history, .side-btn, .sidebar-tools")].some((element) => {
       const rect = element.getBoundingClientRect();
       return x >= rect.left && x <= rect.right && y >= rect.top - 4 && y <= rect.bottom + 4;
     });
@@ -736,8 +746,8 @@
 
   function canStartSidebarDrag(event, sidebar) {
     const target = event.target;
-    if (target?.closest?.("[data-window-action], .side-btn, .sidebar-tools, .window-controls")) return false;
-    if (target?.closest?.(".sidebar-titlebar, .side-spacer")) return true;
+    if (target?.closest?.("[data-window-action], [data-history-action], .side-btn, .sidebar-tools, .window-controls")) return false;
+    if (target?.closest?.(".sidebar-history, .side-spacer")) return true;
     if (target !== sidebar) return false;
     return !isSmallSidebarGap(event, sidebar);
   }
@@ -965,10 +975,12 @@
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
       installWindowControls();
+      installHistoryControls();
       installWindowInteraction();
     }, { once: true });
   } else {
     installWindowControls();
+    installHistoryControls();
     installWindowInteraction();
   }
 })();

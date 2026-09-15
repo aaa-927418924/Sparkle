@@ -1964,3 +1964,145 @@ body.projects-page [contenteditable="true"] {
   background: var(--bg);
   pointer-events: none;
 }
+
+/* Notes and Projects use the same Figma-style filter and create controls. */
+.projects-page,
+.notes-page {
+  --shell-filter-pill-bg: #292929;
+  --shell-filter-pill-active: #555555;
+  --shell-filter-pill-text: #a1a1a1;
+  --shell-filter-pill-active-text: #ffffff;
+}
+
+.projects-page .proj-filter-group,
+.notes-page .status-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  height: auto;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html:not([data-theme="dark"]) .projects-page,
+html:not([data-theme="dark"]) .notes-page {
+  --shell-filter-pill-bg: #e8e5df;
+  --shell-filter-pill-active: #d2cdc5;
+  --shell-filter-pill-text: #77716a;
+  --shell-filter-pill-active-text: #2e2b28;
+}
+
+.projects-page .proj-filter-group .cat-btn,
+.notes-page .status-tabs .cat-btn,
+.projects-page #newProjectBtn.fav-only.active,
+.notes-page #newNote.fav-only.active {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 104px;
+  min-width: 104px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--shell-filter-pill-text);
+  background: var(--shell-filter-pill-bg);
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.projects-page #newProjectBtn.fav-only.active,
+.notes-page #newNote.fav-only.active,
+.projects-page .proj-filter-group .cat-btn.active,
+.notes-page .status-tabs .cat-btn.active {
+  color: var(--shell-filter-pill-active-text);
+  background: var(--shell-filter-pill-active);
+}
+
+/* Hover is intentionally a static state; only the active filter remains
+   visually selected. */
+.projects-page .proj-filter-group .cat-btn:hover,
+.notes-page .status-tabs .cat-btn:hover {
+  color: var(--shell-filter-pill-text);
+  background: var(--shell-filter-pill-bg);
+}
+
+.projects-page .proj-filter-group .cat-btn.active:hover,
+.notes-page .status-tabs .cat-btn.active:hover,
+.projects-page #newProjectBtn.fav-only.active:hover,
+.notes-page #newNote.fav-only.active:hover {
+  color: var(--shell-filter-pill-active-text);
+  background: var(--shell-filter-pill-active);
+  box-shadow: none;
+}
+
+.projects-page #newProjectBtn.fav-only.active,
+.notes-page #newNote.fav-only.active {
+  width: auto;
+  min-width: 132px;
+  padding-inline: 22px;
+}
+
+/* The Notes list is intentionally frameless. Keep the selected state as a
+   ring so range selection remains visible without restoring card borders. */
+.notes-page .task-panel,
+.notes-page .memo-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.notes-page .memo-card:hover {
+  background: transparent;
+  box-shadow: none;
+}
+
+.notes-page .memo-card.selected {
+  border: 0;
+  box-shadow: 0 0 0 2px var(--notes-accent);
+}
+
+.notes-page .task-add input,
+.notes-page .task-add input:focus,
+.notes-page .task-add input:focus-visible {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  outline: none;
+}
+
+/* Add only a small breathing space around the three labeled nav buttons. */
+.sidebar > .side-btn,
+.home-page .sidebar > .side-btn,
+.notes-page .sidebar > .side-btn,
+.projects-page .sidebar > .side-btn,
+.sidebar.sidebar--index > .side-btn {
+  margin-block: 2px;
+}
+
+/* User-requested static interaction mode: no transitions, keyframes, or
+   smooth scrolling anywhere in the desktop shell. */
+*,
+*::before,
+*::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+html,
+body {
+  scroll-behavior: auto !important;
+}

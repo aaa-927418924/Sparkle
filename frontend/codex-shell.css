@@ -15,6 +15,8 @@
   --accent-soft: rgba(217, 121, 87, 0.16);
   --sidebar-press-scale: 1;
   --app-titlebar-height: 32px;
+  --shell-sidebar-edge: 240px;
+  --shell-main-corner-radius: 18px;
   --shadow: 0 16px 42px rgba(0, 0, 0, 0.24);
   color-scheme: dark;
 }
@@ -862,6 +864,10 @@ body:not(.note-editor-page) .editor-textarea {
 }
 
 @media (max-width: 900px) {
+  :root {
+    --shell-sidebar-edge: 216px;
+  }
+
   .main {
     padding-inline-end: 24px;
     padding-inline-start: 92px;
@@ -888,6 +894,10 @@ body:not(.note-editor-page) .editor-textarea {
 }
 
 @media (max-width: 640px) {
+  :root {
+    --shell-sidebar-edge: 64px;
+  }
+
   .sidebar {
     left: 8px;
     top: 8px;
@@ -989,7 +999,8 @@ body:not(.note-editor-page) .editor-textarea {
   height: 100vh;
   padding: 14px 12px;
   align-items: stretch;
-  gap: 4px;
+  row-gap: 0;
+  column-gap: 4px;
   overflow-y: hidden;
   overflow-x: hidden;
   overscroll-behavior-x: none;
@@ -1278,10 +1289,10 @@ body.native-titlebar .window-resize-handle {
 .sidebar.sidebar--index .side-btn {
   box-sizing: border-box;
   width: 100%;
-  height: 40px;
+  height: 32px;
   min-width: 0;
-  min-height: 40px;
-  flex: 0 0 40px;
+  min-height: 32px;
+  flex: 0 0 32px;
   justify-content: flex-start;
   gap: 10px;
   padding: 0 12px;
@@ -1325,14 +1336,6 @@ body.native-titlebar .window-resize-handle {
   height: 16px;
   flex: 0 0 16px;
   opacity: 0.78;
-}
-
-/* Keep the home feed's legacy icon rules aligned with the shared sidebar. */
-.home-page .side-btn.active .icon-nav,
-.home-page .side-btn:not(.active) .icon-nav {
-  width: 16px;
-  height: 16px;
-  flex-basis: 16px;
 }
 
 .sidebar .side-btn:focus-visible,
@@ -1409,6 +1412,8 @@ body.native-titlebar .window-resize-handle {
 .notes-page .sidebar-tools .side-btn,
 .sidebar.sidebar--index .sidebar-tools .side-btn {
   width: 40px;
+  height: 40px;
+  min-height: 40px;
   flex: 0 0 40px;
   justify-content: center;
   padding: 0;
@@ -1534,6 +1539,9 @@ body:not(.profile-sidebar-loaded) .sidebar-tools .side-btn-profile .side-usernam
   .home-page .side-btn,
   .notes-page .side-btn,
   .sidebar.sidebar--index .side-btn {
+    height: 40px;
+    min-height: 40px;
+    flex-basis: 40px;
     justify-content: center;
     padding-inline: 0;
   }
@@ -1931,4 +1939,28 @@ body.notes-page [contenteditable="true"],
 body.projects-page [contenteditable="true"] {
   user-select: text;
   -webkit-user-select: text;
+}
+
+/* Keep the main surface visually inset from the sidebar, like the Codex
+   workbench, while retaining the existing fixed-sidebar geometry. */
+.main,
+.home-page .main,
+.notes-page .main.notes-main,
+.editor-main {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+}
+
+.main::before,
+.home-page .main::before,
+.notes-page .main.notes-main::before,
+.editor-main::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 0 0 var(--shell-sidebar-edge);
+  border-top-left-radius: var(--shell-main-corner-radius);
+  background: var(--bg);
+  pointer-events: none;
 }

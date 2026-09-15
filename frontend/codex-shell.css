@@ -2081,6 +2081,7 @@ html:not([data-theme="dark"]) .notes-page {
 .notes-page .memo-card.selected {
   border: 0;
   outline: 1px solid #f2f2f2;
+  outline-offset: -1px;
   box-shadow: 0 0 0 2px var(--notes-accent);
 }
 
@@ -2115,4 +2116,23 @@ html:not([data-theme="dark"]) .notes-page {
 html,
 body {
   scroll-behavior: auto !important;
+}
+
+/* Keep the Home and Projects cards anchored when hovered. */
+.home-page .card:hover,
+.projects-page .project-card:hover {
+  transform: none;
+}
+
+/* Projects keeps its #202020 surface but drops the normal hairline border. */
+.projects-page .project-card,
+.projects-page .project-card:hover {
+  border: 0;
+  background: #202020;
+}
+
+/* Draw the memo outline inward so overflow clipping cannot cut off its edge;
+   outline does not change the memo's layout position or dimensions. */
+.notes-page .memo-card {
+  outline-offset: -1px;
 }

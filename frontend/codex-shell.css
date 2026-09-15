@@ -2054,12 +2054,21 @@ html:not([data-theme="dark"]) .notes-page {
   padding-inline: 22px;
 }
 
-/* The Notes list is intentionally frameless. Keep the selected state as a
-   ring so range selection remains visible without restoring card borders. */
-.notes-page .task-panel,
-.notes-page .memo-card {
+/* Notes memo cards keep a hairline outline without adding layout-affecting
+   borders or elevation. The task list remains frameless. */
+.notes-page .task-panel {
   border: 0;
   border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.notes-page .memo-card {
+  border: 0;
+  border-radius: 19px;
+  outline: 1px solid #f2f2f2;
+  outline-offset: 0;
   background: transparent;
   box-shadow: none;
 }
@@ -2071,6 +2080,7 @@ html:not([data-theme="dark"]) .notes-page {
 
 .notes-page .memo-card.selected {
   border: 0;
+  outline: 1px solid #f2f2f2;
   box-shadow: 0 0 0 2px var(--notes-accent);
 }
 

@@ -194,6 +194,10 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
   min-width: 186px;
 }
 
+.home-page .sort-select[hidden] {
+  display: none !important;
+}
+
 .home-page .sort-label {
   text-underline-offset: 6px;
 }

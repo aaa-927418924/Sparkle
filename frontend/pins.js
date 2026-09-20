@@ -597,6 +597,25 @@ const SHARED_BOOLEAN_SETTINGS = Object.freeze({
   projectAutoCreateNote: { apiKey: "auto_create_note_on_project", storageKey: "autoCreateNoteOnProject" },
 });
 
+const LEGACY_SORT_SETTING_KEY = "sparkle.legacySortEnabled";
+
+function setLegacySortEnabled(enabled) {
+  const value = enabled ? "true" : "false";
+  try {
+    localStorage.setItem(LEGACY_SORT_SETTING_KEY, value);
+  } catch (error) {
+    // The home screen still receives the in-page setting change in restricted previews.
+  }
+  window.dispatchEvent(new CustomEvent("sparkle-legacy-settings-changed", {
+    detail: { key: LEGACY_SORT_SETTING_KEY, enabled: value === "true" },
+  }));
+}
+
+window.sparkleLegacySettings = Object.freeze({
+  sortEnabledKey: LEGACY_SORT_SETTING_KEY,
+  setSortEnabled: setLegacySortEnabled,
+});
+
 async function getSharedBooleanSetting(apiKey, storageKey) {
   const localValue = localStorage.getItem(storageKey);
   try {
@@ -665,6 +684,11 @@ async function loadSettingsValues(force = false) {
   }
   const ntb = document.getElementById("nativeTitlebar");
   if (ntb && !ntb.dataset.loaded) loadTitlebarMode();
+  const legacySort = document.getElementById("legacySortEnabled");
+  if (legacySort && !legacySort.dataset.loaded) {
+    legacySort.dataset.loaded = "1";
+    legacySort.checked = localStorage.getItem(LEGACY_SORT_SETTING_KEY) === "true";
+  }
   loadAIExportSettings();
   loadAIEditSettings();
   loadUpdateStatus();
@@ -1025,6 +1049,11 @@ function initSettings() {
     applyTitlebarMode(mode);
     syncNativeTitlebar(mode);
   });
+  // legacySortEnabled
+  const legacySort = document.getElementById("legacySortEnabled");
+  if (legacySort) legacySort.addEventListener("change", () => {
+    setLegacySortEnabled(legacySort.checked);
+  });
   // app update
   const setupTutorialBtn = document.getElementById("setupTutorialBtn");
   if (setupTutorialBtn) setupTutorialBtn.addEventListener("click", () => {
@@ -1192,9 +1221,12 @@ function initSettings() {
       false,
     );
     localStorage.removeItem("hideAutoCheatsheet");
+    setLegacySortEnabled(false);
     // UI update
     const acnp = document.getElementById("autoCreateNoteOnProject");
     if (acnp) acnp.checked = false;
+    const legacySort = document.getElementById("legacySortEnabled");
+    if (legacySort) legacySort.checked = false;
     const aiEnabled = document.getElementById("aiExportEnabled");
     if (aiEnabled) {
       aiEnabled.checked = true;
@@ -1244,6 +1276,7 @@ function initSettings() {
   const dbApi = API_ROOT;
   const BROWSER_SETTINGS_KEYS = [
     "clipSortMode",
+    LEGACY_SORT_SETTING_KEY,
     "autoCreateNoteOnProject",
     "hideAutoCheatsheet",
     "clipSearchHistory",

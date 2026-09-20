@@ -1,4 +1,6 @@
 const API = window.location.origin;
+const LEGACY_SORT_SETTING_KEY = window.sparkleLegacySettings?.sortEnabledKey
+  || "sparkle.legacySortEnabled";
 
 const state = {
   clips: [],
@@ -9,6 +11,7 @@ const state = {
   activeTags: [],
   favOnly: false,
   query: "",
+  sortEnabled: localStorage.getItem(LEGACY_SORT_SETTING_KEY) === "true",
   sortMode: localStorage.getItem("clipSortMode") || "date_desc",
   selectedIds: new Set(),
   dragOccurred: false,
@@ -87,7 +90,8 @@ function loadAll({ force = false } = {}) {
       c._rand = Math.random();
     });
     state.catMap = new Map(categories.map((c) => [c.id, c.name]));
-    setSortValue(state.sortMode);
+    applySortControlVisibility();
+    if (state.sortEnabled) setSortValue(state.sortMode);
     renderCategories();
     render();
   })();
@@ -278,18 +282,19 @@ function recordOpened(id) {
   map[id] = Date.now();
   localStorage.setItem("clipOpenedAt", JSON.stringify(map));
   // 最近開いた順の場合はその場で並び替えを反映する(リロード不要)
-  if (state.sortMode === "recent_opened") render();
+  if (state.sortEnabled && state.sortMode === "recent_opened") render();
 }
 
 function sortClips(list) {
   const arr = list.slice();
-  if (state.sortMode === "title") {
+  const sortMode = state.sortEnabled ? state.sortMode : "date_desc";
+  if (sortMode === "title") {
     arr.sort((a, b) => (a.title || "").localeCompare(b.title || "", "ja"));
-  } else if (state.sortMode === "recent_opened") {
+  } else if (sortMode === "recent_opened") {
     const raw = localStorage.getItem("clipOpenedAt");
     const opened = raw ? JSON.parse(raw) : {};
     arr.sort((a, b) => (opened[b.id] || 0) - (opened[a.id] || 0));
-  } else if (state.sortMode === "random") {
+  } else if (sortMode === "random") {
     arr.sort((a, b) => (a._rand ?? 0) - (b._rand ?? 0));
   } else {
     arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -1403,7 +1408,25 @@ function setSortValue(val) {
   if (label && option) label.textContent = option.textContent;
 }
 
+function applySortControlVisibility() {
+  const enabled = localStorage.getItem(LEGACY_SORT_SETTING_KEY) === "true";
+  state.sortEnabled = enabled;
+  if (!els.sortSelect) return;
+
+  els.sortSelect.hidden = !enabled;
+  els.sortSelect.setAttribute("aria-hidden", String(!enabled));
+  if (!enabled) {
+    closeSortDropdown();
+    els.sortSelect.blur();
+    return;
+  }
+
+  state.sortMode = localStorage.getItem("clipSortMode") || "date_desc";
+  setSortValue(state.sortMode);
+}
+
 els.sortSelect.addEventListener("click", (e) => {
+  if (!state.sortEnabled) return;
   const option = e.target.closest(".sort-option");
   if (option) {
     const val = option.getAttribute("data-value");
@@ -1435,6 +1458,18 @@ function closeSortDropdown() {
   document.querySelectorAll(".sort-dropdown").forEach((d) => d.classList.remove("open"));
   document.querySelectorAll(".sort-select.open").forEach((s) => s.classList.remove("open"));
 }  // closeSortDropdown
+
+window.addEventListener("sparkle-legacy-settings-changed", (event) => {
+  if (event.detail?.key !== LEGACY_SORT_SETTING_KEY) return;
+  applySortControlVisibility();
+  render();
+});
+
+window.addEventListener("storage", (event) => {
+  if (event.key !== LEGACY_SORT_SETTING_KEY) return;
+  applySortControlVisibility();
+  render();
+});
 
 // カテゴリボタン — JS管理のプレス状態（:active の疑似クラス切替え問題を回避）
 document.addEventListener("mousedown", (e) => {
@@ -2346,7 +2381,7 @@ document.addEventListener("visibilitychange", () => {
     loadAll().catch(() => {});
     // 最近開いた順では、戻ってきたときにも並びを再評価する
     // (サーバーデータは変わらないため loadAll がスキップされるため)
-    if (state.sortMode === "recent_opened") render();
+    if (state.sortEnabled && state.sortMode === "recent_opened") render();
   }
 });
 
@@ -2369,7 +2404,7 @@ window.addEventListener("resize", () => {
 window.addEventListener("focus", () => {
   loadAll().catch(() => {});
   // 最近開いた順では、戻ってきたときにも並びを再評価する
-  if (state.sortMode === "recent_opened") render();
+  if (state.sortEnabled && state.sortMode === "recent_opened") render();
 });
 let lastHomeBackgroundRefreshAt = 0;
 window.setInterval(() => {

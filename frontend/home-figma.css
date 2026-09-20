@@ -142,8 +142,8 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
 }
 
 .home-page .search-liquid:focus-within {
-  border-color: var(--home-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--home-accent) 22%, transparent);
+  border-color: #363845;
+  box-shadow: none;
 }
 
 .home-page .search-liquid .search {
@@ -167,7 +167,7 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
 }
 
 .home-page .search-liquid .search:focus {
-  border: 10;
+  border: 0;
   box-shadow: none;
 }
 

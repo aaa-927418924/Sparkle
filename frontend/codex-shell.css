@@ -2136,3 +2136,113 @@ body {
 .notes-page .memo-card {
   outline-offset: -1px;
 }
+
+/* Show the same scrollbar used by the pinned list on the requested pages.
+   Keep the scope limited so other screens retain their existing behavior. */
+html:has(body.home-page),
+body.home-page,
+body.home-page .layout,
+body.home-page .sidebar,
+body.home-page .search-suggest,
+html.projects-document,
+body.projects-page,
+body.projects-page .sidebar,
+html:has(body.notes-page),
+body.notes-page,
+body.notes-page .layout,
+body.notes-page .sidebar,
+body.notes-page .notes-main,
+body.notes-page .task-list,
+body.notes-page .memo-grid,
+body.notes-page .modal-box,
+body.notes-page .clip-pick-list {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(255, 255, 255, 0.20) transparent !important;
+}
+
+html:has(body.home-page)::-webkit-scrollbar,
+body.home-page::-webkit-scrollbar,
+body.home-page .layout::-webkit-scrollbar,
+body.home-page .sidebar::-webkit-scrollbar,
+body.home-page .search-suggest::-webkit-scrollbar,
+html.projects-document::-webkit-scrollbar,
+body.projects-page::-webkit-scrollbar,
+body.projects-page .sidebar::-webkit-scrollbar,
+html:has(body.notes-page)::-webkit-scrollbar,
+body.notes-page::-webkit-scrollbar,
+body.notes-page .layout::-webkit-scrollbar,
+body.notes-page .sidebar::-webkit-scrollbar,
+body.notes-page .notes-main::-webkit-scrollbar,
+body.notes-page .task-list::-webkit-scrollbar,
+body.notes-page .memo-grid::-webkit-scrollbar,
+body.notes-page .modal-box::-webkit-scrollbar,
+body.notes-page .clip-pick-list::-webkit-scrollbar {
+  display: block !important;
+  width: 8px;
+  height: 8px;
+}
+
+html:has(body.home-page)::-webkit-scrollbar-track,
+body.home-page::-webkit-scrollbar-track,
+body.home-page .layout::-webkit-scrollbar-track,
+body.home-page .sidebar::-webkit-scrollbar-track,
+body.home-page .search-suggest::-webkit-scrollbar-track,
+html.projects-document::-webkit-scrollbar-track,
+body.projects-page::-webkit-scrollbar-track,
+body.projects-page .sidebar::-webkit-scrollbar-track,
+html:has(body.notes-page)::-webkit-scrollbar-track,
+body.notes-page::-webkit-scrollbar-track,
+body.notes-page .layout::-webkit-scrollbar-track,
+body.notes-page .sidebar::-webkit-scrollbar-track,
+body.notes-page .notes-main::-webkit-scrollbar-track,
+body.notes-page .task-list::-webkit-scrollbar-track,
+body.notes-page .memo-grid::-webkit-scrollbar-track,
+body.notes-page .modal-box::-webkit-scrollbar-track,
+body.notes-page .clip-pick-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html:has(body.home-page)::-webkit-scrollbar-thumb,
+body.home-page::-webkit-scrollbar-thumb,
+body.home-page .layout::-webkit-scrollbar-thumb,
+body.home-page .sidebar::-webkit-scrollbar-thumb,
+body.home-page .search-suggest::-webkit-scrollbar-thumb,
+html.projects-document::-webkit-scrollbar-thumb,
+body.projects-page::-webkit-scrollbar-thumb,
+body.projects-page .sidebar::-webkit-scrollbar-thumb,
+html:has(body.notes-page)::-webkit-scrollbar-thumb,
+body.notes-page::-webkit-scrollbar-thumb,
+body.notes-page .layout::-webkit-scrollbar-thumb,
+body.notes-page .sidebar::-webkit-scrollbar-thumb,
+body.notes-page .notes-main::-webkit-scrollbar-thumb,
+body.notes-page .task-list::-webkit-scrollbar-thumb,
+body.notes-page .memo-grid::-webkit-scrollbar-thumb,
+body.notes-page .modal-box::-webkit-scrollbar-thumb,
+body.notes-page .clip-pick-list::-webkit-scrollbar-thumb {
+  min-height: 34px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.20);
+  background-clip: padding-box;
+}
+
+html:has(body.home-page)::-webkit-scrollbar-thumb:hover,
+body.home-page::-webkit-scrollbar-thumb:hover,
+body.home-page .layout::-webkit-scrollbar-thumb:hover,
+body.home-page .sidebar::-webkit-scrollbar-thumb:hover,
+body.home-page .search-suggest::-webkit-scrollbar-thumb:hover,
+html.projects-document::-webkit-scrollbar-thumb:hover,
+body.projects-page::-webkit-scrollbar-thumb:hover,
+body.projects-page .sidebar::-webkit-scrollbar-thumb:hover,
+html:has(body.notes-page)::-webkit-scrollbar-thumb:hover,
+body.notes-page::-webkit-scrollbar-thumb:hover,
+body.notes-page .layout::-webkit-scrollbar-thumb:hover,
+body.notes-page .sidebar::-webkit-scrollbar-thumb:hover,
+body.notes-page .notes-main::-webkit-scrollbar-thumb:hover,
+body.notes-page .task-list::-webkit-scrollbar-thumb:hover,
+body.notes-page .memo-grid::-webkit-scrollbar-thumb:hover,
+body.notes-page .modal-box::-webkit-scrollbar-thumb:hover,
+body.notes-page .clip-pick-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.34);
+  background-clip: padding-box;
+}

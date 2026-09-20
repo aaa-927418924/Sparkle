@@ -266,6 +266,32 @@ class FrontendInteractionTests(unittest.TestCase):
             html = (ROOT / "frontend" / page).read_text(encoding="utf-8")
             self.assertIn("custom-titlebar-history-v4-fixed", html)
 
+    def test_primary_sidebar_icons_are_removed_from_markup(self):
+        pages = ("index.html", "notes.html", "projects.html", "note-editor.html", "profile.html", "settings.html")
+        for page in pages:
+            html = (ROOT / "frontend" / page).read_text(encoding="utf-8")
+            nav_links = re.findall(
+                r'<a\b[^>]*data-nav="(home|memo|projects)"[^>]*>.*?</a>',
+                html,
+                re.DOTALL,
+            )
+            self.assertEqual(len(nav_links), 3)
+            for match in re.finditer(
+                r'<a\b[^>]*data-nav="(?:home|memo|projects)"[^>]*>.*?</a>',
+                html,
+                re.DOTALL,
+            ):
+                self.assertNotIn('class="icon icon-nav"', match.group(0))
+            self.assertNotIn("sidebar-primary-icon-policy", html)
+
+        app_entry = (ROOT / "app_entry.py").read_text(encoding="utf-8")
+        shell_css = (ROOT / "frontend" / "codex-shell.css").read_text(encoding="utf-8")
+        self.assertNotIn("SIDEBAR_ICON_POLICY_SCRIPT", app_entry)
+        self.assertNotIn("_apply_sidebar_icon_policy", app_entry)
+        self.assertNotIn('data-nav="home"] .icon-nav', shell_css)
+        self.assertNotIn('data-nav="memo"] .icon-nav', shell_css)
+        self.assertNotIn('data-nav="projects"] .icon-nav', shell_css)
+
     def test_sidebar_rejects_horizontal_overflow_and_touch_pan(self):
         source = (ROOT / "frontend" / "codex-shell.css").read_text(encoding="utf-8")
         shell_rules = source[source.index("/* Expanded navigation:"):]

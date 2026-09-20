@@ -77,6 +77,9 @@ DEFAULT_WINDOW_PROFILE = "default"
 ONBOARDING_WINDOW_PROFILE = "onboarding"
 ONBOARDING_PAGES = {"Migration", "Setup", "Tutorial", "ExtensionGuide"}
 WINDOW_SCREEN_MARGIN = 24
+# Force a fresh top-level document after frontend changes. WebView2 keeps a
+# persistent profile, so the route itself also needs a versioned URL.
+FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5"
 
 
 def _get_port() -> int:
@@ -196,6 +199,11 @@ def _get_window_size_config(profile=DEFAULT_WINDOW_PROFILE):
 def _window_profile_for_page(page: str) -> str:
     page_name = str(page or "").split("?", 1)[0].strip("/")
     return ONBOARDING_WINDOW_PROFILE if page_name in ONBOARDING_PAGES else DEFAULT_WINDOW_PROFILE
+
+
+def _frontend_url(page: str) -> str:
+    separator = "&" if "?" in page else "?"
+    return f"http://{HOST}:{PORT}/{page}{separator}ui={FRONTEND_CACHE_TOKEN}"
 
 
 def _show_error(message: str) -> None:
@@ -1346,7 +1354,7 @@ def main() -> None:
         window_width, window_height, minimum_window_size = _get_window_size_config(initial_window_profile)
         window = webview.create_window(
             "Sparkle",
-            url=f"http://{HOST}:{PORT}/{initial_page}",
+            url=_frontend_url(initial_page),
             width=window_width,
             height=window_height,
             min_size=minimum_window_size,

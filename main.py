@@ -384,7 +384,14 @@ def activate_app() -> Response:
 
 
 def _frontend_page(filename: str) -> FileResponse:
-    return FileResponse(FRONTEND_DIR / filename, media_type="text/html")
+    return FileResponse(
+        FRONTEND_DIR / filename,
+        media_type="text/html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+        },
+    )
 
 
 @app.get("/icon.png", include_in_schema=False)

@@ -5,4 +5,4 @@ GitHub Releases のタグ名と一致させること (例: v1.2.0 は "1.2.0")�
 """
 
 APP_NAME = "Sparkle"
-APP_VERSION = "0.3.5"
+APP_VERSION = "0.3.6"

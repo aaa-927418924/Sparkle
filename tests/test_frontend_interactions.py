@@ -370,6 +370,11 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertIn("background: var(--bg);", editor_css)
         self.assertIn("resize: none;", editor_css)
         self.assertIn("box-shadow: none;", editor_css)
+        shell_css = (ROOT / "frontend" / "codex-shell.css").read_text(encoding="utf-8")
+        self.assertIn("body.note-editor-page .main.editor-main::before", shell_css)
+        self.assertIn("inset: 0;", shell_css)
+        self.assertIn("body.note-editor-page .editor-body", shell_css)
+        self.assertIn("border-top-left-radius: var(--shell-main-corner-radius);", shell_css)
 
     def test_note_editor_has_accessible_markdown_highlight_layer_and_line_numbers(self):
         html = (ROOT / "frontend" / "note-editor.html").read_text(encoding="utf-8")

@@ -1966,6 +1966,18 @@ body.projects-page [contenteditable="true"] {
   pointer-events: none;
 }
 
+/* The note editor offsets its main panel beside the fixed sidebar, so the
+   shared split inset must not be applied a second time. Clip the full-height
+   editor surface to the same top-left radius as the shell. */
+body.note-editor-page .main.editor-main::before {
+  inset: 0;
+}
+
+body.note-editor-page .editor-body {
+  border-top-left-radius: var(--shell-main-corner-radius);
+  overflow: hidden;
+}
+
 /* Let the sidebar divider recede into the main panel's rounded corner. */
 .sidebar,
 .home-page .sidebar,

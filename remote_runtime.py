@@ -38,6 +38,7 @@ LEGACY_MCP_HTTPS_PORT = SERVE_WEB_HTTPS_PORT
 WEB_MODE_FUNNEL = "funnel"
 WEB_MODE_SERVE = "serve"
 WEB_MODES = frozenset({WEB_MODE_FUNNEL, WEB_MODE_SERVE})
+REMOTE_MCP_DISABLED_MESSAGE = "Remote MCPはこのアプリでは無効化されています。"
 
 
 def _target_matches(value: Any, target: str) -> bool:
@@ -199,10 +200,15 @@ class RemoteAccessManager:
         main_port: int = MAIN_PORT,
         mcp_auth_store: Optional[AuthStore] = None,
         client_auth_store: Optional[AuthStore] = None,
+        remote_mcp_enabled: bool = True,
     ) -> None:
         self.auth_store = auth_store or AuthStore()
         self.mcp_auth_store = mcp_auth_store or get_mcp_auth_store()
         self.client_auth_store = client_auth_store or get_client_auth_store()
+        self.remote_mcp_enabled = bool(remote_mcp_enabled)
+        self._mcp_was_enabled_on_start = (
+            not self.remote_mcp_enabled and self.mcp_auth_store.is_enabled()
+        )
         self.main_target = f"http://{REMOTE_HOST}:{int(main_port)}"
         self._lock = threading.RLock()
         self._server = None
@@ -212,10 +218,13 @@ class RemoteAccessManager:
         self._funnel_cache: Optional[dict[str, Any]] = None
         self._funnel_cache_at = 0.0
 
+    def _mcp_enabled(self) -> bool:
+        return self.remote_mcp_enabled and self.mcp_auth_store.is_enabled()
+
     def _any_enabled(self) -> bool:
         return (
             self.auth_store.is_enabled()
-            or self.mcp_auth_store.is_enabled()
+            or self._mcp_enabled()
             or self.client_auth_store.is_enabled()
         )
 
@@ -228,6 +237,28 @@ class RemoteAccessManager:
         revoke_all = getattr(runtime, "revoke_all", None) if runtime is not None else None
         if callable(revoke_all):
             revoke_all()
+
+    def _disable_persisted_mcp(self) -> None:
+        if self.remote_mcp_enabled or not self.mcp_auth_store.is_enabled():
+            return
+        self.mcp_auth_store.disable()
+        self._reset_mcp_oauth()
+
+    def _cleanup_disabled_mcp_routes(self) -> None:
+        """Remove routes left by an older build without touching shared Web."""
+        if self.remote_mcp_enabled or not self._mcp_was_enabled_on_start:
+            return
+        self._disable_persisted_mcp()
+        # Funnel Web and the desktop-client route may legitimately share 443.
+        # In that case the gateway stays up for those features, but it no longer
+        # exposes an MCP runtime.
+        if not (
+            self._web_access_enabled()
+            and self._configured_web_mode() == WEB_MODE_FUNNEL
+        ):
+            self._stop_mcp_route()
+        self._stop_legacy_mcp_route()
+        self._mcp_was_enabled_on_start = False
 
     @staticmethod
     def _tailscale_path() -> Optional[str]:
@@ -394,7 +425,7 @@ class RemoteAccessManager:
 
     def _mcp_route_is_shared(self, mode: Optional[str] = None) -> bool:
         return (
-            self.mcp_auth_store.is_enabled()
+            self._mcp_enabled()
             and self._web_access_enabled()
             and (mode or self._configured_web_mode()) == WEB_MODE_FUNNEL
         )
@@ -602,6 +633,7 @@ class RemoteAccessManager:
                     mcp_auth_store=self.mcp_auth_store,
                     client_auth_store=self.client_auth_store,
                     mcp_public_url=self._mcp_public_url(),
+                    enable_remote_mcp=self.remote_mcp_enabled,
                 )
                 config = uvicorn.Config(
                     gateway,
@@ -738,7 +770,7 @@ class RemoteAccessManager:
     def _stop_client_route(self, force: bool = False) -> tuple[bool, Optional[str]]:
         mode = self._configured_web_mode()
         if not force and mode == WEB_MODE_FUNNEL and (
-            self.auth_store.is_enabled() or self.mcp_auth_store.is_enabled()
+            self.auth_store.is_enabled() or self._mcp_enabled()
         ):
             return True, None
         port = CLIENT_SERVE_HTTPS_PORT if mode == WEB_MODE_SERVE else MCP_FUNNEL_HTTPS_PORT
@@ -765,7 +797,7 @@ class RemoteAccessManager:
         legacy_web_ok, legacy_web_error = self._stop_legacy_serve_web_route()
         if not legacy_web_ok:
             return {"ok": False, "status": self.status(), "error": legacy_web_error}
-        if self.mcp_auth_store.is_enabled():
+        if self._mcp_enabled():
             legacy_ok, legacy_error = self._stop_legacy_mcp_route()
             if not legacy_ok:
                 return {"ok": False, "status": self.status(), "error": legacy_error}
@@ -773,13 +805,13 @@ class RemoteAccessManager:
             web_result = self._start_web_route()
             if not web_result.get("ok"):
                 return web_result
-        if self.mcp_auth_store.is_enabled():
+        if self._mcp_enabled():
             mcp_result = self._start_mcp_route()
             if not mcp_result.get("ok"):
                 return mcp_result
         if self.client_auth_store.is_enabled() and not (
             self._configured_web_mode() == WEB_MODE_FUNNEL
-            and (self.auth_store.is_enabled() or self.mcp_auth_store.is_enabled())
+            and (self.auth_store.is_enabled() or self._mcp_enabled())
         ):
             client_result = self._start_client_route()
             if not client_result.get("ok"):
@@ -810,6 +842,13 @@ class RemoteAccessManager:
     def enable_mcp(self) -> dict[str, Any]:
         """Enable Remote MCP with a credential independent from Remote Web."""
 
+        if not self.remote_mcp_enabled:
+            self._disable_persisted_mcp()
+            return {
+                "ok": False,
+                "status": self.status(),
+                "error": REMOTE_MCP_DISABLED_MESSAGE,
+            }
         key = self.mcp_auth_store.enable()
         self._reset_mcp_oauth()
         if not self._start_remote_server():
@@ -853,7 +892,31 @@ class RemoteAccessManager:
             return {
                 "ok": False,
                 "status": self.status(),
-                "error": "先に外部Webアクセス、デスクトップクライアント接続、またはRemote MCPを有効にしてください。",
+                "error": "先に外部Webアクセスまたはデスクトップクライアント接続を有効にしてください。",
+            }
+        if not self._start_remote_server():
+            return {"ok": False, "status": self.status(), "error": self._last_error}
+        result = self._start_enabled_routes()
+        self._last_error = result.get("error") if not result.get("ok") else None
+        return {
+            "ok": bool(result.get("ok")),
+            "status": self.status(),
+            "error": result.get("error"),
+        }
+
+    def retry_mcp(self) -> dict[str, Any]:
+        if not self.remote_mcp_enabled:
+            self._disable_persisted_mcp()
+            return {
+                "ok": False,
+                "status": self.status(),
+                "error": REMOTE_MCP_DISABLED_MESSAGE,
+            }
+        if not self._mcp_enabled():
+            return {
+                "ok": False,
+                "status": self.status(),
+                "error": "先にRemote MCPを有効にしてください。",
             }
         if not self._start_remote_server():
             return {"ok": False, "status": self.status(), "error": self._last_error}
@@ -893,7 +956,7 @@ class RemoteAccessManager:
             }
 
         web_enabled = self._web_access_enabled()
-        mcp_enabled = self.mcp_auth_store.is_enabled()
+        mcp_enabled = self._mcp_enabled()
         client_enabled = self.client_auth_store.is_enabled()
 
         # Serve and Funnel cannot own the same HTTPS port at the same time.
@@ -947,6 +1010,13 @@ class RemoteAccessManager:
         return {"ok": True, "status": self.status()}
 
     def rotate_mcp(self) -> dict[str, Any]:
+        if not self.remote_mcp_enabled:
+            self._disable_persisted_mcp()
+            return {
+                "ok": False,
+                "status": self.status(),
+                "error": REMOTE_MCP_DISABLED_MESSAGE,
+            }
         if not self.mcp_auth_store.is_enabled():
             return {"ok": False, "status": self.status(), "error": "先にRemote MCPを有効にしてください。"}
         key = self.mcp_auth_store.rotate_access_key()
@@ -954,6 +1024,13 @@ class RemoteAccessManager:
         return {"ok": True, "access_key": key, "status": self.status()}
 
     def revoke_mcp_all(self) -> dict[str, Any]:
+        if not self.remote_mcp_enabled:
+            self._disable_persisted_mcp()
+            return {
+                "ok": False,
+                "status": self.status(),
+                "error": REMOTE_MCP_DISABLED_MESSAGE,
+            }
         if not self.mcp_auth_store.is_enabled():
             return {"ok": False, "status": self.status(), "error": "Remote MCPは有効になっていません。"}
         self.mcp_auth_store.revoke_all()
@@ -1033,7 +1110,7 @@ class RemoteAccessManager:
             return True, None
         if current.get("target") == "other":
             return True, None
-        if current.get("target") == "remote" and self.mcp_auth_store.is_enabled():
+        if current.get("target") == "remote" and self._mcp_enabled():
             return True, None
         target = REMOTE_TARGET if current.get("target") == "remote" else self.main_target
         preferred = "funnel" if target == REMOTE_TARGET else "serve"
@@ -1047,7 +1124,7 @@ class RemoteAccessManager:
     def disable(self) -> dict[str, Any]:
         if not self.auth_store.is_enabled():
             return {"ok": False, "status": self.status(), "error": "外部Webアクセスは有効になっていません。"}
-        mcp_enabled = self.mcp_auth_store.is_enabled()
+        mcp_enabled = self._mcp_enabled()
         client_enabled = self.client_auth_store.is_enabled()
         stopped, error = self._stop_public_route()
         if not stopped:
@@ -1060,6 +1137,13 @@ class RemoteAccessManager:
         return {"ok": True, "status": self.status()}
 
     def disable_mcp(self) -> dict[str, Any]:
+        if not self.remote_mcp_enabled:
+            self._disable_persisted_mcp()
+            return {
+                "ok": False,
+                "status": self.status(),
+                "error": REMOTE_MCP_DISABLED_MESSAGE,
+            }
         if not self.mcp_auth_store.is_enabled():
             return {"ok": False, "status": self.status(), "error": "Remote MCPは有効になっていません。"}
         web_enabled = self._web_access_enabled()
@@ -1078,7 +1162,7 @@ class RemoteAccessManager:
         if not self.client_auth_store.is_enabled():
             return {"ok": False, "status": self.status(), "error": "デスクトップクライアント接続は有効になっていません。"}
         web_enabled = self.auth_store.is_enabled()
-        mcp_enabled = self.mcp_auth_store.is_enabled()
+        mcp_enabled = self._mcp_enabled()
         stopped, error = self._stop_client_route()
         if not stopped:
             self._last_error = error
@@ -1090,6 +1174,7 @@ class RemoteAccessManager:
         return {"ok": True, "status": self.status()}
 
     def start_on_launch(self) -> dict[str, Any]:
+        self._cleanup_disabled_mcp_routes()
         if not self._any_enabled():
             return self.status()
         if not self._start_remote_server():
@@ -1101,7 +1186,7 @@ class RemoteAccessManager:
     def shutdown(self) -> None:
         with self._lock:
             web_enabled = self.auth_store.is_enabled()
-            mcp_enabled = self.mcp_auth_store.is_enabled()
+            mcp_enabled = self._mcp_enabled()
             client_enabled = self.client_auth_store.is_enabled()
         if self._configured_web_mode() == WEB_MODE_FUNNEL:
             # Web, MCP, and the desktop-client gateway intentionally share
@@ -1137,7 +1222,7 @@ class RemoteAccessManager:
 
     def status(self) -> dict[str, Any]:
         web_enabled = self.auth_store.is_enabled()
-        mcp_enabled = self.mcp_auth_store.is_enabled()
+        mcp_enabled = self._mcp_enabled()
         client_enabled = self.client_auth_store.is_enabled()
         enabled = web_enabled or mcp_enabled or client_enabled
         web_mode = self._configured_web_mode()
@@ -1161,14 +1246,20 @@ class RemoteAccessManager:
         remote = mcp_route if mcp_enabled else (
             web_route if self._web_access_enabled() and web_mode == WEB_MODE_FUNNEL else dict(empty_route)
         )
-        configured_mcp_url = self._configured_mcp_url()
+        configured_mcp_url = self._configured_mcp_url() if mcp_enabled else None
         if mcp_enabled and not configured_mcp_url:
             configured_mcp_url = self._mcp_public_url(mcp_route)
+        mcp_auth = self.mcp_auth_store.status()
+        if not self.remote_mcp_enabled:
+            mcp_auth["enabled"] = False
+            mcp_auth["session_count"] = 0
+            mcp_auth["trusted_devices"] = []
         return {
             "mode": web_mode if self._web_access_enabled() else "tailscale",
             "web_mode": web_mode,
             "auth": self.auth_store.status(),
-            "mcp_auth": self.mcp_auth_store.status(),
+            "mcp_auth": mcp_auth,
+            "mcp_available": self.remote_mcp_enabled,
             "client_auth": self.client_auth_store.status(),
             "remote_server": bool(self._thread and self._thread.is_alive()),
             "mcp_url": configured_mcp_url,

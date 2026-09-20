@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sparkle — 設定</title>
-    <link rel="stylesheet" href="style.css?v=settings-remote-mcp-routes-20260820-v3-black-background-v1-bg24273a-sidebar202231-v2" />
+    <link rel="stylesheet" href="style.css?v=settings-remote-mcp-disabled-20260921-v1" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1-black-background-v1-bg24273a-sidebar202231-v2-surface-raised-202231-v2-custom-titlebar-history-v4-fixed-sidebar-icons-left-v5-compact-sidebar-v1-main-corner-v1-unified-controls-v1-flat-notes-v1-static-ui-v1-sidebar-gap-v1-notes-outline-v1-task-panel-frameless-v1-no-card-lift-v1-project-borderless-v1-memo-outline-inset-v1-note-editor-corner-v1-shell-scroll-v1" />
     <script>document.documentElement.setAttribute("data-theme", "dark");
       try {
@@ -87,15 +87,6 @@
             </div>
 
             <div class="settings-col">
-              <h3 class="modal-sub">レガシー機能</h3>
-              <label class="setting-row">
-                <span>ホーム画面の並び替えボタンを表示</span>
-                <input type="checkbox" id="legacySortEnabled" />
-              </label>
-              <span class="file-save-desc">有効にすると、ホーム画面に並び替えメニューを表示します。</span>
-            </div>
-
-            <div class="settings-col">
               <h3 class="modal-sub">タスクの設定</h3>
               <label class="setting-row column">
                 <span>完了したタスクを自動削除</span>
@@ -120,7 +111,7 @@
               <h3 class="modal-sub">外部Webアクセス</h3>
               <p class="file-save-desc">
                 AndroidなどTailscaleに接続できる端末にはServe、Tailscaleアプリを入れられない端末にはFunnelを使えます。
-                Web入口とRemote MCPは別アクセスキーで管理します。Funnel Webでは443を共有し、Serve Web / AndroidではWebをServe 8443、MCPを公開Funnel 443へ分離します。
+                Web入口はアクセスキーで管理します。Funnel Webでは443を使用し、Serve Web / AndroidではWebをServe 8443へ分離します。
               </p>
               <div class="setting-row column remote-access-mode-row">
                 <label for="remoteAccessMode">Web公開方式</label>
@@ -132,7 +123,7 @@
                   <button id="remoteAccessModeApply" class="modal-btn ghost" type="button">方式を適用</button>
                 </div>
                 <span id="remoteAccessModeHint" class="file-save-desc">
-                  Funnel WebではWebとMCPが443番、Serve Web / AndroidではWebがServe 8443番、MCP用Funnelが443番を使用します。Android接続URLには:8443を付けます。
+                  Funnel Webでは443番、Serve Web / AndroidではWebがServe 8443番を使用します。Android接続URLには:8443を付けます。
                 </span>
               </div>
               <div id="remoteAccessStatus" class="ai-export-status" role="status" aria-live="polite">
@@ -163,7 +154,7 @@
               <div class="remote-client-server-settings">
                 <h3 class="modal-sub">デスクトップクライアント接続</h3>
                 <p class="file-save-desc">
-                  別のSparkleデスクトップクライアントから、このPCのクリップ・メモ・タスク・プロジェクト・Ask AIを利用できるようにします。Web公開やRemote MCPとは別のキーを使います。Serve方式ではクライアント専用のHTTPS 8444番を使用します。
+                  別のSparkleデスクトップクライアントから、このPCのクリップ・メモ・タスク・プロジェクト・Ask AIを利用できるようにします。Web公開とは別のキーを使います。Serve方式ではクライアント専用のHTTPS 8444番を使用します。
                 </p>
                 <div id="remoteClientServerStatus" class="ai-export-status" role="status" aria-live="polite">
                   状態を確認しています…
@@ -211,36 +202,6 @@
                 <div id="remoteDataStatus" class="ai-export-status" role="status" aria-live="polite">ローカルDBを使用中</div>
               </div>
 
-              <div class="remote-mcp-settings">
-                <h3 class="modal-sub">Remote MCP</h3>
-                <p class="file-save-desc">
-                  ChatGPT WebやClaude Webなどから読み取り専用Toolを使うための公開入口です。スマホ・Web画面用とは別のMCP専用アクセスキーを発行します。MCPは常に公開FunnelのHTTPS 443を使用するため、Serve Web / Androidでもポート番号なしのURLを利用できます。
-                </p>
-                <div id="remoteMcpStatus" class="ai-export-status" role="status" aria-live="polite">
-                  状態を確認しています…
-                </div>
-                <p id="remoteMcpUrl" class="remote-access-url" hidden>
-                  MCP接続URL: <a id="remoteMcpUrlLink" href="#" target="_blank" rel="noreferrer"></a>
-                </p>
-                <div id="remoteMcpKeyPanel" class="remote-access-key-panel" hidden>
-                  <label class="modal-label" for="remoteMcpAccessKey">今回のMCPアクセスキー</label>
-                  <div class="remote-access-key-row">
-                    <input id="remoteMcpAccessKey" class="modal-input" type="text" readonly autocomplete="off" spellcheck="false" />
-                    <button id="remoteMcpCopyKey" class="modal-btn ghost" type="button">コピー</button>
-                  </div>
-                  <p class="file-save-desc">このキーは設定ファイルには保存されません。紛失した場合は再発行してください。OAuth認証画面にはこのキーを入力します。</p>
-                </div>
-                <div class="settings-data-actions remote-access-actions">
-                  <button id="remoteMcpEnable" class="modal-btn" type="button">Remote MCPを有効にする</button>
-                  <button id="remoteMcpRetry" class="modal-btn ghost" type="button" hidden>接続を再試行</button>
-                  <button id="remoteMcpRotate" class="modal-btn ghost" type="button" hidden>MCPアクセスキーを再発行</button>
-                  <button id="remoteMcpRevokeAll" class="modal-btn ghost" type="button" hidden>接続をすべて解除</button>
-                  <button id="remoteMcpDisable" class="modal-btn ghost" type="button" hidden>Remote MCPを無効にする</button>
-                </div>
-                <p class="file-save-desc">
-                  OAuthで発行済みのMCP接続はメモリ上で管理されます。キーを再発行または接続をすべて解除すると、既存のMCPクライアントは再認証が必要になります。
-                </p>
-              </div>
             </div>
 
             <div class="settings-col settings-data-col">
@@ -368,6 +329,30 @@
             </div>
           </div>
 
+          <details class="settings-col settings-legacy-col">
+            <summary class="modal-sub settings-legacy-summary">
+              <span>レガシー設定</span>
+              <span class="settings-legacy-summary-icon" aria-hidden="true"></span>
+            </summary>
+            <div class="settings-legacy-content">
+              <div class="settings-legacy-item">
+                <label class="setting-row">
+                  <span>ホーム画面の並び替えボタンを表示</span>
+                  <input type="checkbox" id="legacySortEnabled" />
+                </label>
+                <span class="file-save-desc">有効にすると、ホーム画面に並び替えメニューを表示します。</span>
+              </div>
+
+              <div class="remote-mcp-settings">
+                <h3 class="modal-sub">Remote MCP</h3>
+                <p class="file-save-desc">このアプリではRemote MCP機能を無効化しています。</p>
+                <div id="remoteMcpStatus" class="ai-export-status" role="status" aria-live="polite">
+                  Remote MCPはこのアプリでは無効化されています。
+                </div>
+              </div>
+            </div>
+          </details>
+
           <div class="settings-page-actions">
             <button id="settingsReset" class="modal-btn ghost" type="button">設定をすべてデフォルトに戻す</button>
           </div>
@@ -392,7 +377,7 @@
     <script src="pins.js?v=pins-ui-20260821-remote-latency-v1-legacy-sort-v1"></script>
     <script src="ai-provider-settings.js?v=ai-provider-settings-20260820-v2"></script>
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v2"></script>
-    <script src="remote-access.js?v=remote-access-20260820-v6"></script>
+    <script src="remote-access.js?v=remote-access-20260921-disabled-v1"></script>
     <script src="remote-client-settings.js?v=remote-client-settings-20260821-v1"></script>
   </body>
 </html>

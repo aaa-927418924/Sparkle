@@ -236,10 +236,16 @@ def remote_access_status():
         "mode": "tailscale",
         "web_mode": "funnel",
         "auth": get_auth_store().status(),
-        "mcp_auth": get_mcp_auth_store().status(),
+        "mcp_auth": {
+            **get_mcp_auth_store().status(),
+            "enabled": False,
+            "session_count": 0,
+            "trusted_devices": [],
+        },
         "client_auth": get_client_auth_store().status(),
         "remote_server": False,
-        "mcp_url": os.environ.get("SPARKLE_MCP_PUBLIC_URL"),
+        "mcp_url": None,
+        "mcp_available": False,
         "web_route": {
             "available": False,
             "active": False,
@@ -259,7 +265,7 @@ def remote_access_status():
             "active": False,
             "target": None,
             "public_url": None,
-            "error": "Sparkleの実行管理がまだ開始されていません。",
+            "error": "Remote MCPはこのアプリでは無効化されています。",
         },
         "remote": {
             "available": False,
@@ -331,7 +337,7 @@ def remote_access_revoke_all():
 
 @app.post("/settings/remote-access/mcp/retry", include_in_schema=False)
 def remote_mcp_retry():
-    return _require_remote_access_manager().retry()
+    return _require_remote_access_manager().retry_mcp()
 
 
 @app.post("/settings/remote-access/mcp/disable", include_in_schema=False)

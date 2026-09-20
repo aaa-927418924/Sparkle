@@ -4803,6 +4803,69 @@ body.settings-operation-active {
   border-top: 1px solid var(--border);
 }
 
+.settings-legacy-col {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-legacy-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.settings-legacy-summary::-webkit-details-marker,
+.settings-legacy-summary::marker {
+  display: none;
+}
+
+.settings-legacy-summary:focus-visible {
+  outline: 1px solid var(--text);
+  outline-offset: 4px;
+}
+
+.settings-legacy-summary-icon {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--muted);
+}
+
+.settings-legacy-summary-icon::before {
+  content: "+";
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.settings-legacy-col[open] .settings-legacy-summary-icon::before {
+  content: "−";
+}
+
+.settings-legacy-content {
+  padding-top: 10px;
+}
+
+.settings-legacy-item .setting-row {
+  padding-top: 0;
+}
+
+.settings-legacy-content .remote-mcp-settings {
+  margin-top: 20px;
+}
+
 .ai-export-status[data-tone="success"] {
   color: #9bc6a3;
 }

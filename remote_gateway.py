@@ -325,14 +325,15 @@ class RemoteGateway:
         mcp_auth_store: Optional[AuthStore] = None,
         client_auth_store: Optional[AuthStore] = None,
         mcp_public_url: Optional[str] = None,
+        enable_remote_mcp: bool = True,
     ) -> None:
         self.main_app = main_app
         self.store = store
         self.client_auth_store = client_auth_store or get_client_auth_store()
         self.public_app = _build_public_app(store, self.client_auth_store)
         self.mcp_auth_store = mcp_auth_store or get_mcp_auth_store()
-        self.mcp_runtime = mcp_runtime
-        if self.mcp_runtime is None:
+        self.mcp_runtime = mcp_runtime if enable_remote_mcp else None
+        if self.mcp_runtime is None and enable_remote_mcp:
             try:
                 import os
 

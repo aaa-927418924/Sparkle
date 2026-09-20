@@ -79,7 +79,7 @@ ONBOARDING_PAGES = {"Migration", "Setup", "Tutorial", "ExtensionGuide"}
 WINDOW_SCREEN_MARGIN = 24
 # Force a fresh top-level document after frontend changes. WebView2 keeps a
 # persistent profile, so the route itself also needs a versioned URL.
-FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1"
+FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1"
 
 
 def _get_port() -> int:
@@ -296,7 +296,7 @@ def _run_server() -> None:
         app.state.desktop_activate = _activate_window
         app.state.update_status = get_update_state
         app.state.update_apply = _apply_pending_update
-        remote_manager = RemoteAccessManager(main_port=PORT)
+        remote_manager = RemoteAccessManager(main_port=PORT, remote_mcp_enabled=False)
         app.state.remote_access_manager = remote_manager
         server_ref["remote_manager"] = remote_manager
 

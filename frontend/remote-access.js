@@ -9,13 +9,6 @@
     revoke: document.getElementById("remoteAccessRevokeAll"),
     disable: document.getElementById("remoteAccessDisable"),
   };
-  const mcpButtons = {
-    enable: document.getElementById("remoteMcpEnable"),
-    retry: document.getElementById("remoteMcpRetry"),
-    rotate: document.getElementById("remoteMcpRotate"),
-    revoke: document.getElementById("remoteMcpRevokeAll"),
-    disable: document.getElementById("remoteMcpDisable"),
-  };
   const modeSelect = document.getElementById("remoteAccessMode");
   const modeApply = document.getElementById("remoteAccessModeApply");
   const modeHint = document.getElementById("remoteAccessModeHint");
@@ -24,10 +17,6 @@
   const urlWrap = document.getElementById("remoteAccessUrl");
   const urlLink = document.getElementById("remoteAccessUrlLink");
   const mcpStatusEl = document.getElementById("remoteMcpStatus");
-  const mcpKeyPanel = document.getElementById("remoteMcpKeyPanel");
-  const mcpKeyInput = document.getElementById("remoteMcpAccessKey");
-  const mcpUrlWrap = document.getElementById("remoteMcpUrl");
-  const mcpUrlLink = document.getElementById("remoteMcpUrlLink");
   let busy = false;
 
   const modeInfo = {
@@ -39,7 +28,7 @@
     serve: {
       name: "Serve Web（Android）",
       description: "AndroidなどTailscaleに接続した端末からだけアクセスできます。",
-      confirmation: "Android向けのTailscale Serve入口をHTTPS 8443番ポートに作成します。Remote MCPは公開Funnelの443番を使用します。続行しますか？",
+      confirmation: "Android向けのTailscale Serve入口をHTTPS 8443番ポートに作成します。続行しますか？",
     },
   };
 
@@ -50,10 +39,6 @@
 
   function getWebRoute(data, mode) {
     return data.web_route || data.android || data[mode] || data.funnel || data.serve || {};
-  }
-
-  function getMcpRoute(data) {
-    return data.mcp_route || data.remote || {};
   }
 
   async function request(path, options = {}) {
@@ -95,47 +80,8 @@
     input.select();
   }
 
-  function renderMcp(data) {
-    const auth = data?.mcp_auth || {};
-    const route = getMcpRoute(data);
-    const enabled = Boolean(auth.enabled);
-    const active = Boolean(route.active && route.target === "remote");
-    const statusError = data?.last_error || route.error;
-
-    mcpButtons.enable.hidden = enabled;
-    mcpButtons.retry.hidden = !enabled || active;
-    mcpButtons.rotate.hidden = !enabled;
-    mcpButtons.revoke.hidden = !enabled;
-    mcpButtons.disable.hidden = !enabled;
-
-    if (!enabled) {
-      setMcpStatus("Remote MCPは無効です。Web公開用とは別のキーで有効にできます。");
-      if (mcpUrlWrap) mcpUrlWrap.hidden = true;
-      if (mcpKeyPanel) mcpKeyPanel.hidden = true;
-      if (mcpKeyInput) mcpKeyInput.value = "";
-      return;
-    }
-
-    if (active) {
-      setMcpStatus("Remote MCPは有効です。どちらの公開方式でもMCPは公開Funnelの443番（ポート番号なしURL）を使用します。", "success");
-    } else if (statusError) {
-      setMcpStatus("設定は保存されていますが、Remote MCPに接続できません：" + statusError, "warning");
-    } else if (!route.available) {
-      setMcpStatus("設定は保存されています。Tailscaleの状態を確認できるまで待っています。", "warning");
-    } else {
-      setMcpStatus("Remote MCPを起動しています…", "warning");
-    }
-
-    const mcpUrl = typeof data.mcp_url === "string" ? data.mcp_url : "";
-    if (mcpUrl && mcpUrlLink && mcpUrlWrap) {
-      mcpUrlWrap.hidden = false;
-      mcpUrlLink.href = mcpUrl;
-      mcpUrlLink.textContent = mcpUrl;
-    } else if (mcpUrlWrap) {
-      mcpUrlWrap.hidden = true;
-      mcpUrlLink?.removeAttribute("href");
-      if (mcpUrlLink) mcpUrlLink.textContent = "";
-    }
+  function renderMcp() {
+    setMcpStatus("Remote MCPはこのアプリでは無効化されています。", "warning");
   }
 
   function render(data) {
@@ -198,7 +144,7 @@
       render(await request("/settings/remote-access"));
     } catch (error) {
       setStatus("状態を取得できません：" + error.message, "warning");
-      setMcpStatus("状態を取得できません：" + error.message, "warning");
+      renderMcp();
     }
   }
 
@@ -271,45 +217,10 @@
     runOperation(
       buttons.disable,
       "/settings/remote-access/disable",
-      modeInfo[mode].name + "を停止し、外部Webからのアクセスを無効にします。Remote MCPが有効な場合はMCP接続を維持します。続行しますか？",
+      modeInfo[mode].name + "を停止し、外部Webからのアクセスを無効にします。続行しますか？",
     );
   });
 
-  mcpButtons.enable.addEventListener("click", () => runOperation(
-    mcpButtons.enable,
-    "/settings/remote-access/mcp/enable",
-    "Web公開用とは別のMCPアクセスキーを発行し、読み取り専用のRemote MCPを有効にします。続行しますか？",
-    true,
-    { status: mcpStatusEl, keyInput: mcpKeyInput, keyPanel: mcpKeyPanel },
-  ));
-  mcpButtons.retry.addEventListener("click", () => runOperation(
-    mcpButtons.retry,
-    "/settings/remote-access/mcp/retry",
-    null,
-    false,
-    { status: mcpStatusEl, keyInput: mcpKeyInput, keyPanel: mcpKeyPanel },
-  ));
-  mcpButtons.rotate.addEventListener("click", () => runOperation(
-    mcpButtons.rotate,
-    "/settings/remote-access/mcp/rotate",
-    "MCPアクセスキーを再発行すると、既存のOAuth接続がすべて解除されます。続行しますか？",
-    true,
-    { status: mcpStatusEl, keyInput: mcpKeyInput, keyPanel: mcpKeyPanel },
-  ));
-  mcpButtons.revoke.addEventListener("click", () => runOperation(
-    mcpButtons.revoke,
-    "/settings/remote-access/mcp/revoke-all",
-    "既存のRemote MCP接続をすべて解除します。続行しますか？",
-    false,
-    { status: mcpStatusEl, keyInput: mcpKeyInput, keyPanel: mcpKeyPanel },
-  ));
-  mcpButtons.disable.addEventListener("click", () => runOperation(
-    mcpButtons.disable,
-    "/settings/remote-access/mcp/disable",
-    "Remote MCPを無効にします。スマホ・Web画面用の公開状態には影響しません。続行しますか？",
-    false,
-    { status: mcpStatusEl, keyInput: mcpKeyInput, keyPanel: mcpKeyPanel },
-  ));
   modeApply?.addEventListener("click", applyMode);
 
   document.getElementById("remoteAccessCopyKey")?.addEventListener("click", async () => {
@@ -322,18 +233,6 @@
       document.execCommand("copy");
     }
     setStatus("Web公開用アクセスキーをコピーしました。", "success");
-  });
-
-  document.getElementById("remoteMcpCopyKey")?.addEventListener("click", async () => {
-    if (!mcpKeyInput?.value) return;
-    try {
-      await navigator.clipboard.writeText(mcpKeyInput.value);
-    } catch {
-      mcpKeyInput.focus();
-      mcpKeyInput.select();
-      document.execCommand("copy");
-    }
-    setMcpStatus("MCP公開用アクセスキーをコピーしました。", "success");
   });
 
   refresh();

@@ -1966,6 +1966,35 @@ body.projects-page [contenteditable="true"] {
   pointer-events: none;
 }
 
+/* Let the sidebar divider recede into the main panel's rounded corner. */
+.sidebar,
+.home-page .sidebar,
+.notes-page .sidebar,
+.sidebar.sidebar--index {
+  border-right-color: transparent;
+}
+
+.sidebar::after,
+.home-page .sidebar::after,
+.notes-page .sidebar::after,
+.sidebar.sidebar--index::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--shell-main-corner-radius) / 2),
+    var(--border) var(--shell-main-corner-radius),
+    var(--border) 100%
+  );
+  pointer-events: none;
+}
+
 /* Notes and Projects use the same Figma-style filter and create controls. */
 .projects-page,
 .notes-page {

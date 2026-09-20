@@ -18,14 +18,12 @@ const $ = (id) => document.getElementById(id);
 const els = {
   search: $("search"),
   searchSuggest: $("searchSuggest"),
-  favOnly: $("favOnly"),
   sortSelect: $("sortSelect"),
   categories: $("categories"),
   grid: $("grid"),
   gridWrap: $("gridWrap"),
   empty: $("empty"),
   activeTag: $("activeTag"),
-  addLocalBtn: $("addLocalBtn"),
   fileSaveMethod: $("fileSaveMethod"),
   fileSaveMethodDesc: $("fileSaveMethodDesc"),
   batchBar: $("batchBar"),
@@ -103,7 +101,7 @@ function loadAll({ force = false } = {}) {
 
 function renderCategories() {
   const all = [{ id: null, name: "すべて" }, ...state.categories];
-  els.categories.innerHTML = all
+  const categoryButtons = all
     .map((c) => {
       const isAll = c.id === null;
       const active =
@@ -113,19 +111,27 @@ function renderCategories() {
           : "";
       const label = isAll ? "すべて" : escapeHtml(c.name);
       return `<button class="cat-btn${active}" data-cat="${isAll ? "" : escapeHtml(c.name)}">${label}</button>`;
-    })
-    .join("");
+    });
+  const favoriteButton = `<button class="cat-btn${state.favOnly ? " active" : ""}" type="button" data-favorite-filter="true" aria-pressed="${state.favOnly}" title="お気に入りのみ表示">お気に入り</button>`;
+  els.categories.innerHTML = [categoryButtons[0], favoriteButton, ...categoryButtons.slice(1)].join("");
 
   els.categories.querySelectorAll(".cat-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const v = btn.dataset.cat;
-      state.activeCategory = v === "" ? null : v;
+      if (btn.dataset.favoriteFilter === "true") {
+        state.favOnly = !state.favOnly;
+      } else {
+        const v = btn.dataset.cat;
+        state.activeCategory = v === "" ? null : v;
+      }
       renderCategories();
       render();
-      const sel = els.categories.querySelector(".cat-btn.active");
+      const sel = state.favOnly
+        ? els.categories.querySelector('[data-favorite-filter="true"]')
+        : els.categories.querySelector(".cat-btn.active");
       if (sel) sel.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
     btn.addEventListener("contextmenu", (e) => {
+      if (btn.dataset.favoriteFilter === "true") return;
       const name = btn.dataset.cat;
       if (!name) return;
       e.preventDefault();
@@ -1445,12 +1451,6 @@ document.addEventListener("mouseout", (e) => {
   if (btn && (!e.relatedTarget || !btn.contains(e.relatedTarget))) btn.classList.remove("is-pressed");
 });
 
-els.favOnly.addEventListener("click", () => {
-  state.favOnly = !state.favOnly;
-  els.favOnly.classList.toggle("active", state.favOnly);
-  render();
-});
-
 // 一括操作ボタン
 els.batchTagBtn.addEventListener("click", batchTag);
 els.batchCatBtn.addEventListener("click", batchCategory);
@@ -1745,7 +1745,6 @@ function closeUploadModal() {
   uploadBulkTags = [];
 }
 
-els.addLocalBtn.addEventListener("click", openUploadModal);
 uploadEls.cancel.addEventListener("click", closeUploadModal);
 uploadEls.modal.addEventListener("click", (e) => {
   if (e.target !== uploadEls.modal) return;

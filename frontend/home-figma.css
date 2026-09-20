@@ -135,7 +135,7 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
 
 .home-page .search-liquid {
   height: 86px;
-  border: 1px solid var(--home-border);
+  border: 1px solid transparent;
   border-radius: 133px;
   background: var(--home-surface);
   box-sizing: border-box;

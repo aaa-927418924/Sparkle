@@ -1366,7 +1366,7 @@ def main() -> None:
             # a fixed workbench layout, so browser zoom would make its sizing
             # and drag/resize affordances inconsistent.
             zoomable=False,
-            background_color="#202020",
+            background_color="#202231",
             hidden=(
                 "--hidden" in sys.argv[1:]
                 and not migration_required

@@ -1,12 +1,12 @@
 /* Shared Windows workbench shell. Keep the existing page-specific layouts,
    but give every screen the same quiet, Codex-inspired visual language. */
 :root {
-  --bg: #1c1c2a;
-  --sidebar-bg: #313244;
-  --surface: #202020;
-  --surface-raised: #202020;
-  --surface-hover: #2b2b2b;
-  --surface-active: #303030;
+  --bg: #24273a;
+  --sidebar-bg: #202231;
+  --surface: #202231;
+  --surface-raised: #202231;
+  --surface-hover: #2a2d40;
+  --surface-active: #363a4f;
   --border: rgba(255, 255, 255, 0.10);
   --border-strong: rgba(255, 255, 255, 0.16);
   --text: #f4f4f2;
@@ -23,7 +23,7 @@
 
 html:not([data-theme="dark"]) {
   --bg: #f4f3ef;
-  --sidebar-bg: #313244;
+  --sidebar-bg: #202231;
   --surface: #ffffff;
   --surface-raised: #fbfaf7;
   --surface-hover: #f0eee9;
@@ -1998,8 +1998,8 @@ body.projects-page [contenteditable="true"] {
 /* Notes and Projects use the same Figma-style filter and create controls. */
 .projects-page,
 .notes-page {
-  --shell-filter-pill-bg: #292929;
-  --shell-filter-pill-active: #555555;
+  --shell-filter-pill-bg: #212232;
+  --shell-filter-pill-active: #363a4f;
   --shell-filter-pill-text: #a1a1a1;
   --shell-filter-pill-active-text: #ffffff;
 }
@@ -2154,11 +2154,11 @@ body {
   transform: none;
 }
 
-/* Projects keeps its #202020 surface but drops the normal hairline border. */
+/* Projects keeps its shared surface color but drops the normal hairline border. */
 .projects-page .project-card,
 .projects-page .project-card:hover {
   border: 0;
-  background: #202020;
+  background: #202231;
 }
 
 /* Draw the memo outline inward so overflow clipping cannot cut off its edge;

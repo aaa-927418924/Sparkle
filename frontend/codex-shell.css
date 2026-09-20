@@ -1949,7 +1949,8 @@ body.projects-page [contenteditable="true"] {
 .editor-main {
   position: relative;
   isolation: isolate;
-  background: transparent;
+  /* Keep the panel behind the rounded content surface visible at the split. */
+  background: var(--sidebar-bg);
 }
 
 .main::before,

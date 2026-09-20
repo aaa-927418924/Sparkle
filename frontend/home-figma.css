@@ -171,8 +171,6 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
   box-shadow: none;
 }
 
-.home-page #favOnly,
-.home-page #addLocalBtn,
 .home-page .sort-trigger {
   color: var(--home-text);
   font-size: 13px;
@@ -180,11 +178,16 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
   opacity: 0.78;
 }
 
-.home-page #favOnly:hover,
-.home-page #addLocalBtn:hover,
 .home-page .sort-select:focus .sort-trigger,
 .home-page .sort-select.open .sort-trigger {
-  color: var(--home-accent);
+  border-color: var(--border);
+  color: var(--home-text);
+  background: transparent;
+}
+
+.home-page .sort-select:focus .sort-label,
+.home-page .sort-select.open .sort-label {
+  text-decoration-color: transparent;
 }
 
 .home-page .sort-select {

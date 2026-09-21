@@ -909,9 +909,16 @@ def _apply_native_system_backdrop(
         # Acrylic is the native system material that provides the expected
         # behind-window response while keeping all blur/composition work in
         # DWM rather than in CSS.
-        backdrop_value = ctypes.c_int(
-            DWMSBT_TRANSIENTWINDOW if enabled else DWMSBT_NONE
-        )
+        requested_backdrop_type = DWMSBT_TRANSIENTWINDOW if enabled else DWMSBT_NONE
+        if enabled:
+            diagnostic_override = os.environ.get(
+                "SPARKLE_DIAGNOSTIC_DWM_BACKDROP_TYPE", ""
+            ).strip().lower()
+            if diagnostic_override in {"mainwindow", "2"}:
+                requested_backdrop_type = DWMSBT_MAINWINDOW
+            elif diagnostic_override in {"transientwindow", "transient", "3"}:
+                requested_backdrop_type = DWMSBT_TRANSIENTWINDOW
+        backdrop_value = ctypes.c_int(requested_backdrop_type)
         attr38_result = int(
             set_window_attr(
                 ctypes.c_void_p(handle),
@@ -929,16 +936,17 @@ def _apply_native_system_backdrop(
         redirection_alpha_value = ctypes.c_int(1 if alpha_enabled else 0)
         attr39_result = int(
             set_window_attr(
-            ctypes.c_void_p(handle),
-            DWMWA_REDIRECTIONBITMAP_ALPHA,
-            ctypes.byref(redirection_alpha_value),
-            ctypes.sizeof(redirection_alpha_value),
+                ctypes.c_void_p(handle),
+                DWMWA_REDIRECTIONBITMAP_ALPHA,
+                ctypes.byref(redirection_alpha_value),
+                ctypes.sizeof(redirection_alpha_value),
             )
         )
         window_state["native_dwm_diagnostics"] = {
             "extend_hr": extend_result,
             "extend_error": window_state.get("native_dwm_extend_error"),
             "attr38_hr": attr38_result,
+            "attr38_requested": requested_backdrop_type,
             "attr39_hr": attr39_result,
             "error": None,
         }
@@ -1421,6 +1429,7 @@ def _apply_native_backdrop(
                 f"extend_hr={_native_hresult_text(dwm_diagnostics.get('extend_hr'))} "
                 f"extend_error={_native_value_text(dwm_diagnostics.get('extend_error'))} "
                 f"attr38_hr={_native_hresult_text(dwm_diagnostics.get('attr38_hr'))} "
+                f"attr38_requested={_native_value_text(dwm_diagnostics.get('attr38_requested'))} "
                 f"attr39_hr={_native_hresult_text(dwm_diagnostics.get('attr39_hr'))} "
                 f"dwm_error={_native_value_text(dwm_diagnostics.get('error'))} "
                 f"read38_hr={_native_hresult_text(dwm_readback.get('attr38_hr'))} "

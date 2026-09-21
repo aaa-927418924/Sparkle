@@ -2324,13 +2324,17 @@ body.notes-page .clip-pick-list::-webkit-scrollbar-thumb:hover,
    intact. */
 html.native-backdrop-enabled,
 html.native-backdrop-enabled body {
-  background: transparent;
+  /* Keep the WebView document on the native material path while adding a
+     restrained version of the existing main tone over it. */
+  background: rgba(36, 39, 58, 0.82) !important;
   border-radius: var(--shell-main-corner-radius);
   overflow: hidden;
 }
 
 html.native-backdrop-enabled .app-titlebar {
-  background: transparent !important;
+  /* Keep the native material visible, but retain the existing titlebar tone
+     as a light tint so the acrylic does not wash out the shell. */
+  background: rgba(32, 34, 49, 0.86) !important;
   border-top-left-radius: var(--shell-main-corner-radius);
   border-top-right-radius: var(--shell-main-corner-radius);
   overflow: hidden;
@@ -2344,7 +2348,7 @@ html.native-backdrop-enabled .sidebar,
 html.native-backdrop-enabled .home-page .sidebar,
 html.native-backdrop-enabled .notes-page .sidebar,
 html.native-backdrop-enabled .sidebar.sidebar--index {
-  background: transparent !important;
+  background: rgba(32, 34, 49, 0.86) !important;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -2353,7 +2357,9 @@ html.native-backdrop-enabled .main,
 html.native-backdrop-enabled .home-page .main,
 html.native-backdrop-enabled .notes-page .main.notes-main,
 html.native-backdrop-enabled .editor-main {
-  background: transparent;
+  /* The backdrop remains native, with the original #24273a main tone as an
+     opaque-leaning tint instead of exposing the full acrylic intensity. */
+  background: rgba(36, 39, 58, 0.82) !important;
 }
 
 html.native-backdrop-enabled .main::before,
@@ -2367,4 +2373,19 @@ html.native-backdrop-enabled body.note-editor-page .editor-body,
 html.native-backdrop-enabled body.note-editor-page .markdown-editor,
 html.native-backdrop-enabled body.note-editor-page .editor-canvas {
   background: transparent;
+}
+
+/* Home has an extra dark-theme selector in home-figma.css with higher
+   specificity than the shared shell rule.  Override those page surfaces only
+   when the native backdrop class is active; the normal/off path is unchanged. */
+html.native-backdrop-enabled body.home-page,
+html.native-backdrop-enabled body.home-page .layout,
+html.native-backdrop-enabled body.home-page .main,
+html.native-backdrop-enabled body.home-page .sidebar {
+  background: rgba(36, 39, 58, 0.82) !important;
+}
+
+html.native-backdrop-enabled body.home-page .sidebar,
+html.native-backdrop-enabled body.home-page .app-titlebar {
+  background: rgba(32, 34, 49, 0.86) !important;
 }

@@ -86,9 +86,7 @@ FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-rem
 # enabled when Windows' own transparency preference is enabled; the disabled
 # path keeps pywebview's existing opaque background path unchanged.
 DWMWA_SYSTEMBACKDROP_TYPE = 38
-DWMWA_REDIRECTIONBITMAP_ALPHA = 39
 DWMSBT_NONE = 1
-DWMSBT_MAINWINDOW = 2
 # Desktop Acrylic is the native system backdrop that reacts to content behind
 # the window.  This is still DWM-owned; the WebView only exposes the material
 # through its transparent controller surface.
@@ -166,7 +164,9 @@ window_state = {
     "native_window_visible": False,
     "native_initial_navigation_completed": False,
     "transparency_listener_registered": False,
-    "native_sync_timer_scheduled": False,
+    "native_backdrop_retry_generation": 0,
+    "native_backdrop_retry_timers": [],
+    "native_navigation_pending": False,
 }
 native_drop_condition = threading.Condition()
 native_drop_paths = []
@@ -840,8 +840,6 @@ def _read_native_backdrop_attributes(handle) -> dict:
     result = {
         "attr38_hr": None,
         "attr38_value": None,
-        "attr39_hr": None,
-        "attr39_value": None,
         "error": None,
     }
     if handle is None or os.name != "nt":
@@ -859,30 +857,33 @@ def _read_native_backdrop_attributes(handle) -> dict:
             ctypes.c_uint,
         )(("DwmGetWindowAttribute", dwmapi))
         hwnd = ctypes.c_void_p(handle)
-        for attribute, hr_key, value_key in (
-            (DWMWA_SYSTEMBACKDROP_TYPE, "attr38_hr", "attr38_value"),
-            (DWMWA_REDIRECTIONBITMAP_ALPHA, "attr39_hr", "attr39_value"),
-        ):
-            value = ctypes.c_int()
-            hresult = int(
-                get_window_attr(
-                    hwnd,
-                    attribute,
-                    ctypes.byref(value),
-                    ctypes.sizeof(value),
-                )
+        value = ctypes.c_int()
+        hresult = int(
+            get_window_attr(
+                hwnd,
+                DWMWA_SYSTEMBACKDROP_TYPE,
+                ctypes.byref(value),
+                ctypes.sizeof(value),
             )
-            result[hr_key] = hresult
-            if hresult == 0:
-                result[value_key] = int(value.value)
+        )
+        result["attr38_hr"] = hresult
+        if hresult == 0:
+            result["attr38_value"] = int(value.value)
     except Exception as error:
         result["error"] = _native_exception_text(error)
     return result
 
 
-def _apply_native_system_backdrop(
-    handle, enabled: bool, *, redirection_alpha: bool | None = None
-) -> bool:
+def _native_backdrop_readback_matches(handle, expected_value: int) -> bool:
+    """Return whether DWM currently reports the requested system material."""
+    readback = _read_native_backdrop_attributes(handle)
+    return bool(
+        readback.get("attr38_hr") == 0
+        and readback.get("attr38_value") == expected_value
+    )
+
+
+def _apply_native_system_backdrop(handle, enabled: bool) -> bool:
     """Select the native Windows material without using a CSS blur effect."""
     if handle is None or os.name != "nt":
         return False
@@ -920,26 +921,22 @@ def _apply_native_system_backdrop(
             )
         )
 
-        # WebView2's transparent controller surface is carried by the top-level
-        # window redirection bitmap.  Tell DWM to preserve that alpha channel so
-        # transparent WebView pixels reveal the system backdrop instead of the
-        # host's default client fill.
-        alpha_enabled = enabled if redirection_alpha is None else redirection_alpha
-        redirection_alpha_value = ctypes.c_int(1 if alpha_enabled else 0)
-        attr39_result = int(
-            set_window_attr(
-                ctypes.c_void_p(handle),
-                DWMWA_REDIRECTIONBITMAP_ALPHA,
-                ctypes.byref(redirection_alpha_value),
-                ctypes.sizeof(redirection_alpha_value),
-            )
-        )
+        # Attribute 39 is DWMWA_LAST (the enum sentinel), not a writable alpha
+        # attribute. WebView2 transparency is configured on the WinForms and
+        # WebView2 surfaces below; DWM material convergence is verified only by
+        # reading back attribute 38.
+        readback = _read_native_backdrop_attributes(handle)
         window_state["native_dwm_diagnostics"] = {
             "extend_hr": extend_result,
             "extend_error": window_state.get("native_dwm_extend_error"),
             "attr38_hr": attr38_result,
             "attr38_requested": requested_backdrop_type,
-            "attr39_hr": attr39_result,
+            "read38_hr": readback.get("attr38_hr"),
+            "read38_value": readback.get("attr38_value"),
+            "read38_converged": (
+                readback.get("attr38_hr") == 0
+                and readback.get("attr38_value") == requested_backdrop_type
+            ),
             "error": None,
         }
 
@@ -955,7 +952,9 @@ def _apply_native_system_backdrop(
             "extend_hr": previous.get("extend_hr", window_state.get("native_dwm_extend_hr")),
             "extend_error": previous.get("extend_error", window_state.get("native_dwm_extend_error")),
             "attr38_hr": previous.get("attr38_hr"),
-            "attr39_hr": previous.get("attr39_hr"),
+            "read38_hr": previous.get("read38_hr"),
+            "read38_value": previous.get("read38_value"),
+            "read38_converged": previous.get("read38_converged"),
             "error": _native_exception_text(error),
         }
         return False
@@ -1151,28 +1150,36 @@ def _install_native_document_script(window, enabled: bool) -> bool:
         return False
 
 
-def _reassert_native_material(window) -> None:
+def _reassert_native_material(window, *, mode_override=None) -> bool:
     """Reassert only the active DWM material, without touching WebView2 state."""
     if window is None or os.name != "nt":
-        return
+        return False
 
     handle = _get_native_window_handle(window)
     if handle is None:
-        return
+        return False
 
-    mode = window_state.get("native_backdrop_mode")
+    mode = (
+        mode_override
+        if mode_override is not None
+        else window_state.get("native_backdrop_mode")
+    )
     background_color = str(getattr(window, "background_color", "#202231"))
     if mode == "system":
         _apply_native_system_backdrop(handle, True)
+        return _native_backdrop_readback_matches(handle, DWMSBT_TRANSIENTWINDOW)
     elif mode == "acrylic":
         if _apply_native_acrylic_backdrop(handle, True, background_color):
             _apply_dwm_backdrop_frame(handle, True)
+        return True
     else:
+        _apply_native_system_backdrop(handle, False)
         _apply_dwm_frame_margin(handle, _get_window_titlebar_setting())
+        return _native_backdrop_readback_matches(handle, DWMSBT_NONE)
 
 
 def _apply_native_backdrop(
-    window, enabled: bool, diagnostic_phase: str = "sync"
+    window, enabled: bool, diagnostic_phase: str = "sync", reassert: bool = False
 ) -> None:
     """Apply one native material and keep the WebView2 surface in that state."""
     if window is None or os.name != "nt":
@@ -1214,9 +1221,7 @@ def _apply_native_backdrop(
             else:
                 # Do not leave a failed SystemBackdrop frame extension behind
                 # while switching to the legacy fallback.
-                _apply_native_system_backdrop(
-                    handle, False, redirection_alpha=True
-                )
+                _apply_native_system_backdrop(handle, False)
                 acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
                     handle, True, background_color
                 )
@@ -1387,7 +1392,7 @@ def _apply_native_backdrop(
                 # Surface writes can rebuild the DWM frame. Reassert exactly
                 # once, without changing the controller or its transparency.
                 try:
-                    _reassert_native_material(window)
+                    _reassert_native_material(window, mode_override=mode)
                 except Exception as error:
                     record_surface_error("native-material.reassert", error)
 
@@ -1399,6 +1404,12 @@ def _apply_native_backdrop(
     except Exception as error:
         record_surface_error("surface-block", error)
 
+    if reassert and not surface_changed:
+        try:
+            _reassert_native_material(window)
+        except Exception as error:
+            record_surface_error("native-material.reassert", error)
+
     window_state["native_backdrop_enabled"] = show_native_material
     window_state["native_backdrop_handle"] = int(handle)
     window_state["native_backdrop_mode"] = mode
@@ -1407,6 +1418,11 @@ def _apply_native_backdrop(
 
     dwm_diagnostics = window_state.get("native_dwm_diagnostics") or {}
     dwm_readback = _read_native_backdrop_attributes(handle)
+    read38_converged = (
+        dwm_readback.get("attr38_hr") == 0
+        and dwm_readback.get("attr38_value")
+        == dwm_diagnostics.get("attr38_requested")
+    )
 
     try:
         with LOG_PATH.open("a", encoding="utf-8") as log:
@@ -1422,12 +1438,12 @@ def _apply_native_backdrop(
                 f"extend_error={_native_value_text(dwm_diagnostics.get('extend_error'))} "
                 f"attr38_hr={_native_hresult_text(dwm_diagnostics.get('attr38_hr'))} "
                 f"attr38_requested={_native_value_text(dwm_diagnostics.get('attr38_requested'))} "
-                f"attr39_hr={_native_hresult_text(dwm_diagnostics.get('attr39_hr'))} "
+                f"attr39_hr=not-applicable "
                 f"dwm_error={_native_value_text(dwm_diagnostics.get('error'))} "
                 f"read38_hr={_native_hresult_text(dwm_readback.get('attr38_hr'))} "
                 f"read38={_native_value_text(dwm_readback.get('attr38_value'))} "
-                f"read39_hr={_native_hresult_text(dwm_readback.get('attr39_hr'))} "
-                f"read39={_native_value_text(dwm_readback.get('attr39_value'))} "
+                f"read38_converged={_native_value_text(read38_converged)} "
+                f"read39_hr=not-applicable read39=not-applicable "
                 f"readback_error={_native_value_text(dwm_readback.get('error'))} "
                 f"surface_errors={_native_value_text(';'.join(surface_errors) or 'none')} "
                 f"backcolor_before={_native_value_text(surface_backcolor_before)} "
@@ -1455,10 +1471,11 @@ def _sync_native_backdrop(
 
     def apply() -> None:
         surface_changed = _apply_native_backdrop(
-            window, enabled, diagnostic_phase=diagnostic_phase
+            window,
+            enabled,
+            diagnostic_phase=diagnostic_phase,
+            reassert=reassert,
         )
-        if reassert and not surface_changed:
-            _reassert_native_material(window)
 
     try:
         if bool(getattr(native, "InvokeRequired", False)):
@@ -1475,24 +1492,100 @@ def _sync_native_backdrop(
         pass
 
 
-def _schedule_native_backdrop_sync() -> None:
-    """Run one guarded post-show sync for the initial WebView2 handoff."""
-    if os.name != "nt" or window_state.get("native_sync_timer_scheduled"):
+def _cancel_native_backdrop_retries() -> None:
+    """Cancel the current finite retry sequence and invalidate its callbacks."""
+    generation = int(window_state.get("native_backdrop_retry_generation") or 0) + 1
+    timers = list(window_state.get("native_backdrop_retry_timers") or [])
+    window_state["native_backdrop_retry_generation"] = generation
+    window_state["native_backdrop_retry_timers"] = []
+    for timer in timers:
+        try:
+            timer.cancel()
+        except Exception:
+            pass
+
+
+def _native_backdrop_readback_matches_current(window) -> bool:
+    """Check the current preference and mode against DWM attribute 38."""
+    if window is None or os.name != "nt":
+        return False
+
+    mode = window_state.get("native_backdrop_mode")
+    if mode == "acrylic":
+        # The legacy fallback does not use SystemBackdrop attribute 38 as its
+        # source of truth. Its successful Win32 composition call is enough.
+        return True
+
+    handle = _get_native_window_handle(window)
+    if handle is None:
+        return False
+
+    transparency_enabled = _is_windows_transparency_enabled()
+    if transparency_enabled and mode == "system":
+        expected = DWMSBT_TRANSIENTWINDOW
+    elif not transparency_enabled:
+        expected = DWMSBT_NONE
+    else:
+        # The system material has not been selected yet, so let the retry write
+        # it before attempting the first convergence check.
+        return False
+    return _native_backdrop_readback_matches(handle, expected)
+
+
+def _run_native_backdrop_retry(token: int, diagnostic_phase: str, attempt: int) -> None:
+    """Reapply only while the bounded sequence has not converged."""
+    if exit_requested.is_set() or token != window_state.get(
+        "native_backdrop_retry_generation"
+    ):
         return
 
-    window_state["native_sync_timer_scheduled"] = True
+    window = window_ref.get("window")
+    native = getattr(window, "native", None) if window is not None else None
+    if window is None or native is None:
+        return
+    if not bool(getattr(native, "Visible", False)):
+        # Keep the remaining timers alive; the shown event can race the first
+        # timer during pywebview's transparent-window show/hide workaround.
+        return
 
-    def sync_once() -> None:
-        window_state["native_sync_timer_scheduled"] = False
-        _sync_native_backdrop(reassert=True, diagnostic_phase="startup")
+    if attempt > 1 and _native_backdrop_readback_matches_current(window):
+        _cancel_native_backdrop_retries()
+        return
 
-    timer = threading.Timer(0.25, sync_once)
-    timer.daemon = True
-    timer.start()
+    _sync_native_backdrop(
+        reassert=True,
+        diagnostic_phase=f"{diagnostic_phase}-retry-{attempt}",
+    )
+
+
+def _schedule_native_backdrop_retries(
+    delays: tuple[float, ...], diagnostic_phase: str
+) -> None:
+    """Retry DWM writes at bounded delays until attribute 38 converges."""
+    if os.name != "nt" or exit_requested.is_set():
+        return
+
+    _cancel_native_backdrop_retries()
+    token = int(window_state.get("native_backdrop_retry_generation") or 0)
+    timers = []
+    window_state["native_backdrop_retry_timers"] = timers
+
+    for attempt, delay in enumerate(delays, start=1):
+        timer = threading.Timer(
+            max(0.0, float(delay)),
+            _run_native_backdrop_retry,
+            args=(token, diagnostic_phase, attempt),
+        )
+        timer.daemon = True
+        timers.append(timer)
+        timer.start()
 
 
 def _on_windows_user_preference_changed(sender, event_args) -> None:
-    _sync_native_backdrop(diagnostic_phase="preference")
+    # DWM may rebuild the window and overwrite attribute 38 during this
+    # callback. Reassert immediately, then verify/retry after that rebuild.
+    _sync_native_backdrop(reassert=True, diagnostic_phase="preference")
+    _schedule_native_backdrop_retries((0.5, 1.5, 3.0), "preference")
 
 
 def _register_windows_transparency_listener() -> None:
@@ -1508,23 +1601,32 @@ def _register_windows_transparency_listener() -> None:
         pass
 
 
-def _refresh_native_frame_after_navigation(sender=None, event_args=None) -> None:
+def _refresh_native_frame_after_navigation_starting(
+    sender=None, event_args=None
+) -> None:
+    """Mark navigation pending without rewriting the WebView2 surface."""
+    window_state["native_navigation_pending"] = True
+    _cancel_native_backdrop_retries()
+
+
+def _refresh_native_frame_after_navigation_completed(
+    sender=None, event_args=None
+) -> None:
     """Reassert the active material after a completed WebView2 navigation."""
     window = window_ref.get("window")
     if window is None:
         return
 
-    # pywebview's own NavigationStarting handler calls Show/Activate first.
-    # Do not touch the Form/WebView2 surface on NavigationStarting; wait until
-    # the new document has completed so it cannot be replaced by a white erase.
     try:
         if event_args is None or not bool(event_args.IsSuccess):
             return
         window_state["native_initial_navigation_completed"] = True
+        window_state["native_navigation_pending"] = False
     except Exception:
         return
 
     _sync_native_backdrop(reassert=True, diagnostic_phase="navigation")
+    _schedule_native_backdrop_retries((0.25, 1.0, 2.5), "navigation")
 
 
 def _refresh_native_frame_after_webview_ready(sender=None, event_args=None) -> None:
@@ -1535,6 +1637,9 @@ def _refresh_native_frame_after_webview_ready(sender=None, event_args=None) -> N
     except Exception:
         pass
     _sync_native_backdrop(reassert=True, diagnostic_phase="webview-ready")
+    native = getattr(window_ref.get("window"), "native", None)
+    if bool(getattr(native, "Visible", False)):
+        _schedule_native_backdrop_retries((0.25, 1.0, 2.5), "startup")
 
 
 def _register_native_navigation_listener(window) -> None:
@@ -1547,8 +1652,8 @@ def _register_native_navigation_listener(window) -> None:
         return
 
     try:
-        webview.NavigationStarting += _refresh_native_frame_after_navigation
-        webview.NavigationCompleted += _refresh_native_frame_after_navigation
+        webview.NavigationStarting += _refresh_native_frame_after_navigation_starting
+        webview.NavigationCompleted += _refresh_native_frame_after_navigation_completed
         window_state["native_navigation_listener_registered"] = True
     except Exception:
         pass
@@ -2078,7 +2183,7 @@ def _apply_native_chrome() -> None:
     _register_native_layout_listener(window)
     _register_windows_transparency_listener()
     _sync_native_backdrop(reassert=True, diagnostic_phase="startup-chrome")
-    _schedule_native_backdrop_sync()
+    _schedule_native_backdrop_retries((0.25, 1.0, 2.5), "startup")
 
 
 def _build_tray_image():

@@ -146,6 +146,8 @@ window_state = {
     "native_titlebar_handle": None,
     "native_backdrop_enabled": None,
     "native_backdrop_handle": None,
+    "native_system_backdrop_applied": None,
+    "native_acrylic_backdrop_applied": None,
     "native_navigation_listener_registered": False,
     "transparency_listener_registered": False,
 }
@@ -948,6 +950,20 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
 
     window_state["native_backdrop_enabled"] = show_native_material
     window_state["native_backdrop_handle"] = int(handle)
+    window_state["native_system_backdrop_applied"] = system_backdrop_applied
+    window_state["native_acrylic_backdrop_applied"] = acrylic_backdrop_applied
+
+    try:
+        with LOG_PATH.open("a", encoding="utf-8") as log:
+            log.write(
+                "[native-backdrop] "
+                f"enabled={enabled} system={system_backdrop_applied} "
+                f"acrylic={acrylic_backdrop_applied} shown={show_native_material} "
+                f"transparent={getattr(window, 'transparent', None)} "
+                f"handle={int(handle)}\n"
+            )
+    except Exception:
+        pass
 
 
 def _sync_native_backdrop() -> None:

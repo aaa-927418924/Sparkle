@@ -910,14 +910,6 @@ def _apply_native_system_backdrop(
         # behind-window response while keeping all blur/composition work in
         # DWM rather than in CSS.
         requested_backdrop_type = DWMSBT_TRANSIENTWINDOW if enabled else DWMSBT_NONE
-        if enabled:
-            diagnostic_override = os.environ.get(
-                "SPARKLE_DIAGNOSTIC_DWM_BACKDROP_TYPE", ""
-            ).strip().lower()
-            if diagnostic_override in {"mainwindow", "2"}:
-                requested_backdrop_type = DWMSBT_MAINWINDOW
-            elif diagnostic_override in {"transientwindow", "transient", "3"}:
-                requested_backdrop_type = DWMSBT_TRANSIENTWINDOW
         backdrop_value = ctypes.c_int(requested_backdrop_type)
         attr38_result = int(
             set_window_attr(

@@ -1861,10 +1861,11 @@ def main() -> None:
             # and drag/resize affordances inconsistent.
             zoomable=False,
             background_color="#202231",
-            # Keep pywebview's transparent-navigation workaround disabled.  The
-            # native backdrop path explicitly changes the Form/WebView2 surfaces
-            # after the handle and DWM material are ready.
-            transparent=False,
+            # Let pywebview create the Form/WebView2 pair with its native
+            # transparent surface when Windows Transparency is enabled.  The
+            # native sync disables pywebview's navigation-time Show/Activate
+            # workaround after the first handle/material handoff.
+            transparent=native_backdrop_enabled,
             hidden=(
                 "--hidden" in sys.argv[1:]
                 and not migration_required

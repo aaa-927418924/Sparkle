@@ -365,33 +365,31 @@ html:not([data-theme="dark"]) .home-page .card-ph {
 @keyframes sparkle-page-enter-forward {
   from {
     opacity: 0;
-    transform: translate3d(20px, 0, 0);
   }
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0);
   }
 }
 
 @keyframes sparkle-page-enter-back {
   from {
     opacity: 0;
-    transform: translate3d(-20px, 0, 0);
   }
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0);
   }
 }
 
+/* Fade only the page content. Translating #mainContent also translates its
+   fixed rounded surface during navigation, which creates a visible split. */
 html.page-transition-enter-forward #mainContent {
   animation: sparkle-page-enter-forward 240ms cubic-bezier(0.2, 0, 0, 1) both;
-  will-change: opacity, transform;
+  will-change: opacity;
 }
 
 html.page-transition-enter-back #mainContent {
   animation: sparkle-page-enter-back 240ms cubic-bezier(0.2, 0, 0, 1) both;
-  will-change: opacity, transform;
+  will-change: opacity;
 }
 
 .home-page .search-liquid,

@@ -86,6 +86,7 @@ FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-rem
 # enabled when Windows' own transparency preference is enabled; the disabled
 # path keeps pywebview's existing opaque background path unchanged.
 DWMWA_SYSTEMBACKDROP_TYPE = 38
+DWMWA_REDIRECTIONBITMAP_ALPHA = 39
 DWMSBT_NONE = 1
 DWMSBT_MAINWINDOW = 2
 DWMWA_MICA_EFFECT = 1029
@@ -819,6 +820,18 @@ def _apply_native_system_backdrop(handle, enabled: bool) -> bool:
             )
         )
 
+        # WebView2's transparent controller surface is carried by the top-level
+        # window redirection bitmap.  Tell DWM to preserve that alpha channel so
+        # transparent WebView pixels reveal the system backdrop instead of the
+        # host's default client fill.
+        redirection_alpha = ctypes.c_int(1 if enabled else 0)
+        set_window_attr(
+            ctypes.c_void_p(handle),
+            DWMWA_REDIRECTIONBITMAP_ALPHA,
+            ctypes.byref(redirection_alpha),
+            ctypes.sizeof(redirection_alpha),
+        )
+
         if result == 0:
             if not enabled:
                 mica_value = ctypes.c_int(0)
@@ -956,15 +969,16 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
 
         webview = _get_native_webview_control(native)
         if show_native_material:
+            transparent_color = Color.FromArgb(0, 0, 0, 0)
             try:
                 import System.Windows.Forms as WinForms
 
                 native.SetStyle(WinForms.ControlStyles.SupportsTransparentBackColor, True)
             except Exception:
                 pass
-            native.BackColor = Color.Transparent
+            native.BackColor = transparent_color
             if webview is not None:
-                webview.DefaultBackgroundColor = Color.Transparent
+                webview.DefaultBackgroundColor = transparent_color
         else:
             # This is the existing pywebview background path, not a new
             # fallback color for transparency-disabled systems.

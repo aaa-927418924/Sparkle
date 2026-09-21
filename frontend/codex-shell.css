@@ -2035,12 +2035,21 @@ body.projects-page [contenteditable="true"] {
 .notes-page .main.notes-main::before,
 .editor-main::before {
   content: "";
-  position: absolute;
+  /* Keep the rounded surface attached to the viewport while the main panel
+     itself scrolls, so its background cannot scroll away at the first page. */
+  position: fixed;
   z-index: -1;
-  inset: 0 0 0 var(--shell-sidebar-edge);
+  inset: var(--app-titlebar-height) 0 0 var(--shell-sidebar-edge);
   border-top-left-radius: var(--shell-main-corner-radius);
   background: var(--bg);
   pointer-events: none;
+}
+
+html.native-titlebar .main::before,
+html.native-titlebar .home-page .main::before,
+html.native-titlebar .notes-page .main.notes-main::before,
+html.native-titlebar .editor-main::before {
+  inset: 0 0 0 var(--shell-sidebar-edge);
 }
 
 /* The note editor offsets its main panel beside the fixed sidebar, so the

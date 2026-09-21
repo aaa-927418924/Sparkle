@@ -1,5 +1,5 @@
 const API = window.location.origin;
-const LEGACY_SORT_SETTING_KEY = window.sparkleLegacySettings?.sortEnabledKey
+const HOME_LEGACY_SORT_SETTING_KEY = window.sparkleLegacySettings?.sortEnabledKey
   || "sparkle.legacySortEnabled";
 
 const state = {
@@ -11,7 +11,7 @@ const state = {
   activeTags: [],
   favOnly: false,
   query: "",
-  sortEnabled: localStorage.getItem(LEGACY_SORT_SETTING_KEY) === "true",
+  sortEnabled: localStorage.getItem(HOME_LEGACY_SORT_SETTING_KEY) === "true",
   sortMode: localStorage.getItem("clipSortMode") || "date_desc",
   selectedIds: new Set(),
   dragOccurred: false,
@@ -1409,7 +1409,7 @@ function setSortValue(val) {
 }
 
 function applySortControlVisibility() {
-  const enabled = localStorage.getItem(LEGACY_SORT_SETTING_KEY) === "true";
+  const enabled = localStorage.getItem(HOME_LEGACY_SORT_SETTING_KEY) === "true";
   state.sortEnabled = enabled;
   if (!els.sortSelect) return;
 
@@ -1460,13 +1460,13 @@ function closeSortDropdown() {
 }  // closeSortDropdown
 
 window.addEventListener("sparkle-legacy-settings-changed", (event) => {
-  if (event.detail?.key !== LEGACY_SORT_SETTING_KEY) return;
+  if (event.detail?.key !== HOME_LEGACY_SORT_SETTING_KEY) return;
   applySortControlVisibility();
   render();
 });
 
 window.addEventListener("storage", (event) => {
-  if (event.key !== LEGACY_SORT_SETTING_KEY) return;
+  if (event.key !== HOME_LEGACY_SORT_SETTING_KEY) return;
   applySortControlVisibility();
   render();
 });

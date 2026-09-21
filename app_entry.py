@@ -1532,7 +1532,9 @@ def _native_backdrop_readback_matches_current(window) -> bool:
     return _native_backdrop_readback_matches(handle, expected)
 
 
-def _run_native_backdrop_retry(token: int, diagnostic_phase: str, attempt: int) -> None:
+def _run_native_backdrop_retry(
+    token: int, diagnostic_phase: str, attempt: int, is_last_attempt: bool
+) -> None:
     """Reapply only while the bounded sequence has not converged."""
     if exit_requested.is_set() or token != window_state.get(
         "native_backdrop_retry_generation"
@@ -1542,10 +1544,16 @@ def _run_native_backdrop_retry(token: int, diagnostic_phase: str, attempt: int) 
     window = window_ref.get("window")
     native = getattr(window, "native", None) if window is not None else None
     if window is None or native is None:
+        if is_last_attempt and token == window_state.get(
+            "native_backdrop_retry_generation"
+        ):
+            window_state["native_backdrop_retry_timers"] = []
         return
     if not bool(getattr(native, "Visible", False)):
         # Keep the remaining timers alive; the shown event can race the first
         # timer during pywebview's transparent-window show/hide workaround.
+        if is_last_attempt:
+            window_state["native_backdrop_retry_timers"] = []
         return
 
     if attempt > 1 and _native_backdrop_readback_matches_current(window):
@@ -1556,6 +1564,12 @@ def _run_native_backdrop_retry(token: int, diagnostic_phase: str, attempt: int) 
         reassert=True,
         diagnostic_phase=f"{diagnostic_phase}-retry-{attempt}",
     )
+    if is_last_attempt and token == window_state.get(
+        "native_backdrop_retry_generation"
+    ):
+        # Timer threads are daemonized and bounded, but do not retain their
+        # completed objects in window_state after the final attempt.
+        window_state["native_backdrop_retry_timers"] = []
 
 
 def _schedule_native_backdrop_retries(
@@ -1574,7 +1588,7 @@ def _schedule_native_backdrop_retries(
         timer = threading.Timer(
             max(0.0, float(delay)),
             _run_native_backdrop_retry,
-            args=(token, diagnostic_phase, attempt),
+            args=(token, diagnostic_phase, attempt, attempt == len(delays)),
         )
         timer.daemon = True
         timers.append(timer)
@@ -2119,6 +2133,7 @@ class NativeWindowApi:
     @staticmethod
     def exit_application() -> None:
         exit_requested.set()
+        _cancel_native_backdrop_retries()
         _stop_server()
         window = window_ref.get("window")
         if window is not None:
@@ -2130,6 +2145,7 @@ class NativeWindowApi:
 
 def _on_window_closing(window) -> bool:
     if exit_requested.is_set():
+        _cancel_native_backdrop_retries()
         return True
     try:
         window.hide()

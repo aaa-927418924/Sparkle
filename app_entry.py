@@ -89,6 +89,10 @@ DWMWA_SYSTEMBACKDROP_TYPE = 38
 DWMWA_REDIRECTIONBITMAP_ALPHA = 39
 DWMSBT_NONE = 1
 DWMSBT_MAINWINDOW = 2
+# Desktop Acrylic is the native system backdrop that reacts to content behind
+# the window.  This is still DWM-owned; the WebView only exposes the material
+# through its transparent controller surface.
+DWMSBT_TRANSIENTWINDOW = 3
 DWMWA_MICA_EFFECT = 1029
 WCA_ACCENT_POLICY = 19
 ACCENT_DISABLED = 0
@@ -151,6 +155,8 @@ window_state = {
     "native_acrylic_backdrop_applied": None,
     "native_navigation_listener_registered": False,
     "native_layout_listener_registered": False,
+    "native_window_visible": False,
+    "native_initial_navigation_completed": False,
     "transparency_listener_registered": False,
 }
 native_drop_condition = threading.Condition()
@@ -805,8 +811,13 @@ def _apply_native_system_backdrop(handle, enabled: bool) -> bool:
             ctypes.c_uint,
         )(("DwmSetWindowAttribute", dwmapi))
 
+        # The main-window Mica material is intentionally wallpaper-oriented
+        # and does not react when another app moves behind Sparkle.  Desktop
+        # Acrylic is the native system material that provides the expected
+        # behind-window response while keeping all blur/composition work in
+        # DWM rather than in CSS.
         backdrop_value = ctypes.c_int(
-            DWMSBT_MAINWINDOW if enabled else DWMSBT_NONE
+            DWMSBT_TRANSIENTWINDOW if enabled else DWMSBT_NONE
         )
         result = int(
             set_window_attr(
@@ -955,12 +966,18 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
         )
     native_material_applied = bool(system_backdrop_applied or acrylic_backdrop_applied)
     show_native_material = bool(enabled and native_material_applied)
-    # Keep pywebview's own transparent-window flag disabled.  On WinForms it
-    # enables a Show/Activate workaround for every navigation; that workaround
-    # is useful for pywebview's standalone transparent windows but resets the
-    # DWM/WebView2 composition surface during Sparkle page changes.  The native
-    # path below controls the two surfaces explicitly instead.
-    window.transparent = False
+    # pywebview uses ``transparent`` for a startup Show/Hide workaround.  Do
+    # not clear it while the Form is still in that startup sequence: doing so
+    # can make the first Show/Hide cycle leave the window invisible.  Once the
+    # native Form has actually been shown, clear it so later navigations do not
+    # repeat pywebview's Show/Activate workaround and disturb DWM composition.
+    native_visible = bool(getattr(native, "Visible", False))
+    initial_navigation_completed = bool(
+        window_state.get("native_initial_navigation_completed")
+    )
+    if initial_navigation_completed:
+        window.transparent = False
+        window_state["native_window_visible"] = True
 
     try:
         from System.Drawing import Color, ColorTranslator
@@ -972,6 +989,12 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
                 import System.Windows.Forms as WinForms
 
                 native.SetStyle(WinForms.ControlStyles.SupportsTransparentBackColor, True)
+                # A top-level WinForms Form has no parent to paint a
+                # transparent background from.  Opaque skips the Form's
+                # default background erase, allowing DWM's material to remain
+                # behind the transparent WebView2 child instead of exposing a
+                # white WinForms surface after a move.
+                native.SetStyle(WinForms.ControlStyles.Opaque, True)
             except Exception:
                 pass
             native.BackColor = transparent_color
@@ -986,6 +1009,7 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
                 import System.Windows.Forms as WinForms
 
                 native.SetStyle(WinForms.ControlStyles.SupportsTransparentBackColor, False)
+                native.SetStyle(WinForms.ControlStyles.Opaque, False)
             except Exception:
                 pass
             native.BackColor = ColorTranslator.FromHtml(background_color)
@@ -1025,6 +1049,7 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
                 "[native-backdrop] "
                 f"enabled={enabled} system={system_backdrop_applied} "
                 f"acrylic={acrylic_backdrop_applied} shown={show_native_material} "
+                f"visible={native_visible} initial_done={initial_navigation_completed} "
                 f"transparent={getattr(window, 'transparent', None)} "
                 f"handle={int(handle)}\n"
             )
@@ -1094,10 +1119,19 @@ def _refresh_native_frame_after_navigation(sender=None, event_args=None) -> None
         return
 
     # pywebview's own NavigationStarting handler calls Show/Activate first.
-    # This handler is registered afterwards, so the DWM frame and backdrop are
-    # restored on the same navigation event instead of waiting for startup-only
-    # shown/loaded callbacks.
-    _apply_window_caption(window, _get_window_titlebar_setting(), force=True)
+    # Mark the initial document complete only after that first navigation has
+    # really finished.  This is the safe point to disable pywebview's
+    # transparent-window Show/Activate workaround for subsequent navigations.
+    try:
+        if event_args is not None and bool(event_args.IsSuccess):
+            window_state["native_initial_navigation_completed"] = True
+    except Exception:
+        pass
+
+    # Do not clear the DWM frame margin before restoring it.  The previous
+    # force=True path briefly exposed the WinForms background on navigation
+    # and made the same white surface persistent after a window move.
+    _apply_window_caption(window, _get_window_titlebar_setting(), force=False)
     _sync_native_backdrop()
 
 
@@ -1125,10 +1159,14 @@ def _refresh_native_frame_after_layout(sender=None, event_args=None) -> None:
         return
 
     # DWM can discard the extended client frame while a frameless transparent
-    # form is being moved.  Reapply the frame and WebView2 surface after the
-    # native layout event so the transparent document never falls through to
-    # the WinForms white default background.
-    _apply_window_caption(window, _get_window_titlebar_setting(), force=True)
+    # form is being moved.  Reapply only the native corner/material state here.
+    # Re-running _apply_window_caption would first clear the DWM frame margin
+    # and briefly restore the WinForms background, which is the source of the
+    # white surface seen after a move.  Caption style changes are handled by
+    # the explicit titlebar setting path instead.
+    handle = _get_native_window_handle(window)
+    if handle is not None:
+        _apply_corner_preference(handle, _get_window_titlebar_setting())
     _sync_native_backdrop()
 
 

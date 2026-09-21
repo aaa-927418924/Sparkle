@@ -40,8 +40,8 @@
 
 (() => {
   // Shift-clicking a normal link opens the document in an external browser
-  // in Chromium. Keep Sparkle's six sidebar destinations inside the native
-  // app without touching pinned items or selection handlers elsewhere.
+  // in Chromium. Keep Sparkle's sidebar destinations inside the native app
+  // without touching pinned items or selection handlers elsewhere.
   document.addEventListener("click", (event) => {
     if (
       event.defaultPrevented ||
@@ -58,6 +58,7 @@
     }
 
     event.preventDefault();
+    window.location.assign(link.href);
   }, true);
 })();
 

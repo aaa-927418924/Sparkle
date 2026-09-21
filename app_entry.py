@@ -80,7 +80,7 @@ ONBOARDING_PAGES = {"Migration", "Setup", "Tutorial", "ExtensionGuide"}
 WINDOW_SCREEN_MARGIN = 24
 # Force a fresh top-level document after frontend changes. WebView2 keeps a
 # persistent profile, so the route itself also needs a versioned URL.
-FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1-native-backdrop-v6"
+FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1-native-backdrop-v7"
 
 # DWM system backdrop values used by Windows 11.  The native material is only
 # enabled when Windows' own transparency preference is enabled; the disabled
@@ -910,7 +910,10 @@ def _apply_native_acrylic_backdrop(handle, enabled: bool, background_color: str)
             blue = int(color[4:6], 16)
             # AccentPolicy uses an ABGR packed color. Keep the existing shell
             # tone as the native Acrylic tint; this is not an OFF fallback.
-            policy.gradient_color = (0xB0 << 24) | (blue << 16) | (green << 8) | red
+            # Keep the legacy native Acrylic fallback at roughly half of its
+            # previous backdrop contribution; the SystemBackdrop path remains
+            # the primary Windows 11 implementation.
+            policy.gradient_color = (0xD8 << 24) | (blue << 16) | (green << 8) | red
         else:
             policy.gradient_color = 0
 
@@ -967,17 +970,16 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
         )
     native_material_applied = bool(system_backdrop_applied or acrylic_backdrop_applied)
     show_native_material = bool(enabled and native_material_applied)
-    # pywebview uses ``transparent`` for a startup Show/Hide workaround.  Do
-    # not clear it while the Form is still in that startup sequence: doing so
-    # can make the first Show/Hide cycle leave the window invisible.  Once the
-    # native Form has actually been shown, clear it so later navigations do not
-    # repeat pywebview's Show/Activate workaround and disturb DWM composition.
+    # Keep pywebview's transparent flag aligned with the actual native path.
+    # Its WebView2 backend uses this flag both when creating the transparent
+    # controller and when a document navigation starts. Clearing it after the
+    # first navigation leaves later documents on the opaque controller path.
     native_visible = bool(getattr(native, "Visible", False))
     initial_navigation_completed = bool(
         window_state.get("native_initial_navigation_completed")
     )
-    if initial_navigation_completed:
-        window.transparent = False
+    window.transparent = bool(show_native_material)
+    if native_visible:
         window_state["native_window_visible"] = True
 
     try:
@@ -1022,6 +1024,28 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
                     int(background_color.lstrip("#")[4:6], 16),
                 )
 
+        # Form/WebView2 surface changes can cause DWM to rebuild the frame.
+        # Re-assert the native material after those writes so the final frame
+        # seen by the compositor is the native one, not the WinForms/WebView2
+        # default surface.
+        system_backdrop_applied = _apply_native_system_backdrop(handle, enabled)
+        if enabled:
+            if system_backdrop_applied:
+                acrylic_backdrop_applied = False
+            else:
+                acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
+                    handle, True, background_color
+                )
+        else:
+            acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
+                handle, False, background_color
+            )
+        native_material_applied = bool(
+            system_backdrop_applied or acrylic_backdrop_applied
+        )
+        show_native_material = bool(enabled and native_material_applied)
+        window.transparent = bool(show_native_material)
+
         native.Invalidate(True)
         if webview is not None:
             state = "true" if show_native_material else "false"
@@ -1031,8 +1055,13 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
             # the current document until the bridge function exists.
             webview.ExecuteScriptAsync(
                 "(function applySparkleBackdrop() {"
+                "var enabled = " + state + ";"
+                "if (document.documentElement) {"
+                "document.documentElement.classList.toggle('native-backdrop-enabled', enabled);"
+                "document.documentElement.dataset.nativeBackdrop = enabled ? 'on' : 'off';"
+                "}"
                 "if (typeof window.__sparkleSetNativeBackdrop === 'function') {"
-                "window.__sparkleSetNativeBackdrop(" + state + ");"
+                "window.__sparkleSetNativeBackdrop(enabled);"
                 "} else { window.setTimeout(applySparkleBackdrop, 50); }"
                 "})();"
             )
@@ -1120,9 +1149,8 @@ def _refresh_native_frame_after_navigation(sender=None, event_args=None) -> None
         return
 
     # pywebview's own NavigationStarting handler calls Show/Activate first.
-    # Mark the initial document complete only after that first navigation has
-    # really finished.  This is the safe point to disable pywebview's
-    # transparent-window Show/Activate workaround for subsequent navigations.
+    # Record the first successful navigation for diagnostics while keeping the
+    # transparent controller path active for subsequent documents.
     try:
         if event_args is not None and bool(event_args.IsSuccess):
             window_state["native_initial_navigation_completed"] = True
@@ -1133,6 +1161,16 @@ def _refresh_native_frame_after_navigation(sender=None, event_args=None) -> None
     # force=True path briefly exposed the WinForms background on navigation
     # and made the same white surface persistent after a window move.
     _apply_window_caption(window, _get_window_titlebar_setting(), force=False)
+    _sync_native_backdrop()
+
+
+def _refresh_native_frame_after_webview_ready(sender=None, event_args=None) -> None:
+    """Apply transparency again after WebView2 creates its controller."""
+    try:
+        if event_args is not None and not bool(event_args.IsSuccess):
+            return
+    except Exception:
+        pass
     _sync_native_backdrop()
 
 
@@ -1149,6 +1187,11 @@ def _register_native_navigation_listener(window) -> None:
         webview.NavigationStarting += _refresh_native_frame_after_navigation
         webview.NavigationCompleted += _refresh_native_frame_after_navigation
         window_state["native_navigation_listener_registered"] = True
+    except Exception:
+        pass
+
+    try:
+        webview.CoreWebView2InitializationCompleted += _refresh_native_frame_after_webview_ready
     except Exception:
         pass
 

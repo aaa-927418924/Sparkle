@@ -790,7 +790,9 @@ def _apply_dwm_backdrop_frame(handle, enabled: bool) -> None:
         pass
 
 
-def _apply_native_system_backdrop(handle, enabled: bool) -> bool:
+def _apply_native_system_backdrop(
+    handle, enabled: bool, *, redirection_alpha: bool | None = None
+) -> bool:
     """Select the native Windows material without using a CSS blur effect."""
     if handle is None or os.name != "nt":
         return False
@@ -833,12 +835,13 @@ def _apply_native_system_backdrop(handle, enabled: bool) -> bool:
         # window redirection bitmap.  Tell DWM to preserve that alpha channel so
         # transparent WebView pixels reveal the system backdrop instead of the
         # host's default client fill.
-        redirection_alpha = ctypes.c_int(1 if enabled else 0)
+        alpha_enabled = enabled if redirection_alpha is None else redirection_alpha
+        redirection_alpha_value = ctypes.c_int(1 if alpha_enabled else 0)
         set_window_attr(
             ctypes.c_void_p(handle),
             DWMWA_REDIRECTIONBITMAP_ALPHA,
-            ctypes.byref(redirection_alpha),
-            ctypes.sizeof(redirection_alpha),
+            ctypes.byref(redirection_alpha_value),
+            ctypes.sizeof(redirection_alpha_value),
         )
 
         if result == 0:
@@ -951,23 +954,24 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
         return
 
     background_color = str(getattr(window, "background_color", "#202231"))
-    system_backdrop_applied = _apply_native_system_backdrop(handle, enabled)
     if enabled:
-        # SystemBackdrop is the supported Windows 11 path.  Use the legacy
-        # Acrylic API only when that native attribute is unavailable; applying
-        # both effects to one HWND makes their client-area composition
-        # undefined and can expose the default white WebView surface.
-        acrylic_backdrop_applied = False
-        if not system_backdrop_applied:
-            acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
-                handle, True, background_color
-            )
+        # Win32 Acrylic is the reliable native material for this transparent
+        # WinForms/WebView2 surface. Clear any previous SystemBackdrop first,
+        # preserve the redirection alpha channel, and only use SystemBackdrop
+        # when Acrylic is unavailable on the current Windows runtime.
+        _apply_native_system_backdrop(handle, False, redirection_alpha=True)
+        acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
+            handle, True, background_color
+        )
+        system_backdrop_applied = False
+        if not acrylic_backdrop_applied:
+            system_backdrop_applied = _apply_native_system_backdrop(handle, True)
     else:
         # Clear a legacy Acrylic state from a previous runtime toggle while
         # preserving the existing opaque WebView path.
-        acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
-            handle, False, background_color
-        )
+        acrylic_backdrop_applied = False
+        _apply_native_acrylic_backdrop(handle, False, background_color)
+        system_backdrop_applied = _apply_native_system_backdrop(handle, False)
     native_material_applied = bool(system_backdrop_applied or acrylic_backdrop_applied)
     show_native_material = bool(enabled and native_material_applied)
     # Keep pywebview's transparent flag aligned with the actual native path.
@@ -1028,18 +1032,18 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
         # Re-assert the native material after those writes so the final frame
         # seen by the compositor is the native one, not the WinForms/WebView2
         # default surface.
-        system_backdrop_applied = _apply_native_system_backdrop(handle, enabled)
         if enabled:
-            if system_backdrop_applied:
-                acrylic_backdrop_applied = False
-            else:
-                acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
-                    handle, True, background_color
-                )
-        else:
+            _apply_native_system_backdrop(handle, False, redirection_alpha=True)
             acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
-                handle, False, background_color
+                handle, True, background_color
             )
+            system_backdrop_applied = False
+            if not acrylic_backdrop_applied:
+                system_backdrop_applied = _apply_native_system_backdrop(handle, True)
+        else:
+            acrylic_backdrop_applied = False
+            _apply_native_acrylic_backdrop(handle, False, background_color)
+            system_backdrop_applied = _apply_native_system_backdrop(handle, False)
         native_material_applied = bool(
             system_backdrop_applied or acrylic_backdrop_applied
         )

@@ -863,6 +863,26 @@ body:not(.note-editor-page) .editor-textarea {
   margin-bottom: 28px;
 }
 
+/* Keep the home search field slightly higher and leave an exact 28px gap
+   before the category row. */
+.home-page .sticky-header {
+  padding-top: 28px;
+}
+
+.home-page .topbar {
+  margin-bottom: 0;
+}
+
+.home-page .heading-row {
+  min-height: 0;
+  margin: 0;
+}
+
+.home-page .categories,
+.home-page #categories {
+  margin-top: 28px;
+}
+
 @media (max-width: 900px) {
   :root {
     --shell-sidebar-edge: 216px;
@@ -1408,6 +1428,14 @@ body.native-titlebar .window-resize-handle {
   object-fit: contain;
   filter: brightness(0) invert(1);
   opacity: 1;
+}
+
+/* The home-specific icon rules are more specific than the shared size rule. */
+.home-page .side-btn.active .sidebar-page-icon,
+.home-page .side-btn:not(.active) .sidebar-page-icon {
+  width: 14px;
+  height: 14px;
+  flex-basis: 14px;
 }
 
 .sidebar-tools,

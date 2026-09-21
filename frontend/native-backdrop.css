@@ -1,7 +1,9 @@
 /*
  * Keep the native material visible through cached copies of codex-shell.css.
  * The OFF path is untouched because every rule is gated by the native host
- * class. The RGB values remain the existing Sparkle shell palette.
+ * class. The titlebar and sidebar share the same shell RGB token; only the
+ * titlebar alpha compensates for the different DWM backdrop sample at the
+ * top frame while both surfaces remain translucent.
  */
 html.native-backdrop-enabled,
 html.native-backdrop-enabled body,
@@ -9,12 +11,15 @@ html.native-backdrop-enabled .layout {
   background: transparent !important;
 }
 
-html.native-backdrop-enabled .app-titlebar,
+html.native-backdrop-enabled .app-titlebar {
+  background: rgba(var(--native-shell-color-rgb), var(--native-titlebar-alpha)) !important;
+}
+
 html.native-backdrop-enabled .sidebar,
 html.native-backdrop-enabled .home-page .sidebar,
 html.native-backdrop-enabled .notes-page .sidebar,
 html.native-backdrop-enabled .sidebar.sidebar--index {
-  background: rgba(32, 34, 49, 0.50) !important;
+  background: rgba(var(--native-shell-color-rgb), var(--native-sidebar-alpha)) !important;
 }
 
 html.native-backdrop-enabled .main,
@@ -28,7 +33,10 @@ html.native-backdrop-enabled body.home-page .main {
   background: rgba(36, 39, 58, 0.35) !important;
 }
 
-html.native-backdrop-enabled body.home-page .sidebar,
+html.native-backdrop-enabled body.home-page .sidebar {
+  background: rgba(var(--native-shell-color-rgb), var(--native-sidebar-alpha)) !important;
+}
+
 html.native-backdrop-enabled body.home-page .app-titlebar {
-  background: rgba(32, 34, 49, 0.50) !important;
+  background: rgba(var(--native-shell-color-rgb), var(--native-titlebar-alpha)) !important;
 }

@@ -302,9 +302,21 @@ class FrontendInteractionTests(unittest.TestCase):
         native_source = shell_css[shell_css.index("html.native-backdrop-enabled,"):]
 
         self.assertIn("--native-window-corner-radius: 8px;", shell_css)
+        self.assertIn("--native-shell-color-rgb: 32, 34, 49;", shell_css)
+        self.assertIn("--native-sidebar-alpha: 0.50;", shell_css)
+        self.assertIn("--native-titlebar-alpha: 0.66;", shell_css)
         self.assertIn("border-radius: var(--native-window-corner-radius);", native_source)
         self.assertIn("border-top-left-radius: var(--native-window-corner-radius);", native_source)
         self.assertIn("border-top-right-radius: var(--native-window-corner-radius);", native_source)
+        self.assertIn(
+            "background: rgba(var(--native-shell-color-rgb), var(--native-titlebar-alpha)) !important;",
+            native_source,
+        )
+        self.assertIn(
+            "background: rgba(var(--native-shell-color-rgb), var(--native-sidebar-alpha)) !important;",
+            native_source,
+        )
+        self.assertNotIn("background: var(--sidebar-bg) !important;", native_source)
         self.assertIn(
             "border-radius: var(--native-window-corner-radius) 0 0 var(--native-window-corner-radius);",
             native_source,
@@ -322,6 +334,17 @@ class FrontendInteractionTests(unittest.TestCase):
             self.assertNotIn("0 0 8px rgba(0,0,0,0.04)", source)
             self.assertNotIn("-1px 4px 7.6px rgba(0, 0, 0, 0.25)", source)
 
+        native_backdrop_css = (ROOT / "frontend" / "native-backdrop.css").read_text(encoding="utf-8")
+        self.assertIn(
+            "background: rgba(var(--native-shell-color-rgb), var(--native-titlebar-alpha)) !important;",
+            native_backdrop_css,
+        )
+        self.assertIn(
+            "background: rgba(var(--native-shell-color-rgb), var(--native-sidebar-alpha)) !important;",
+            native_backdrop_css,
+        )
+        self.assertNotIn("background: var(--sidebar-bg) !important;", native_backdrop_css)
+
         for page in (
             "index.html",
             "notes.html",
@@ -335,7 +358,7 @@ class FrontendInteractionTests(unittest.TestCase):
             "extension-guide.html",
         ):
             html = (ROOT / "frontend" / page).read_text(encoding="utf-8")
-            self.assertIn("native-backdrop-v8", html)
+            self.assertIn("native-backdrop-v9", html)
 
     def test_sidebar_rejects_horizontal_overflow_and_touch_pan(self):
         source = (ROOT / "frontend" / "codex-shell.css").read_text(encoding="utf-8")

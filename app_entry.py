@@ -1595,6 +1595,11 @@ def main() -> None:
         window_ref["window"] = window
         window.events.loaded += _attach_native_drop_listener
         window.events.loaded += _apply_native_chrome
+        # pywebview fires ``loaded`` from its JS bridge thread.  On some
+        # WebView2 startup paths that event can arrive before the WinForms
+        # handle has finished being shown, so repeat the native backdrop sync
+        # from the guaranteed native ``shown`` event as well.
+        window.events.shown += _apply_native_chrome
         window.events.loaded += _focus_native_webview
         window.events.closing += _on_window_closing
 

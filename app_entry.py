@@ -80,7 +80,7 @@ ONBOARDING_PAGES = {"Migration", "Setup", "Tutorial", "ExtensionGuide"}
 WINDOW_SCREEN_MARGIN = 24
 # Force a fresh top-level document after frontend changes. WebView2 keeps a
 # persistent profile, so the route itself also needs a versioned URL.
-FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1-native-backdrop-v2"
+FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1-native-backdrop-v3"
 
 # DWM system backdrop values used by Windows 11.  The native material is only
 # enabled when Windows' own transparency preference is enabled; the disabled
@@ -143,6 +143,7 @@ window_state = {
     "native_titlebar_handle": None,
     "native_backdrop_enabled": None,
     "native_backdrop_handle": None,
+    "native_navigation_listener_registered": False,
     "transparency_listener_registered": False,
 }
 native_drop_condition = threading.Condition()
@@ -825,6 +826,11 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
 
     native_material_applied = _apply_native_system_backdrop(handle, enabled)
     show_native_material = bool(enabled and native_material_applied)
+    # pywebview checks this flag inside its NavigationStarting handler. Keep it
+    # synchronized with the actual native material so a transparency toggle
+    # does not leave the transparent-window navigation path active after the
+    # existing opaque background has been restored.
+    window.transparent = show_native_material
 
     try:
         from System.Drawing import Color, ColorTranslator
@@ -928,6 +934,37 @@ def _register_windows_transparency_listener() -> None:
 
         SystemEvents.UserPreferenceChanged += _on_windows_user_preference_changed
         window_state["transparency_listener_registered"] = True
+    except Exception:
+        pass
+
+
+def _refresh_native_frame_after_navigation(sender=None, event_args=None) -> None:
+    """Reapply the native frame after pywebview re-shows a transparent form."""
+    window = window_ref.get("window")
+    if window is None:
+        return
+
+    # pywebview's own NavigationStarting handler calls Show/Activate first.
+    # This handler is registered afterwards, so the DWM frame and backdrop are
+    # restored on the same navigation event instead of waiting for startup-only
+    # shown/loaded callbacks.
+    _apply_window_caption(window, _get_window_titlebar_setting(), force=True)
+    _sync_native_backdrop()
+
+
+def _register_native_navigation_listener(window) -> None:
+    if window is None or window_state.get("native_navigation_listener_registered"):
+        return
+
+    native = getattr(window, "native", None)
+    webview = _get_native_webview_control(native)
+    if webview is None:
+        return
+
+    try:
+        webview.NavigationStarting += _refresh_native_frame_after_navigation
+        webview.NavigationCompleted += _refresh_native_frame_after_navigation
+        window_state["native_navigation_listener_registered"] = True
     except Exception:
         pass
 
@@ -1399,6 +1436,7 @@ def _apply_native_chrome() -> None:
     # Reapply the frame margin and corner preference after that show cycle so
     # page changes cannot leave a stale titlebar or square client corner.
     _apply_window_caption(window, _get_window_titlebar_setting(), force=True)
+    _register_native_navigation_listener(window)
     _register_windows_transparency_listener()
     _sync_native_backdrop()
     _schedule_native_backdrop_sync()

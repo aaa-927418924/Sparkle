@@ -173,6 +173,11 @@ native_drop_paths = []
 native_drop_document = None
 native_drop_targets = []
 
+# Native transparency is intentionally disabled at its feature gate.  Keep
+# the native backdrop implementation intact so it can be re-enabled without
+# changing the DWM/WebView2 code path.
+NATIVE_TRANSPARENCY_FEATURE_ENABLED = False
+
 
 def _is_windows_transparency_enabled() -> bool:
     """Return Windows 11's user preference for translucent system surfaces.
@@ -181,6 +186,9 @@ def _is_windows_transparency_enabled() -> bool:
     missing value means the Windows default, which is enabled; read failures
     remain conservative and keep the existing opaque application surface.
     """
+    if not NATIVE_TRANSPARENCY_FEATURE_ENABLED:
+        return False
+
     if os.name != "nt":
         return False
 

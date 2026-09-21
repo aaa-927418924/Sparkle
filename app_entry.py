@@ -157,6 +157,7 @@ window_state = {
     "native_surface_ready": False,
     "native_document_script_id": None,
     "native_document_script_core": None,
+    "native_document_script_core_key": None,
     "native_document_script_pending": False,
     "native_document_script_desired": False,
     "native_navigation_listener_registered": False,
@@ -948,6 +949,15 @@ def _get_core_webview2(webview):
         return None
 
 
+def _get_core_webview2_key(core):
+    if core is None:
+        return None
+    try:
+        return int(core.GetHashCode())
+    except Exception:
+        return str(core)
+
+
 def _sync_native_document_class(webview, enabled: bool) -> None:
     """Update the already loaded document without changing its navigation."""
     if webview is None:
@@ -973,6 +983,7 @@ def _install_native_document_script(window, enabled: bool) -> bool:
     native = getattr(window, "native", None) if window is not None else None
     webview = _get_native_webview_control(native)
     core = _get_core_webview2(webview)
+    core_key = _get_core_webview2_key(core)
     window_state["native_document_script_desired"] = bool(enabled)
     if core is None:
         return False
@@ -987,10 +998,14 @@ def _install_native_document_script(window, enabled: bool) -> bool:
                 pass
         window_state["native_document_script_id"] = None
         window_state["native_document_script_core"] = None
+        window_state["native_document_script_core_key"] = None
         window_state["native_document_script_pending"] = False
         return True
 
-    if previous_core is core and (previous_id or window_state.get("native_document_script_pending")):
+    if (
+        window_state.get("native_document_script_core_key") == core_key
+        and (previous_id or window_state.get("native_document_script_pending"))
+    ):
         return True
 
     if previous_core is not None and previous_id:
@@ -1026,6 +1041,7 @@ def _install_native_document_script(window, enabled: bool) -> bool:
                 return
             window_state["native_document_script_id"] = script_id
             window_state["native_document_script_core"] = core
+            window_state["native_document_script_core_key"] = core_key
 
         try:
             from System import Action, String

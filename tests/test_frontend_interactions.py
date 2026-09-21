@@ -297,6 +297,46 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertNotIn('data-nav="memo"] .icon-nav', shell_css)
         self.assertNotIn('data-nav="projects"] .icon-nav', shell_css)
 
+    def test_native_backdrop_matches_window_corners_and_removes_sidebar_shadow(self):
+        shell_css = (ROOT / "frontend" / "codex-shell.css").read_text(encoding="utf-8")
+        native_source = shell_css[shell_css.index("html.native-backdrop-enabled,"):]
+
+        self.assertIn("--native-window-corner-radius: 8px;", shell_css)
+        self.assertIn("border-radius: var(--native-window-corner-radius);", native_source)
+        self.assertIn("border-top-left-radius: var(--native-window-corner-radius);", native_source)
+        self.assertIn("border-top-right-radius: var(--native-window-corner-radius);", native_source)
+        self.assertIn(
+            "border-radius: var(--native-window-corner-radius) 0 0 var(--native-window-corner-radius);",
+            native_source,
+        )
+        self.assertIn("box-shadow: none;", native_source)
+
+        for relative_path in (
+            "frontend/codex-shell.css",
+            "frontend/home-figma.css",
+            "frontend/notes-figma.css",
+            "frontend/style.css",
+        ):
+            source = (ROOT / relative_path).read_text(encoding="utf-8")
+            self.assertNotIn("0 14px 36px rgba(0, 0, 0, 0.16)", source)
+            self.assertNotIn("0 0 8px rgba(0,0,0,0.04)", source)
+            self.assertNotIn("-1px 4px 7.6px rgba(0, 0, 0, 0.25)", source)
+
+        for page in (
+            "index.html",
+            "notes.html",
+            "projects.html",
+            "note-editor.html",
+            "profile.html",
+            "settings.html",
+            "migration.html",
+            "setup.html",
+            "tutorial.html",
+            "extension-guide.html",
+        ):
+            html = (ROOT / "frontend" / page).read_text(encoding="utf-8")
+            self.assertIn("native-backdrop-v8", html)
+
     def test_sidebar_rejects_horizontal_overflow_and_touch_pan(self):
         source = (ROOT / "frontend" / "codex-shell.css").read_text(encoding="utf-8")
         shell_rules = source[source.index("/* Expanded navigation:"):]

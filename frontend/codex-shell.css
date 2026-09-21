@@ -17,6 +17,7 @@
   --app-titlebar-height: 32px;
   --shell-sidebar-edge: 240px;
   --shell-main-corner-radius: 18px;
+  --native-window-corner-radius: 8px;
   --shadow: 0 16px 42px rgba(0, 0, 0, 0.24);
   color-scheme: dark;
 }
@@ -101,7 +102,6 @@ a {
   border: 1px solid var(--border);
   border-radius: 18px;
   background: var(--sidebar-bg);
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
@@ -824,7 +824,6 @@ body:not(.note-editor-page) .editor-textarea {
   border: 1px solid var(--border);
   border-radius: 18px;
   background: var(--sidebar-bg);
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16);
 }
 
 .home-page .side-btn,
@@ -2326,15 +2325,15 @@ html.native-backdrop-enabled,
 html.native-backdrop-enabled body {
   /* The native material is the only background behind the shell surfaces. */
   background: transparent !important;
-  border-radius: var(--shell-main-corner-radius);
+  border-radius: var(--native-window-corner-radius);
   overflow: hidden;
 }
 
 html.native-backdrop-enabled .app-titlebar {
   /* One tint layer only; the document and layout below remain transparent. */
   background: rgba(32, 34, 49, 0.50) !important;
-  border-top-left-radius: var(--shell-main-corner-radius);
-  border-top-right-radius: var(--shell-main-corner-radius);
+  border-top-left-radius: var(--native-window-corner-radius);
+  border-top-right-radius: var(--native-window-corner-radius);
   overflow: hidden;
 }
 
@@ -2347,6 +2346,9 @@ html.native-backdrop-enabled .home-page .sidebar,
 html.native-backdrop-enabled .notes-page .sidebar,
 html.native-backdrop-enabled .sidebar.sidebar--index {
   background: rgba(32, 34, 49, 0.50) !important;
+  border-radius: var(--native-window-corner-radius) 0 0 var(--native-window-corner-radius);
+  box-shadow: none;
+  overflow: hidden;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }

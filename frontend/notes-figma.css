@@ -44,7 +44,6 @@ html[data-theme="dark"] .notes-page {
   gap: 6px;
   border-radius: 14px;
   background: var(--notes-sidebar);
-  box-shadow: -1px 4px 7.6px rgba(0, 0, 0, 0.25);
   overflow-y: auto;
   scrollbar-width: none;
 }

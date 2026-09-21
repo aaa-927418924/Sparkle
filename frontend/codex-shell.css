@@ -863,10 +863,13 @@ body:not(.note-editor-page) .editor-textarea {
   margin-bottom: 28px;
 }
 
-/* Keep the home search field slightly higher and leave an exact 28px gap
-   before the category row. */
+/* Keep the home header in normal document flow. The category row follows the
+   search field through the header's explicit 24px bottom padding. */
 .home-page .sticky-header {
+  position: static;
+  top: auto;
   padding-top: 28px;
+  padding-bottom: 24px;
 }
 
 .home-page .topbar {
@@ -880,7 +883,16 @@ body:not(.note-editor-page) .editor-textarea {
 
 .home-page .categories,
 .home-page #categories {
-  margin-top: 28px;
+  margin-top: 0;
+}
+
+.home-page .sticky-header::before,
+.home-page .sticky-header::after,
+.home-page .sticky-header.scrolled::before,
+.home-page .sticky-header.scrolled::after,
+.home-page .sticky-header.scrolled {
+  display: none;
+  box-shadow: none;
 }
 
 @media (max-width: 900px) {
@@ -967,6 +979,12 @@ body:not(.note-editor-page) .editor-textarea {
     min-width: 0;
     flex: 1 1 160px;
   }
+}
+
+/* The mobile shorthand above must not remove the intentional 24px gap. */
+.home-page .sticky-header {
+  padding-top: 28px;
+  padding-bottom: 24px;
 }
 
 @media (prefers-reduced-motion: reduce) {

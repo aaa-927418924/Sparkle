@@ -24,7 +24,6 @@ const els = {
   sortSelect: $("sortSelect"),
   categories: $("categories"),
   grid: $("grid"),
-  gridWrap: $("gridWrap"),
   empty: $("empty"),
   activeTag: $("activeTag"),
   fileSaveMethod: $("fileSaveMethod"),
@@ -1369,28 +1368,6 @@ window.addEventListener("blur", () => {
   els.search.blur();
   closeSortDropdown();
 });
-
-// スティッキーヘッダー スクロール検出 — グリッドがヘッダー裏に隠れたらオーバーレイ
-(function() {
-  const header = document.getElementById("stickyHeader");
-  const gridWrap = document.getElementById("gridWrap");
-  if (!header || !gridWrap) return;
-  const check = () => {
-    const hb = header.getBoundingClientRect().bottom;
-    const gt = gridWrap.getBoundingClientRect().top;
-    const isScrolled = document.body.scrollTop > 8 || window.scrollY > 8;
-    const wasScrolled = header.classList.contains("scrolled");
-    header.classList.toggle("scrolled", isScrolled);
-    document.body.classList.toggle("page-scrolled", isScrolled);
-    if (isScrolled) {
-      closeSortDropdown();
-      els.sortSelect.blur();
-    }
-  };
-  window.addEventListener("scroll", check, { passive: true });
-  document.body.addEventListener("scroll", check, { passive: true });
-  check();
-})();
 
 // イベント
 els.search.addEventListener("input", (e) => {

@@ -149,6 +149,7 @@ window_state = {
     "native_system_backdrop_applied": None,
     "native_acrylic_backdrop_applied": None,
     "native_navigation_listener_registered": False,
+    "native_layout_listener_registered": False,
     "transparency_listener_registered": False,
 }
 native_drop_condition = threading.Condition()
@@ -1079,6 +1080,49 @@ def _register_native_navigation_listener(window) -> None:
         pass
 
 
+def _refresh_native_frame_after_layout(sender=None, event_args=None) -> None:
+    """Restore the native material after WinForms moves or resizes the form."""
+    window = window_ref.get("window")
+    if window is None:
+        return
+
+    # DWM can discard the extended client frame while a frameless transparent
+    # form is being moved.  Reapply the frame and WebView2 surface after the
+    # native layout event so the transparent document never falls through to
+    # the WinForms white default background.
+    _apply_window_caption(window, _get_window_titlebar_setting(), force=True)
+    _sync_native_backdrop()
+
+
+def _register_native_layout_listener(window) -> None:
+    """Reapply the native frame whenever the WinForms host changes geometry."""
+    if window is None or window_state.get("native_layout_listener_registered"):
+        return
+
+    native = getattr(window, "native", None)
+    if native is None:
+        return
+
+    attached = False
+    try:
+        native.Move += _refresh_native_frame_after_layout
+        attached = True
+    except Exception:
+        pass
+    try:
+        native.ResizeEnd += _refresh_native_frame_after_layout
+        attached = True
+    except Exception:
+        pass
+    try:
+        native.DpiChanged += _refresh_native_frame_after_layout
+        attached = True
+    except Exception:
+        pass
+
+    window_state["native_layout_listener_registered"] = attached
+
+
 def _apply_corner_preference(handle, native_titlebar: bool) -> None:
     """Round the corners of a frameless window (Windows 11+).
 
@@ -1547,6 +1591,7 @@ def _apply_native_chrome() -> None:
     # page changes cannot leave a stale titlebar or square client corner.
     _apply_window_caption(window, _get_window_titlebar_setting(), force=True)
     _register_native_navigation_listener(window)
+    _register_native_layout_listener(window)
     _register_windows_transparency_listener()
     _sync_native_backdrop()
     _schedule_native_backdrop_sync()

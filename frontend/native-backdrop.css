@@ -51,5 +51,5 @@ html.native-backdrop-enabled .main,
 html.native-backdrop-enabled .home-page .main,
 html.native-backdrop-enabled .notes-page .main.notes-main,
 html.native-backdrop-enabled .editor-main {
-  border-top-left-radius: var(--shell-main-corner-radius);
+  border-top-left-radius: 0;
 }

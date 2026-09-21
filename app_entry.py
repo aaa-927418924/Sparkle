@@ -626,7 +626,7 @@ def _place_restored_window_at_cursor(window, maximized_geometry, restored_geomet
         return restored_geometry
 
 
-def _apply_window_caption(window, native_titlebar: bool) -> None:
+def _apply_window_caption(window, native_titlebar: bool, force: bool = False) -> None:
     """Show or hide the Windows caption bar on a frameless window."""
     if os.name != "nt":
         return
@@ -637,6 +637,8 @@ def _apply_window_caption(window, native_titlebar: bool) -> None:
 
     handle_key = int(handle)
     if (
+        not force
+        and
         window_state.get("native_titlebar") is bool(native_titlebar)
         and window_state.get("native_titlebar_handle") == handle_key
     ):
@@ -907,7 +909,7 @@ def _schedule_native_backdrop_sync() -> None:
     if os.name != "nt":
         return
 
-    for delay in (0.05, 0.25, 0.75):
+    for delay in (0.1, 0.5, 1.5, 3.0, 5.0):
         timer = threading.Timer(delay, _sync_native_backdrop)
         timer.daemon = True
         timer.start()
@@ -1393,7 +1395,10 @@ def _apply_native_chrome() -> None:
     window = window_ref.get("window")
     if window is None:
         return
-    _apply_window_caption(window, _get_window_titlebar_setting())
+    # pywebview re-shows a transparent WinForms window at navigation start.
+    # Reapply the frame margin and corner preference after that show cycle so
+    # page changes cannot leave a stale titlebar or square client corner.
+    _apply_window_caption(window, _get_window_titlebar_setting(), force=True)
     _register_windows_transparency_listener()
     _sync_native_backdrop()
     _schedule_native_backdrop_sync()

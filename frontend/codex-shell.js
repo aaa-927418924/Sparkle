@@ -88,9 +88,10 @@
 
   async function syncNativeBackdropWhenReady() {
     // The first document can reach DOMContentLoaded before pywebview has
-    // attached its bridge. Retry briefly so the initial page and later full
-    // document navigations use the same native backdrop state.
-    for (let attempt = 0; attempt < 20; attempt += 1) {
+    // attached its bridge. Retry through the first WebView2 startup window so
+    // the initial page and later full document navigations use the same native
+    // backdrop state.
+    for (let attempt = 0; attempt < 120; attempt += 1) {
       if (await syncNativeBackdrop()) return;
       await new Promise((resolve) => window.setTimeout(resolve, 50));
     }

@@ -755,6 +755,32 @@ def _apply_dwm_frame_margin(handle, native_titlebar: bool) -> None:
         pass
 
 
+def _apply_dwm_backdrop_frame(handle, enabled: bool) -> None:
+    """Expose the DWM material through the full client area when enabled."""
+    if handle is None or os.name != "nt":
+        return
+
+    try:
+        import ctypes
+
+        dwmapi = ctypes.WinDLL("dwmapi")
+        extend_frame = ctypes.WINFUNCTYPE(
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_long),
+        )(("DwmExtendFrameIntoClientArea", dwmapi))
+        margin_value = -1 if enabled else 0
+        margins = (ctypes.c_long * 4)(
+            margin_value,
+            margin_value,
+            margin_value,
+            margin_value,
+        )
+        extend_frame(ctypes.c_void_p(handle), margins)
+    except Exception:
+        pass
+
+
 def _apply_native_system_backdrop(handle, enabled: bool) -> bool:
     """Select the native Windows material without using a CSS blur effect."""
     if handle is None or os.name != "nt":
@@ -763,6 +789,7 @@ def _apply_native_system_backdrop(handle, enabled: bool) -> bool:
     try:
         import ctypes
 
+        _apply_dwm_backdrop_frame(handle, enabled)
         dwmapi = ctypes.WinDLL("dwmapi")
         set_window_attr = ctypes.WINFUNCTYPE(
             ctypes.c_long,

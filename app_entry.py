@@ -155,6 +155,7 @@ window_state = {
     "native_acrylic_backdrop_applied": None,
     "native_surface_mode": None,
     "native_surface_ready": False,
+    "native_dwm_diagnostics": {},
     "native_document_script_id": None,
     "native_document_script_core": None,
     "native_document_script_core_key": None,
@@ -748,6 +749,33 @@ def _apply_window_style(handle, mutate_style) -> None:
         pass
 
 
+def _native_exception_text(error) -> str:
+    try:
+        detail = str(error).replace("\r", " ").replace("\n", " ").replace("|", "/")
+        return f"{type(error).__name__}:{detail[:240]}"
+    except Exception:
+        return type(error).__name__
+
+
+def _native_value_text(value) -> str:
+    if value is None:
+        return "none"
+    try:
+        return str(value).replace("\r", " ").replace("\n", " ").replace("|", "/")[:180]
+    except Exception as error:
+        return _native_exception_text(error)
+
+
+def _native_hresult_text(value) -> str:
+    if value is None:
+        return "none"
+    try:
+        signed = int(value)
+        return f"0x{signed & 0xFFFFFFFF:08X}/{signed}"
+    except Exception:
+        return _native_exception_text(value)
+
+
 def _apply_dwm_frame_margin(handle, native_titlebar: bool) -> None:
     """Zero/recover the DWM glass frame margin on a frameless window.
 
@@ -776,10 +804,10 @@ def _apply_dwm_frame_margin(handle, native_titlebar: bool) -> None:
         pass
 
 
-def _apply_dwm_backdrop_frame(handle, enabled: bool) -> None:
+def _apply_dwm_backdrop_frame(handle, enabled: bool):
     """Expose the DWM material through the full client area when enabled."""
     if handle is None or os.name != "nt":
-        return
+        return None
 
     try:
         import ctypes
@@ -797,9 +825,59 @@ def _apply_dwm_backdrop_frame(handle, enabled: bool) -> None:
             margin_value,
             margin_value,
         )
-        extend_frame(ctypes.c_void_p(handle), margins)
-    except Exception:
-        pass
+        result = int(extend_frame(ctypes.c_void_p(handle), margins))
+        window_state["native_dwm_extend_hr"] = result
+        window_state["native_dwm_extend_error"] = None
+        return result
+    except Exception as error:
+        window_state["native_dwm_extend_hr"] = None
+        window_state["native_dwm_extend_error"] = _native_exception_text(error)
+        return None
+
+
+def _read_native_backdrop_attributes(handle) -> dict:
+    """Read back the DWM material attributes for runtime diagnostics."""
+    result = {
+        "attr38_hr": None,
+        "attr38_value": None,
+        "attr39_hr": None,
+        "attr39_value": None,
+        "error": None,
+    }
+    if handle is None or os.name != "nt":
+        return result
+
+    try:
+        import ctypes
+
+        dwmapi = ctypes.WinDLL("dwmapi")
+        get_window_attr = ctypes.WINFUNCTYPE(
+            ctypes.c_long,
+            ctypes.c_void_p,
+            ctypes.c_uint,
+            ctypes.c_void_p,
+            ctypes.c_uint,
+        )(("DwmGetWindowAttribute", dwmapi))
+        hwnd = ctypes.c_void_p(handle)
+        for attribute, hr_key, value_key in (
+            (DWMWA_SYSTEMBACKDROP_TYPE, "attr38_hr", "attr38_value"),
+            (DWMWA_REDIRECTIONBITMAP_ALPHA, "attr39_hr", "attr39_value"),
+        ):
+            value = ctypes.c_int()
+            hresult = int(
+                get_window_attr(
+                    hwnd,
+                    attribute,
+                    ctypes.byref(value),
+                    ctypes.sizeof(value),
+                )
+            )
+            result[hr_key] = hresult
+            if hresult == 0:
+                result[value_key] = int(value.value)
+    except Exception as error:
+        result["error"] = _native_exception_text(error)
+    return result
 
 
 def _apply_native_system_backdrop(
@@ -816,7 +894,7 @@ def _apply_native_system_backdrop(
         # into the client region. Extend the frame over the full window while
         # the native material is enabled so transparent WebView2 pixels reveal
         # the system backdrop. Clear the extension on the existing opaque path.
-        _apply_dwm_backdrop_frame(handle, enabled)
+        extend_result = _apply_dwm_backdrop_frame(handle, enabled)
         dwmapi = ctypes.WinDLL("dwmapi")
         set_window_attr = ctypes.WINFUNCTYPE(
             ctypes.c_long,
@@ -834,7 +912,7 @@ def _apply_native_system_backdrop(
         backdrop_value = ctypes.c_int(
             DWMSBT_TRANSIENTWINDOW if enabled else DWMSBT_NONE
         )
-        result = int(
+        attr38_result = int(
             set_window_attr(
                 ctypes.c_void_p(handle),
                 DWMWA_SYSTEMBACKDROP_TYPE,
@@ -849,20 +927,37 @@ def _apply_native_system_backdrop(
         # host's default client fill.
         alpha_enabled = enabled if redirection_alpha is None else redirection_alpha
         redirection_alpha_value = ctypes.c_int(1 if alpha_enabled else 0)
-        set_window_attr(
+        attr39_result = int(
+            set_window_attr(
             ctypes.c_void_p(handle),
             DWMWA_REDIRECTIONBITMAP_ALPHA,
             ctypes.byref(redirection_alpha_value),
             ctypes.sizeof(redirection_alpha_value),
+            )
         )
+        window_state["native_dwm_diagnostics"] = {
+            "extend_hr": extend_result,
+            "extend_error": window_state.get("native_dwm_extend_error"),
+            "attr38_hr": attr38_result,
+            "attr39_hr": attr39_result,
+            "error": None,
+        }
 
         # Do not fall back to the older Mica attribute here.  The requested
         # material is Desktop Acrylic (TRANSIENTWINDOW), and selecting Mica
         # would make the visual depend on the wallpaper instead of the window
         # behind Sparkle.  The caller can use legacy Win32 Acrylic only when
         # this SystemBackdrop call is unavailable.
-        return result == 0
-    except Exception:
+        return attr38_result == 0
+    except Exception as error:
+        previous = window_state.get("native_dwm_diagnostics") or {}
+        window_state["native_dwm_diagnostics"] = {
+            "extend_hr": previous.get("extend_hr", window_state.get("native_dwm_extend_hr")),
+            "extend_error": previous.get("extend_error", window_state.get("native_dwm_extend_error")),
+            "attr38_hr": previous.get("attr38_hr"),
+            "attr39_hr": previous.get("attr39_hr"),
+            "error": _native_exception_text(error),
+        }
         return False
 
 
@@ -1076,7 +1171,9 @@ def _reassert_native_material(window) -> None:
         _apply_dwm_frame_margin(handle, _get_window_titlebar_setting())
 
 
-def _apply_native_backdrop(window, enabled: bool) -> None:
+def _apply_native_backdrop(
+    window, enabled: bool, diagnostic_phase: str = "sync"
+) -> None:
     """Apply one native material and keep the WebView2 surface in that state."""
     if window is None or os.name != "nt":
         return
@@ -1157,7 +1254,28 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
     if webview is not None and not window_state.get("native_surface_ready"):
         surface_changed = True
 
+    surface_errors = []
+    surface_backcolor_before = None
+    surface_backcolor_after = None
+    webview_background_before = None
+    webview_background_after = None
+
+    def record_surface_error(label, error):
+        surface_errors.append(f"{label}:{_native_exception_text(error)}")
+
     try:
+        try:
+            surface_backcolor_before = _native_value_text(native.BackColor)
+        except Exception as error:
+            record_surface_error("BackColor.read-before", error)
+        if webview is not None:
+            try:
+                webview_background_before = _native_value_text(
+                    webview.DefaultBackgroundColor
+                )
+            except Exception as error:
+                record_surface_error("DefaultBackgroundColor.read-before", error)
+
         from System.Drawing import Color, ColorTranslator
 
         if surface_changed:
@@ -1165,19 +1283,47 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
                 transparent_color = Color.FromArgb(0, 0, 0, 0)
                 try:
                     import System.Windows.Forms as WinForms
+                except Exception as error:
+                    WinForms = None
+                    record_surface_error("WinForms.import", error)
 
-                    native.SetStyle(
-                        WinForms.ControlStyles.SupportsTransparentBackColor,
-                        True,
-                    )
-                    # Prevent a top-level Form erase from replacing the DWM
-                    # material with a white surface after a move.
-                    native.SetStyle(WinForms.ControlStyles.Opaque, True)
-                except Exception:
-                    pass
-                native.BackColor = transparent_color
+                if WinForms is not None:
+                    try:
+                        native.SetStyle(
+                            WinForms.ControlStyles.SupportsTransparentBackColor,
+                            True,
+                        )
+                    except Exception as error:
+                        record_surface_error("SetStyle.SupportsTransparentBackColor", error)
+                    try:
+                        # Prevent a top-level Form erase from replacing the DWM
+                        # material with a white surface after a move.
+                        native.SetStyle(WinForms.ControlStyles.Opaque, True)
+                    except Exception as error:
+                        record_surface_error("SetStyle.Opaque", error)
+                try:
+                    native.BackColor = transparent_color
+                except Exception as error:
+                    record_surface_error("BackColor.set-transparent", error)
+                try:
+                    surface_backcolor_after = _native_value_text(native.BackColor)
+                except Exception as error:
+                    record_surface_error("BackColor.read-after", error)
                 if webview is not None:
-                    webview.DefaultBackgroundColor = transparent_color
+                    try:
+                        webview.DefaultBackgroundColor = transparent_color
+                    except Exception as error:
+                        record_surface_error(
+                            "DefaultBackgroundColor.set-transparent", error
+                        )
+                    try:
+                        webview_background_after = _native_value_text(
+                            webview.DefaultBackgroundColor
+                        )
+                    except Exception as error:
+                        record_surface_error(
+                            "DefaultBackgroundColor.read-after", error
+                        )
             else:
                 # This is the original opaque path. Do not add a new OFF
                 # fallback color for the transparency feature.
@@ -1185,35 +1331,73 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
                     return
                 try:
                     import System.Windows.Forms as WinForms
+                except Exception as error:
+                    WinForms = None
+                    record_surface_error("WinForms.import", error)
 
-                    native.SetStyle(
-                        WinForms.ControlStyles.SupportsTransparentBackColor,
-                        False,
-                    )
-                    native.SetStyle(WinForms.ControlStyles.Opaque, False)
-                except Exception:
-                    pass
-                native.BackColor = ColorTranslator.FromHtml(background_color)
+                if WinForms is not None:
+                    try:
+                        native.SetStyle(
+                            WinForms.ControlStyles.SupportsTransparentBackColor,
+                            False,
+                        )
+                    except Exception as error:
+                        record_surface_error("SetStyle.SupportsTransparentBackColor", error)
+                    try:
+                        native.SetStyle(WinForms.ControlStyles.Opaque, False)
+                    except Exception as error:
+                        record_surface_error("SetStyle.Opaque", error)
+                try:
+                    opaque_color = ColorTranslator.FromHtml(background_color)
+                    native.BackColor = opaque_color
+                except Exception as error:
+                    record_surface_error("BackColor.set-opaque", error)
+                try:
+                    surface_backcolor_after = _native_value_text(native.BackColor)
+                except Exception as error:
+                    record_surface_error("BackColor.read-after", error)
                 if webview is not None:
-                    webview.DefaultBackgroundColor = Color.FromArgb(
-                        255,
-                        int(background_color.lstrip("#")[0:2], 16),
-                        int(background_color.lstrip("#")[2:4], 16),
-                        int(background_color.lstrip("#")[4:6], 16),
-                    )
+                    try:
+                        webview.DefaultBackgroundColor = Color.FromArgb(
+                            255,
+                            int(background_color.lstrip("#")[0:2], 16),
+                            int(background_color.lstrip("#")[2:4], 16),
+                            int(background_color.lstrip("#")[4:6], 16),
+                        )
+                    except Exception as error:
+                        record_surface_error(
+                            "DefaultBackgroundColor.set-opaque", error
+                        )
+                    try:
+                        webview_background_after = _native_value_text(
+                            webview.DefaultBackgroundColor
+                        )
+                    except Exception as error:
+                        record_surface_error(
+                            "DefaultBackgroundColor.read-after", error
+                        )
 
             window_state["native_surface_mode"] = surface_mode
             window_state["native_surface_ready"] = webview is not None
-            native.Invalidate(True)
+            try:
+                native.Invalidate(True)
+            except Exception as error:
+                record_surface_error("Invalidate", error)
             if show_native_material:
                 # Surface writes can rebuild the DWM frame. Reassert exactly
                 # once, without changing the controller or its transparency.
-                _reassert_native_material(window)
+                try:
+                    _reassert_native_material(window)
+                except Exception as error:
+                    record_surface_error("native-material.reassert", error)
 
-        _install_native_document_script(window, show_native_material)
-        _sync_native_document_class(webview, show_native_material)
-    except Exception:
-        pass
+        try:
+            _install_native_document_script(window, show_native_material)
+            _sync_native_document_class(webview, show_native_material)
+        except Exception as error:
+            record_surface_error("document-sync", error)
+    except Exception as error:
+        record_surface_error("surface-block", error)
 
     window_state["native_backdrop_enabled"] = show_native_material
     window_state["native_backdrop_handle"] = int(handle)
@@ -1221,15 +1405,34 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
     window_state["native_system_backdrop_applied"] = system_backdrop_applied
     window_state["native_acrylic_backdrop_applied"] = acrylic_backdrop_applied
 
+    dwm_diagnostics = window_state.get("native_dwm_diagnostics") or {}
+    dwm_readback = _read_native_backdrop_attributes(handle)
+
     try:
         with LOG_PATH.open("a", encoding="utf-8") as log:
             log.write(
                 "[native-backdrop] "
+                f"phase={diagnostic_phase} "
                 f"enabled={enabled} mode={mode} system={system_backdrop_applied} "
                 f"acrylic={acrylic_backdrop_applied} shown={show_native_material} "
                 f"surface={surface_mode} surface_changed={surface_changed} "
                 f"visible={native_visible} initial_done={initial_navigation_completed} "
                 f"transparent={getattr(window, 'transparent', None)} "
+                f"extend_hr={_native_hresult_text(dwm_diagnostics.get('extend_hr'))} "
+                f"extend_error={_native_value_text(dwm_diagnostics.get('extend_error'))} "
+                f"attr38_hr={_native_hresult_text(dwm_diagnostics.get('attr38_hr'))} "
+                f"attr39_hr={_native_hresult_text(dwm_diagnostics.get('attr39_hr'))} "
+                f"dwm_error={_native_value_text(dwm_diagnostics.get('error'))} "
+                f"read38_hr={_native_hresult_text(dwm_readback.get('attr38_hr'))} "
+                f"read38={_native_value_text(dwm_readback.get('attr38_value'))} "
+                f"read39_hr={_native_hresult_text(dwm_readback.get('attr39_hr'))} "
+                f"read39={_native_value_text(dwm_readback.get('attr39_value'))} "
+                f"readback_error={_native_value_text(dwm_readback.get('error'))} "
+                f"surface_errors={_native_value_text(';'.join(surface_errors) or 'none')} "
+                f"backcolor_before={_native_value_text(surface_backcolor_before)} "
+                f"backcolor_after={_native_value_text(surface_backcolor_after)} "
+                f"webview_bg_before={_native_value_text(webview_background_before)} "
+                f"webview_bg_after={_native_value_text(webview_background_after)} "
                 f"handle={int(handle)}\n"
             )
     except Exception:
@@ -1238,7 +1441,9 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
     return surface_changed
 
 
-def _sync_native_backdrop(*, reassert: bool = False) -> None:
+def _sync_native_backdrop(
+    *, reassert: bool = False, diagnostic_phase: str = "sync"
+) -> None:
     """Re-read the Windows preference and apply it on the WinForms UI thread."""
     window = window_ref.get("window")
     native = getattr(window, "native", None) if window is not None else None
@@ -1248,7 +1453,9 @@ def _sync_native_backdrop(*, reassert: bool = False) -> None:
     enabled = _is_windows_transparency_enabled()
 
     def apply() -> None:
-        surface_changed = _apply_native_backdrop(window, enabled)
+        surface_changed = _apply_native_backdrop(
+            window, enabled, diagnostic_phase=diagnostic_phase
+        )
         if reassert and not surface_changed:
             _reassert_native_material(window)
 
@@ -1276,7 +1483,7 @@ def _schedule_native_backdrop_sync() -> None:
 
     def sync_once() -> None:
         window_state["native_sync_timer_scheduled"] = False
-        _sync_native_backdrop(reassert=True)
+        _sync_native_backdrop(reassert=True, diagnostic_phase="startup")
 
     timer = threading.Timer(0.25, sync_once)
     timer.daemon = True
@@ -1284,7 +1491,7 @@ def _schedule_native_backdrop_sync() -> None:
 
 
 def _on_windows_user_preference_changed(sender, event_args) -> None:
-    _sync_native_backdrop()
+    _sync_native_backdrop(diagnostic_phase="preference")
 
 
 def _register_windows_transparency_listener() -> None:
@@ -1316,7 +1523,7 @@ def _refresh_native_frame_after_navigation(sender=None, event_args=None) -> None
     except Exception:
         return
 
-    _sync_native_backdrop(reassert=True)
+    _sync_native_backdrop(reassert=True, diagnostic_phase="navigation")
 
 
 def _refresh_native_frame_after_webview_ready(sender=None, event_args=None) -> None:
@@ -1326,7 +1533,7 @@ def _refresh_native_frame_after_webview_ready(sender=None, event_args=None) -> N
             return
     except Exception:
         pass
-    _sync_native_backdrop(reassert=True)
+    _sync_native_backdrop(reassert=True, diagnostic_phase="webview-ready")
 
 
 def _register_native_navigation_listener(window) -> None:
@@ -1366,7 +1573,7 @@ def _refresh_native_frame_after_layout(sender=None, event_args=None) -> None:
     handle = _get_native_window_handle(window)
     if handle is not None:
         _apply_corner_preference(handle, _get_window_titlebar_setting())
-    _sync_native_backdrop(reassert=True)
+    _sync_native_backdrop(reassert=True, diagnostic_phase="move-resize")
 
 
 def _register_native_layout_listener(window) -> None:
@@ -1791,7 +1998,7 @@ class NativeWindowApi:
         window = window_ref.get("window")
         if window is not None:
             _apply_window_caption(window, native)
-            _sync_native_backdrop(reassert=True)
+            _sync_native_backdrop(reassert=True, diagnostic_phase="titlebar")
         return native
 
     @staticmethod
@@ -1869,7 +2076,7 @@ def _apply_native_chrome() -> None:
     _register_native_navigation_listener(window)
     _register_native_layout_listener(window)
     _register_windows_transparency_listener()
-    _sync_native_backdrop(reassert=True)
+    _sync_native_backdrop(reassert=True, diagnostic_phase="startup-chrome")
     _schedule_native_backdrop_sync()
 
 

@@ -80,7 +80,7 @@ ONBOARDING_PAGES = {"Migration", "Setup", "Tutorial", "ExtensionGuide"}
 WINDOW_SCREEN_MARGIN = 24
 # Force a fresh top-level document after frontend changes. WebView2 keeps a
 # persistent profile, so the route itself also needs a versioned URL.
-FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1-native-backdrop-v7"
+FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1-native-backdrop-v8"
 
 # DWM system backdrop values used by Windows 11.  The native material is only
 # enabled when Windows' own transparency preference is enabled; the disabled
@@ -93,7 +93,6 @@ DWMSBT_MAINWINDOW = 2
 # the window.  This is still DWM-owned; the WebView only exposes the material
 # through its transparent controller surface.
 DWMSBT_TRANSIENTWINDOW = 3
-DWMWA_MICA_EFFECT = 1029
 WCA_ACCENT_POLICY = 19
 ACCENT_DISABLED = 0
 ACCENT_ENABLE_ACRYLICBLURBEHIND = 4
@@ -151,13 +150,21 @@ window_state = {
     "native_titlebar_handle": None,
     "native_backdrop_enabled": None,
     "native_backdrop_handle": None,
+    "native_backdrop_mode": None,
     "native_system_backdrop_applied": None,
     "native_acrylic_backdrop_applied": None,
+    "native_surface_mode": None,
+    "native_surface_ready": False,
+    "native_document_script_id": None,
+    "native_document_script_core": None,
+    "native_document_script_pending": False,
+    "native_document_script_desired": False,
     "native_navigation_listener_registered": False,
     "native_layout_listener_registered": False,
     "native_window_visible": False,
     "native_initial_navigation_completed": False,
     "transparency_listener_registered": False,
+    "native_sync_timer_scheduled": False,
 }
 native_drop_condition = threading.Condition()
 native_drop_paths = []
@@ -674,7 +681,11 @@ def _apply_window_caption(window, native_titlebar: bool, force: bool = False) ->
             else (style & ~(0x00C00000 | 0x00040000))
         ),
     )
-    _apply_dwm_frame_margin(handle, native_titlebar)
+    # The native backdrop owns the DWM frame extension while it is active.
+    # Avoid resetting it to the ordinary pywebview margin before the backdrop
+    # state has a chance to reassert itself.
+    if not bool(window_state.get("native_backdrop_enabled")):
+        _apply_dwm_frame_margin(handle, native_titlebar)
     _apply_corner_preference(handle, native_titlebar)
     window_state["native_titlebar"] = bool(native_titlebar)
     window_state["native_titlebar_handle"] = handle_key
@@ -844,28 +855,12 @@ def _apply_native_system_backdrop(
             ctypes.sizeof(redirection_alpha_value),
         )
 
-        if result == 0:
-            if not enabled:
-                mica_value = ctypes.c_int(0)
-                set_window_attr(
-                    ctypes.c_void_p(handle),
-                    DWMWA_MICA_EFFECT,
-                    ctypes.byref(mica_value),
-                    ctypes.sizeof(mica_value),
-                )
-            return True
-
-        # Windows 11 build 22000 used the older Mica attribute. Keep it as a
-        # native compatibility path only when the SystemBackdrop attribute is
-        # unavailable, and explicitly disable it when transparency is off.
-        mica_value = ctypes.c_int(1 if enabled else 0)
-        fallback_result = set_window_attr(
-            ctypes.c_void_p(handle),
-            DWMWA_MICA_EFFECT,
-            ctypes.byref(mica_value),
-            ctypes.sizeof(mica_value),
-        )
-        return int(fallback_result) == 0
+        # Do not fall back to the older Mica attribute here.  The requested
+        # material is Desktop Acrylic (TRANSIENTWINDOW), and selecting Mica
+        # would make the visual depend on the wallpaper instead of the window
+        # behind Sparkle.  The caller can use legacy Win32 Acrylic only when
+        # this SystemBackdrop call is unavailable.
+        return result == 0
     except Exception:
         return False
 
@@ -913,10 +908,11 @@ def _apply_native_acrylic_backdrop(handle, enabled: bool, background_color: str)
             blue = int(color[4:6], 16)
             # AccentPolicy uses an ABGR packed color. Keep the existing shell
             # tone as the native Acrylic tint; this is not an OFF fallback.
-            # Keep the legacy native Acrylic fallback at roughly half of its
-            # previous backdrop contribution; the SystemBackdrop path remains
-            # the primary Windows 11 implementation.
-            policy.gradient_color = (0xD8 << 24) | (blue << 16) | (green << 8) | red
+            # This path is only a fallback for runtimes where the Windows 11
+            # SystemBackdrop API is unavailable.  Keep its tint lighter so
+            # the behind-window Acrylic remains visible without changing the
+            # existing opaque OFF palette.
+            policy.gradient_color = (0xB8 << 24) | (blue << 16) | (green << 8) | red
         else:
             policy.gradient_color = 0
 
@@ -943,8 +939,129 @@ def _get_native_webview_control(native):
     return webview
 
 
+def _get_core_webview2(webview):
+    if webview is None:
+        return None
+    try:
+        return webview.CoreWebView2
+    except Exception:
+        return None
+
+
+def _sync_native_document_class(webview, enabled: bool) -> None:
+    """Update the already loaded document without changing its navigation."""
+    if webview is None:
+        return
+
+    state = "true" if enabled else "false"
+    try:
+        webview.ExecuteScriptAsync(
+            "(function applySparkleBackdropClass() {"
+            "var root = document.documentElement;"
+            "if (!root) return;"
+            "var enabled = " + state + ";"
+            "root.classList.toggle('native-backdrop-enabled', enabled);"
+            "root.dataset.nativeBackdrop = enabled ? 'on' : 'off';"
+            "})();"
+        )
+    except Exception:
+        pass
+
+
+def _install_native_document_script(window, enabled: bool) -> bool:
+    """Install the native-only WebView2 document bootstrap for future pages."""
+    native = getattr(window, "native", None) if window is not None else None
+    webview = _get_native_webview_control(native)
+    core = _get_core_webview2(webview)
+    window_state["native_document_script_desired"] = bool(enabled)
+    if core is None:
+        return False
+
+    previous_core = window_state.get("native_document_script_core")
+    previous_id = window_state.get("native_document_script_id")
+    if not enabled:
+        if previous_core is not None and previous_id:
+            try:
+                previous_core.RemoveScriptToExecuteOnDocumentCreated(previous_id)
+            except Exception:
+                pass
+        window_state["native_document_script_id"] = None
+        window_state["native_document_script_core"] = None
+        window_state["native_document_script_pending"] = False
+        return True
+
+    if previous_core is core and (previous_id or window_state.get("native_document_script_pending")):
+        return True
+
+    if previous_core is not None and previous_id:
+        try:
+            previous_core.RemoveScriptToExecuteOnDocumentCreated(previous_id)
+        except Exception:
+            pass
+
+    script = (
+        "(function(){"
+        "var root=document.documentElement;"
+        "if(!root)return;"
+        "root.classList.add('native-backdrop-enabled');"
+        "root.dataset.nativeBackdrop='on';"
+        "})();"
+    )
+
+    try:
+        task = core.AddScriptToExecuteOnDocumentCreatedAsync(script)
+        window_state["native_document_script_pending"] = True
+
+        def finish(completed_task):
+            window_state["native_document_script_pending"] = False
+            try:
+                script_id = str(completed_task.Result)
+            except Exception:
+                return
+            if not window_state.get("native_document_script_desired"):
+                try:
+                    core.RemoveScriptToExecuteOnDocumentCreated(script_id)
+                except Exception:
+                    pass
+                return
+            window_state["native_document_script_id"] = script_id
+            window_state["native_document_script_core"] = core
+
+        try:
+            from System import Action, String
+            from System.Threading.Tasks import Task
+
+            task.ContinueWith(Action[Task[String]](finish))
+        except Exception:
+            finish(task)
+        return True
+    except Exception:
+        window_state["native_document_script_pending"] = False
+        return False
+
+
+def _reassert_native_material(window) -> None:
+    """Reassert only the active DWM material, without touching WebView2 state."""
+    if window is None or os.name != "nt":
+        return
+
+    handle = _get_native_window_handle(window)
+    if handle is None:
+        return
+
+    mode = window_state.get("native_backdrop_mode")
+    background_color = str(getattr(window, "background_color", "#202231"))
+    if mode == "system":
+        _apply_native_system_backdrop(handle, True)
+    elif mode == "acrylic":
+        if _apply_native_acrylic_backdrop(handle, True, background_color):
+            _apply_dwm_backdrop_frame(handle, True)
+    else:
+        _apply_dwm_frame_margin(handle, _get_window_titlebar_setting())
+
+
 def _apply_native_backdrop(window, enabled: bool) -> None:
-    """Apply the native backdrop and synchronize the WebView2 surface."""
+    """Apply one native material and keep the WebView2 surface in that state."""
     if window is None or os.name != "nt":
         return
 
@@ -954,126 +1071,137 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
         return
 
     background_color = str(getattr(window, "background_color", "#202231"))
-    if enabled:
-        # Win32 Acrylic is the reliable native material for this transparent
-        # WinForms/WebView2 surface. Clear any previous SystemBackdrop first,
-        # preserve the redirection alpha channel, and only use SystemBackdrop
-        # when Acrylic is unavailable on the current Windows runtime.
-        _apply_native_system_backdrop(handle, False, redirection_alpha=True)
-        acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
-            handle, True, background_color
-        )
-        system_backdrop_applied = False
-        if not acrylic_backdrop_applied:
+    previous_enabled = window_state.get("native_backdrop_enabled")
+    previous_mode = window_state.get("native_backdrop_mode")
+    handle_changed = window_state.get("native_backdrop_handle") != int(handle)
+    state_changed = (
+        previous_enabled is None
+        or bool(previous_enabled) != bool(enabled)
+        or handle_changed
+        or previous_mode is None
+    )
+
+    system_backdrop_applied = bool(
+        window_state.get("native_system_backdrop_applied")
+    )
+    acrylic_backdrop_applied = bool(
+        window_state.get("native_acrylic_backdrop_applied")
+    )
+    mode = previous_mode or "off"
+
+    if state_changed:
+        if enabled:
+            # SystemBackdrop is the requested Desktop Acrylic material. Clear
+            # only a stale legacy fallback before selecting the active mode.
+            _apply_native_acrylic_backdrop(handle, False, background_color)
             system_backdrop_applied = _apply_native_system_backdrop(handle, True)
-    else:
-        # Clear a legacy Acrylic state from a previous runtime toggle while
-        # preserving the existing opaque WebView path.
-        acrylic_backdrop_applied = False
-        _apply_native_acrylic_backdrop(handle, False, background_color)
-        system_backdrop_applied = _apply_native_system_backdrop(handle, False)
-    native_material_applied = bool(system_backdrop_applied or acrylic_backdrop_applied)
-    show_native_material = bool(enabled and native_material_applied)
-    # Keep pywebview's transparent flag aligned with the actual native path.
-    # Its WebView2 backend uses this flag both when creating the transparent
-    # controller and when a document navigation starts. Clearing it after the
-    # first navigation leaves later documents on the opaque controller path.
+            acrylic_backdrop_applied = False
+            if system_backdrop_applied:
+                mode = "system"
+            else:
+                # Do not leave a failed SystemBackdrop frame extension behind
+                # while switching to the legacy fallback.
+                _apply_native_system_backdrop(
+                    handle, False, redirection_alpha=True
+                )
+                acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
+                    handle, True, background_color
+                )
+                if acrylic_backdrop_applied:
+                    _apply_dwm_backdrop_frame(handle, True)
+                    mode = "acrylic"
+                else:
+                    mode = "off"
+                    _apply_dwm_frame_margin(
+                        handle, _get_window_titlebar_setting()
+                    )
+        else:
+            # Clear both native implementations on the OFF transition so a
+            # previous process version cannot leave a stale material active.
+            _apply_native_acrylic_backdrop(handle, False, background_color)
+            _apply_native_system_backdrop(handle, False)
+            _apply_dwm_frame_margin(handle, _get_window_titlebar_setting())
+            system_backdrop_applied = False
+            acrylic_backdrop_applied = False
+            mode = "off"
+
+    show_native_material = bool(
+        enabled and mode in {"system", "acrylic"}
+    )
     native_visible = bool(getattr(native, "Visible", False))
     initial_navigation_completed = bool(
         window_state.get("native_initial_navigation_completed")
     )
-    window.transparent = bool(show_native_material)
     if native_visible:
         window_state["native_window_visible"] = True
+
+    webview = _get_native_webview_control(native)
+    surface_mode = "transparent" if show_native_material else "opaque"
+    surface_changed = window_state.get("native_surface_mode") != surface_mode
+    if webview is not None and not window_state.get("native_surface_ready"):
+        surface_changed = True
 
     try:
         from System.Drawing import Color, ColorTranslator
 
-        webview = _get_native_webview_control(native)
-        if show_native_material:
-            transparent_color = Color.FromArgb(0, 0, 0, 0)
-            try:
-                import System.Windows.Forms as WinForms
+        if surface_changed:
+            if show_native_material:
+                transparent_color = Color.FromArgb(0, 0, 0, 0)
+                try:
+                    import System.Windows.Forms as WinForms
 
-                native.SetStyle(WinForms.ControlStyles.SupportsTransparentBackColor, True)
-                # A top-level WinForms Form has no parent to paint a
-                # transparent background from.  Opaque skips the Form's
-                # default background erase, allowing DWM's material to remain
-                # behind the transparent WebView2 child instead of exposing a
-                # white WinForms surface after a move.
-                native.SetStyle(WinForms.ControlStyles.Opaque, True)
-            except Exception:
-                pass
-            native.BackColor = transparent_color
-            if webview is not None:
-                webview.DefaultBackgroundColor = transparent_color
-        else:
-            # This is the existing pywebview background path, not a new
-            # fallback color for transparency-disabled systems.
-            if not background_color:
-                return
-            try:
-                import System.Windows.Forms as WinForms
+                    native.SetStyle(
+                        WinForms.ControlStyles.SupportsTransparentBackColor,
+                        True,
+                    )
+                    # Prevent a top-level Form erase from replacing the DWM
+                    # material with a white surface after a move.
+                    native.SetStyle(WinForms.ControlStyles.Opaque, True)
+                except Exception:
+                    pass
+                native.BackColor = transparent_color
+                if webview is not None:
+                    webview.DefaultBackgroundColor = transparent_color
+            else:
+                # This is the original opaque path. Do not add a new OFF
+                # fallback color for the transparency feature.
+                if not background_color:
+                    return
+                try:
+                    import System.Windows.Forms as WinForms
 
-                native.SetStyle(WinForms.ControlStyles.SupportsTransparentBackColor, False)
-                native.SetStyle(WinForms.ControlStyles.Opaque, False)
-            except Exception:
-                pass
-            native.BackColor = ColorTranslator.FromHtml(background_color)
-            if webview is not None:
-                webview.DefaultBackgroundColor = Color.FromArgb(
-                    255,
-                    int(background_color.lstrip("#")[0:2], 16),
-                    int(background_color.lstrip("#")[2:4], 16),
-                    int(background_color.lstrip("#")[4:6], 16),
-                )
+                    native.SetStyle(
+                        WinForms.ControlStyles.SupportsTransparentBackColor,
+                        False,
+                    )
+                    native.SetStyle(WinForms.ControlStyles.Opaque, False)
+                except Exception:
+                    pass
+                native.BackColor = ColorTranslator.FromHtml(background_color)
+                if webview is not None:
+                    webview.DefaultBackgroundColor = Color.FromArgb(
+                        255,
+                        int(background_color.lstrip("#")[0:2], 16),
+                        int(background_color.lstrip("#")[2:4], 16),
+                        int(background_color.lstrip("#")[4:6], 16),
+                    )
 
-        # Form/WebView2 surface changes can cause DWM to rebuild the frame.
-        # Re-assert the native material after those writes so the final frame
-        # seen by the compositor is the native one, not the WinForms/WebView2
-        # default surface.
-        if enabled:
-            _apply_native_system_backdrop(handle, False, redirection_alpha=True)
-            acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
-                handle, True, background_color
-            )
-            system_backdrop_applied = False
-            if not acrylic_backdrop_applied:
-                system_backdrop_applied = _apply_native_system_backdrop(handle, True)
-        else:
-            acrylic_backdrop_applied = False
-            _apply_native_acrylic_backdrop(handle, False, background_color)
-            system_backdrop_applied = _apply_native_system_backdrop(handle, False)
-        native_material_applied = bool(
-            system_backdrop_applied or acrylic_backdrop_applied
-        )
-        show_native_material = bool(enabled and native_material_applied)
-        window.transparent = bool(show_native_material)
+            window_state["native_surface_mode"] = surface_mode
+            window_state["native_surface_ready"] = webview is not None
+            native.Invalidate(True)
+            if show_native_material:
+                # Surface writes can rebuild the DWM frame. Reassert exactly
+                # once, without changing the controller or its transparency.
+                _reassert_native_material(window)
 
-        native.Invalidate(True)
-        if webview is not None:
-            state = "true" if show_native_material else "false"
-            # The initial WebView2 document can still be installing the
-            # shell script when the native window's shown/loaded callbacks
-            # arrive. Keep the native result authoritative and retry inside
-            # the current document until the bridge function exists.
-            webview.ExecuteScriptAsync(
-                "(function applySparkleBackdrop() {"
-                "var enabled = " + state + ";"
-                "if (document.documentElement) {"
-                "document.documentElement.classList.toggle('native-backdrop-enabled', enabled);"
-                "document.documentElement.dataset.nativeBackdrop = enabled ? 'on' : 'off';"
-                "}"
-                "if (typeof window.__sparkleSetNativeBackdrop === 'function') {"
-                "window.__sparkleSetNativeBackdrop(enabled);"
-                "} else { window.setTimeout(applySparkleBackdrop, 50); }"
-                "})();"
-            )
+        _install_native_document_script(window, show_native_material)
+        _sync_native_document_class(webview, show_native_material)
     except Exception:
         pass
 
     window_state["native_backdrop_enabled"] = show_native_material
     window_state["native_backdrop_handle"] = int(handle)
+    window_state["native_backdrop_mode"] = mode
     window_state["native_system_backdrop_applied"] = system_backdrop_applied
     window_state["native_acrylic_backdrop_applied"] = acrylic_backdrop_applied
 
@@ -1081,8 +1209,9 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
         with LOG_PATH.open("a", encoding="utf-8") as log:
             log.write(
                 "[native-backdrop] "
-                f"enabled={enabled} system={system_backdrop_applied} "
+                f"enabled={enabled} mode={mode} system={system_backdrop_applied} "
                 f"acrylic={acrylic_backdrop_applied} shown={show_native_material} "
+                f"surface={surface_mode} surface_changed={surface_changed} "
                 f"visible={native_visible} initial_done={initial_navigation_completed} "
                 f"transparent={getattr(window, 'transparent', None)} "
                 f"handle={int(handle)}\n"
@@ -1090,8 +1219,10 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
     except Exception:
         pass
 
+    return surface_changed
 
-def _sync_native_backdrop() -> None:
+
+def _sync_native_backdrop(*, reassert: bool = False) -> None:
     """Re-read the Windows preference and apply it on the WinForms UI thread."""
     window = window_ref.get("window")
     native = getattr(window, "native", None) if window is not None else None
@@ -1101,7 +1232,9 @@ def _sync_native_backdrop() -> None:
     enabled = _is_windows_transparency_enabled()
 
     def apply() -> None:
-        _apply_native_backdrop(window, enabled)
+        surface_changed = _apply_native_backdrop(window, enabled)
+        if reassert and not surface_changed:
+            _reassert_native_material(window)
 
     try:
         if bool(getattr(native, "InvokeRequired", False)):
@@ -1119,14 +1252,19 @@ def _sync_native_backdrop() -> None:
 
 
 def _schedule_native_backdrop_sync() -> None:
-    """Retry the native/WebView handoff across the first-paint timing window."""
-    if os.name != "nt":
+    """Run one guarded post-show sync for the initial WebView2 handoff."""
+    if os.name != "nt" or window_state.get("native_sync_timer_scheduled"):
         return
 
-    for delay in (0.1, 0.5, 1.5, 3.0, 5.0):
-        timer = threading.Timer(delay, _sync_native_backdrop)
-        timer.daemon = True
-        timer.start()
+    window_state["native_sync_timer_scheduled"] = True
+
+    def sync_once() -> None:
+        window_state["native_sync_timer_scheduled"] = False
+        _sync_native_backdrop(reassert=True)
+
+    timer = threading.Timer(0.25, sync_once)
+    timer.daemon = True
+    timer.start()
 
 
 def _on_windows_user_preference_changed(sender, event_args) -> None:
@@ -1147,25 +1285,22 @@ def _register_windows_transparency_listener() -> None:
 
 
 def _refresh_native_frame_after_navigation(sender=None, event_args=None) -> None:
-    """Reapply the native frame after pywebview re-shows a transparent form."""
+    """Reassert the active material after a completed WebView2 navigation."""
     window = window_ref.get("window")
     if window is None:
         return
 
     # pywebview's own NavigationStarting handler calls Show/Activate first.
-    # Record the first successful navigation for diagnostics while keeping the
-    # transparent controller path active for subsequent documents.
+    # Do not touch the Form/WebView2 surface on NavigationStarting; wait until
+    # the new document has completed so it cannot be replaced by a white erase.
     try:
-        if event_args is not None and bool(event_args.IsSuccess):
-            window_state["native_initial_navigation_completed"] = True
+        if event_args is None or not bool(event_args.IsSuccess):
+            return
+        window_state["native_initial_navigation_completed"] = True
     except Exception:
-        pass
+        return
 
-    # Do not clear the DWM frame margin before restoring it.  The previous
-    # force=True path briefly exposed the WinForms background on navigation
-    # and made the same white surface persistent after a window move.
-    _apply_window_caption(window, _get_window_titlebar_setting(), force=False)
-    _sync_native_backdrop()
+    _sync_native_backdrop(reassert=True)
 
 
 def _refresh_native_frame_after_webview_ready(sender=None, event_args=None) -> None:
@@ -1175,7 +1310,7 @@ def _refresh_native_frame_after_webview_ready(sender=None, event_args=None) -> N
             return
     except Exception:
         pass
-    _sync_native_backdrop()
+    _sync_native_backdrop(reassert=True)
 
 
 def _register_native_navigation_listener(window) -> None:
@@ -1215,7 +1350,7 @@ def _refresh_native_frame_after_layout(sender=None, event_args=None) -> None:
     handle = _get_native_window_handle(window)
     if handle is not None:
         _apply_corner_preference(handle, _get_window_titlebar_setting())
-    _sync_native_backdrop()
+    _sync_native_backdrop(reassert=True)
 
 
 def _register_native_layout_listener(window) -> None:
@@ -1640,6 +1775,7 @@ class NativeWindowApi:
         window = window_ref.get("window")
         if window is not None:
             _apply_window_caption(window, native)
+            _sync_native_backdrop(reassert=True)
         return native
 
     @staticmethod
@@ -1713,11 +1849,11 @@ def _apply_native_chrome() -> None:
     # pywebview re-shows a transparent WinForms window at navigation start.
     # Reapply the frame margin and corner preference after that show cycle so
     # page changes cannot leave a stale titlebar or square client corner.
-    _apply_window_caption(window, _get_window_titlebar_setting(), force=True)
+    _apply_window_caption(window, _get_window_titlebar_setting(), force=False)
     _register_native_navigation_listener(window)
     _register_native_layout_listener(window)
     _register_windows_transparency_listener()
-    _sync_native_backdrop()
+    _sync_native_backdrop(reassert=True)
     _schedule_native_backdrop_sync()
 
 

@@ -4,6 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Chrome拡張機能の案内</title>
+    <script>
+      try {
+        if (new URLSearchParams(window.location.search).get("nativeBackdrop") === "1") {
+          document.documentElement.classList.add("native-backdrop-enabled");
+          document.documentElement.dataset.nativeBackdrop = "on";
+        }
+      } catch (e) {}
+    </script>
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-no-autocomplete-v1-black-background-v1-bg24273a-sidebar202231-v2-surface-raised-202231-v2-custom-titlebar-history-v4-fixed-compact-sidebar-v1-main-corner-v1-unified-controls-v1-flat-notes-v1-static-ui-v1-sidebar-gap-v1-notes-outline-v1-task-panel-frameless-v1-no-card-lift-v1-project-borderless-v1-memo-outline-inset-v1-note-editor-corner-v1-native-backdrop-v7" />
     <link rel="stylesheet" href="migration.css?v=migration-ui-20260802-v2" />
     <link rel="stylesheet" href="extension-guide.css?v=extension-guide-ui-20260803-debug-note-v1" />
@@ -15,6 +23,7 @@
         );
       } catch (e) {}
     </script>
+    <link rel="stylesheet" href="native-backdrop.css?v=native-backdrop-c1" />
   </head>
   <body class="migration-page extension-guide-page">
     <main class="migration-window extension-guide-window">

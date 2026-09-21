@@ -89,6 +89,9 @@ DWMWA_SYSTEMBACKDROP_TYPE = 38
 DWMSBT_NONE = 1
 DWMSBT_MAINWINDOW = 2
 DWMWA_MICA_EFFECT = 1029
+WCA_ACCENT_POLICY = 19
+ACCENT_DISABLED = 0
+ACCENT_ENABLE_ACRYLICBLURBEHIND = 4
 
 
 def _get_port() -> int:
@@ -805,6 +808,67 @@ def _apply_native_system_backdrop(handle, enabled: bool) -> bool:
         return False
 
 
+def _apply_native_acrylic_backdrop(handle, enabled: bool, background_color: str) -> bool:
+    """Apply Win32 Acrylic for frameless WinForms/WebView2 windows."""
+    if handle is None or os.name != "nt":
+        return False
+
+    try:
+        import ctypes
+
+        class AccentPolicy(ctypes.Structure):
+            _fields_ = [
+                ("accent_state", ctypes.c_int),
+                ("accent_flags", ctypes.c_int),
+                ("gradient_color", ctypes.c_uint),
+                ("animation_id", ctypes.c_int),
+            ]
+
+        class WindowCompositionAttributeData(ctypes.Structure):
+            _fields_ = [
+                ("attribute", ctypes.c_int),
+                ("data", ctypes.POINTER(AccentPolicy)),
+                ("size_of_data", ctypes.c_size_t),
+            ]
+
+        user32 = ctypes.WinDLL("user32")
+        set_window_composition_attribute = ctypes.WINFUNCTYPE(
+            ctypes.c_bool,
+            ctypes.c_void_p,
+            ctypes.POINTER(WindowCompositionAttributeData),
+        )(("SetWindowCompositionAttribute", user32))
+
+        policy = AccentPolicy()
+        policy.accent_state = (
+            ACCENT_ENABLE_ACRYLICBLURBEHIND if enabled else ACCENT_DISABLED
+        )
+        if enabled:
+            color = str(background_color or "#202231").lstrip("#")
+            if len(color) != 6:
+                color = "202231"
+            red = int(color[0:2], 16)
+            green = int(color[2:4], 16)
+            blue = int(color[4:6], 16)
+            # AccentPolicy uses an ABGR packed color. Keep the existing shell
+            # tone as the native Acrylic tint; this is not an OFF fallback.
+            policy.gradient_color = (0xB0 << 24) | (blue << 16) | (green << 8) | red
+        else:
+            policy.gradient_color = 0
+
+        data = WindowCompositionAttributeData(
+            WCA_ACCENT_POLICY,
+            ctypes.pointer(policy),
+            ctypes.sizeof(policy),
+        )
+        return bool(
+            set_window_composition_attribute(
+                ctypes.c_void_p(handle), ctypes.byref(data)
+            )
+        )
+    except Exception:
+        return False
+
+
 def _get_native_webview_control(native):
     if native is None:
         return None
@@ -824,7 +888,12 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
     if native is None or handle is None:
         return
 
-    native_material_applied = _apply_native_system_backdrop(handle, enabled)
+    background_color = str(getattr(window, "background_color", "#202231"))
+    system_backdrop_applied = _apply_native_system_backdrop(handle, enabled)
+    acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
+        handle, enabled, background_color
+    )
+    native_material_applied = bool(system_backdrop_applied or acrylic_backdrop_applied)
     show_native_material = bool(enabled and native_material_applied)
     # pywebview checks this flag inside its NavigationStarting handler. Keep it
     # synchronized with the actual native material so a transparency toggle
@@ -849,10 +918,8 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
         else:
             # This is the existing pywebview background path, not a new
             # fallback color for transparency-disabled systems.
-            background_color = getattr(window, "background_color", None)
             if not background_color:
                 return
-            background_color = str(background_color)
             native.BackColor = ColorTranslator.FromHtml(background_color)
             if webview is not None:
                 webview.DefaultBackgroundColor = Color.FromArgb(

@@ -63,6 +63,33 @@
 })();
 
 (() => {
+  // The native host owns the material. The document only toggles the small
+  // set of shell surfaces that must stop covering it when Windows enables
+  // Transparency effects. Browser previews keep the existing opaque theme.
+  function setNativeBackdropEnabled(enabled) {
+    const active = Boolean(enabled);
+    document.documentElement.classList.toggle("native-backdrop-enabled", active);
+    document.documentElement.dataset.nativeBackdrop = active ? "on" : "off";
+  }
+
+  window.__sparkleSetNativeBackdrop = setNativeBackdropEnabled;
+
+  async function syncNativeBackdrop() {
+    const api = window.pywebview?.api;
+    if (!api || typeof api.is_windows_transparency_enabled !== "function") return;
+
+    try {
+      setNativeBackdropEnabled(await api.is_windows_transparency_enabled());
+    } catch {
+      setNativeBackdropEnabled(false);
+    }
+  }
+
+  window.addEventListener("pywebviewready", syncNativeBackdrop, { once: true });
+  if (window.pywebview?.api) void syncNativeBackdrop();
+})();
+
+(() => {
   // Keep the active data owner visible on every page.  The local API proxy
   // intentionally preserves the same-origin frontend, so this small badge is
   // the clearest indication that CRUD and AI requests are currently going to

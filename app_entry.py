@@ -79,7 +79,15 @@ ONBOARDING_PAGES = {"Migration", "Setup", "Tutorial", "ExtensionGuide"}
 WINDOW_SCREEN_MARGIN = 24
 # Force a fresh top-level document after frontend changes. WebView2 keeps a
 # persistent profile, so the route itself also needs a versioned URL.
-FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1"
+FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1-native-backdrop-v1"
+
+# DWM system backdrop values used by Windows 11.  The native material is only
+# enabled when Windows' own transparency preference is enabled; the disabled
+# path keeps pywebview's existing opaque background path unchanged.
+DWMWA_SYSTEMBACKDROP_TYPE = 38
+DWMSBT_NONE = 1
+DWMSBT_MAINWINDOW = 2
+DWMWA_MICA_EFFECT = 1029
 
 
 def _get_port() -> int:
@@ -115,11 +123,44 @@ window_state = {
     "profile": DEFAULT_WINDOW_PROFILE,
     "native_titlebar": None,
     "native_titlebar_handle": None,
+    "native_backdrop_enabled": None,
+    "native_backdrop_handle": None,
+    "transparency_listener_registered": False,
 }
 native_drop_condition = threading.Condition()
 native_drop_paths = []
 native_drop_document = None
 native_drop_targets = []
+
+
+def _is_windows_transparency_enabled() -> bool:
+    """Return Windows 11's user preference for translucent system surfaces.
+
+    Windows stores the Transparency effects switch in the Personalize key. A
+    missing value means the Windows default, which is enabled; read failures
+    remain conservative and keep the existing opaque application surface.
+    """
+    if os.name != "nt":
+        return False
+
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            0,
+            winreg.KEY_READ,
+        ) as key:
+            value, _ = winreg.QueryValueEx(key, "EnableTransparency")
+        try:
+            return int(value) != 0
+        except (TypeError, ValueError):
+            return bool(value)
+    except FileNotFoundError:
+        return True
+    except Exception:
+        return False
 
 
 def _get_work_area_bounds():
@@ -688,6 +729,170 @@ def _apply_dwm_frame_margin(handle, native_titlebar: bool) -> None:
         pass
 
 
+def _apply_native_system_backdrop(handle, enabled: bool) -> bool:
+    """Select the native Windows material without using a CSS blur effect."""
+    if handle is None or os.name != "nt":
+        return False
+
+    try:
+        import ctypes
+
+        dwmapi = ctypes.WinDLL("dwmapi")
+        set_window_attr = ctypes.WINFUNCTYPE(
+            ctypes.c_long,
+            ctypes.c_void_p,
+            ctypes.c_uint,
+            ctypes.c_void_p,
+            ctypes.c_uint,
+        )(("DwmSetWindowAttribute", dwmapi))
+
+        backdrop_value = ctypes.c_int(
+            DWMSBT_MAINWINDOW if enabled else DWMSBT_NONE
+        )
+        result = int(
+            set_window_attr(
+                ctypes.c_void_p(handle),
+                DWMWA_SYSTEMBACKDROP_TYPE,
+                ctypes.byref(backdrop_value),
+                ctypes.sizeof(backdrop_value),
+            )
+        )
+
+        if result == 0:
+            if not enabled:
+                mica_value = ctypes.c_int(0)
+                set_window_attr(
+                    ctypes.c_void_p(handle),
+                    DWMWA_MICA_EFFECT,
+                    ctypes.byref(mica_value),
+                    ctypes.sizeof(mica_value),
+                )
+            return True
+
+        # Windows 11 build 22000 used the older Mica attribute. Keep it as a
+        # native compatibility path only when the SystemBackdrop attribute is
+        # unavailable, and explicitly disable it when transparency is off.
+        mica_value = ctypes.c_int(1 if enabled else 0)
+        fallback_result = set_window_attr(
+            ctypes.c_void_p(handle),
+            DWMWA_MICA_EFFECT,
+            ctypes.byref(mica_value),
+            ctypes.sizeof(mica_value),
+        )
+        return int(fallback_result) == 0
+    except Exception:
+        return False
+
+
+def _get_native_webview_control(native):
+    if native is None:
+        return None
+    webview = getattr(native, "webview", None)
+    if webview is None:
+        webview = getattr(getattr(native, "browser", None), "webview", None)
+    return webview
+
+
+def _apply_native_backdrop(window, enabled: bool) -> None:
+    """Apply the native backdrop and synchronize the WebView2 surface."""
+    if window is None or os.name != "nt":
+        return
+
+    native = getattr(window, "native", None)
+    handle = _get_native_window_handle(window)
+    if native is None or handle is None:
+        return
+
+    native_material_applied = _apply_native_system_backdrop(handle, enabled)
+    show_native_material = bool(enabled and native_material_applied)
+
+    try:
+        from System.Drawing import Color, ColorTranslator
+
+        webview = _get_native_webview_control(native)
+        if show_native_material:
+            try:
+                import System.Windows.Forms as WinForms
+
+                native.SetStyle(WinForms.ControlStyles.SupportsTransparentBackColor, True)
+            except Exception:
+                pass
+            native.BackColor = Color.Transparent
+            if webview is not None:
+                webview.DefaultBackgroundColor = Color.Transparent
+        else:
+            # This is the existing pywebview background path, not a new
+            # fallback color for transparency-disabled systems.
+            background_color = getattr(window, "background_color", None)
+            if not background_color:
+                return
+            background_color = str(background_color)
+            native.BackColor = ColorTranslator.FromHtml(background_color)
+            if webview is not None:
+                webview.DefaultBackgroundColor = Color.FromArgb(
+                    255,
+                    int(background_color.lstrip("#")[0:2], 16),
+                    int(background_color.lstrip("#")[2:4], 16),
+                    int(background_color.lstrip("#")[4:6], 16),
+                )
+
+        native.Invalidate(True)
+        if webview is not None:
+            state = "true" if show_native_material else "false"
+            webview.ExecuteScriptAsync(
+                f"window.__sparkleSetNativeBackdrop?.({state});"
+            )
+    except Exception:
+        pass
+
+    window_state["native_backdrop_enabled"] = show_native_material
+    window_state["native_backdrop_handle"] = int(handle)
+
+
+def _sync_native_backdrop() -> None:
+    """Re-read the Windows preference and apply it on the WinForms UI thread."""
+    window = window_ref.get("window")
+    native = getattr(window, "native", None) if window is not None else None
+    if native is None:
+        return
+
+    enabled = _is_windows_transparency_enabled()
+
+    def apply() -> None:
+        _apply_native_backdrop(window, enabled)
+
+    try:
+        if bool(getattr(native, "InvokeRequired", False)):
+            try:
+                import clr  # noqa: F401 - initializes pythonnet's System namespace
+            except ImportError:
+                pass
+            from System import Action
+
+            native.BeginInvoke(Action(apply))
+        else:
+            apply()
+    except Exception:
+        pass
+
+
+def _on_windows_user_preference_changed(sender, event_args) -> None:
+    _sync_native_backdrop()
+
+
+def _register_windows_transparency_listener() -> None:
+    if window_state.get("transparency_listener_registered") or os.name != "nt":
+        return
+
+    try:
+        from Microsoft.Win32 import SystemEvents
+
+        SystemEvents.UserPreferenceChanged += _on_windows_user_preference_changed
+        window_state["transparency_listener_registered"] = True
+    except Exception:
+        pass
+
+
 def _apply_corner_preference(handle, native_titlebar: bool) -> None:
     """Round the corners of a frameless window (Windows 11+).
 
@@ -897,6 +1102,10 @@ class NativeWindowApi:
     @staticmethod
     def copy_text_to_clipboard(text: str) -> bool:
         return _copy_text_to_windows_clipboard(text)
+
+    @staticmethod
+    def is_windows_transparency_enabled() -> bool:
+        return _is_windows_transparency_enabled()
 
     @staticmethod
     def read_dropped_files():
@@ -1148,6 +1357,8 @@ def _apply_native_chrome() -> None:
     if window is None:
         return
     _apply_window_caption(window, _get_window_titlebar_setting())
+    _register_windows_transparency_listener()
+    _sync_native_backdrop()
 
 
 def _build_tray_image():
@@ -1352,6 +1563,7 @@ def main() -> None:
         initial_window_profile = _window_profile_for_page(initial_page)
         window_state["profile"] = initial_window_profile
         window_width, window_height, minimum_window_size = _get_window_size_config(initial_window_profile)
+        native_backdrop_enabled = _is_windows_transparency_enabled()
         window = webview.create_window(
             "Sparkle",
             url=_frontend_url(initial_page),
@@ -1367,6 +1579,7 @@ def main() -> None:
             # and drag/resize affordances inconsistent.
             zoomable=False,
             background_color="#202231",
+            transparent=native_backdrop_enabled,
             hidden=(
                 "--hidden" in sys.argv[1:]
                 and not migration_required

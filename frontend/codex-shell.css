@@ -2317,3 +2317,41 @@ body.notes-page .clip-pick-list::-webkit-scrollbar-thumb:hover,
   background: rgba(255, 255, 255, 0.34);
   background-clip: padding-box;
 }
+
+/* The native DWM material is the source of the effect. These conditional
+   alpha surfaces only let that material show through WebView2 when Windows'
+   Transparency effects switch is enabled; the class is absent in previews
+   and when the switch is off, so the existing opaque backgrounds stay intact. */
+html.native-backdrop-enabled,
+html.native-backdrop-enabled body,
+html.native-backdrop-enabled .layout {
+  background: transparent;
+}
+
+html.native-backdrop-enabled .sidebar,
+html.native-backdrop-enabled .home-page .sidebar,
+html.native-backdrop-enabled .notes-page .sidebar,
+html.native-backdrop-enabled .sidebar.sidebar--index,
+html.native-backdrop-enabled .app-titlebar {
+  background: color-mix(in srgb, var(--sidebar-bg) 78%, transparent);
+}
+
+html.native-backdrop-enabled .main,
+html.native-backdrop-enabled .home-page .main,
+html.native-backdrop-enabled .notes-page .main.notes-main,
+html.native-backdrop-enabled .editor-main {
+  background: color-mix(in srgb, var(--sidebar-bg) 76%, transparent);
+}
+
+html.native-backdrop-enabled .main::before,
+html.native-backdrop-enabled .home-page .main::before,
+html.native-backdrop-enabled .notes-page .main.notes-main::before,
+html.native-backdrop-enabled .editor-main::before {
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+}
+
+html.native-backdrop-enabled body.note-editor-page .editor-body,
+html.native-backdrop-enabled body.note-editor-page .markdown-editor,
+html.native-backdrop-enabled body.note-editor-page .editor-canvas {
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+}

@@ -76,17 +76,32 @@
 
   async function syncNativeBackdrop() {
     const api = window.pywebview?.api;
-    if (!api || typeof api.is_windows_transparency_enabled !== "function") return;
+    if (!api || typeof api.is_windows_transparency_enabled !== "function") return false;
 
     try {
       setNativeBackdropEnabled(await api.is_windows_transparency_enabled());
+      return true;
     } catch {
-      setNativeBackdropEnabled(false);
+      return false;
     }
   }
 
-  window.addEventListener("pywebviewready", syncNativeBackdrop, { once: true });
-  if (window.pywebview?.api) void syncNativeBackdrop();
+  async function syncNativeBackdropWhenReady() {
+    // The first document can reach DOMContentLoaded before pywebview has
+    // attached its bridge. Retry briefly so the initial page and later full
+    // document navigations use the same native backdrop state.
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (await syncNativeBackdrop()) return;
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    }
+  }
+
+  window.addEventListener("pywebviewready", syncNativeBackdropWhenReady);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", syncNativeBackdropWhenReady, { once: true });
+  } else {
+    void syncNativeBackdropWhenReady();
+  }
 })();
 
 (() => {

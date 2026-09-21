@@ -39,6 +39,29 @@
 })();
 
 (() => {
+  // Shift-clicking a normal link opens the document in an external browser
+  // in Chromium. Keep Sparkle's six sidebar destinations inside the native
+  // app without touching pinned items or selection handlers elsewhere.
+  document.addEventListener("click", (event) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      !event.shiftKey ||
+      !(event.target instanceof Element)
+    ) {
+      return;
+    }
+
+    const link = event.target.closest(".sidebar a.side-btn[href]");
+    if (!link || link.hasAttribute("download") || (link.target && link.target !== "_self")) {
+      return;
+    }
+
+    event.preventDefault();
+  }, true);
+})();
+
+(() => {
   // Keep the active data owner visible on every page.  The local API proxy
   // intentionally preserves the same-origin frontend, so this small badge is
   // the clearest indication that CRUD and AI requests are currently going to

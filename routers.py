@@ -1734,8 +1734,21 @@ def delete_task(task_id: int, db: Connection = Depends(get_db)):
     row = db.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Task not found")
-    db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-    db.commit()
+    try:
+        # Detach legacy note relationships explicitly before deleting the task.
+        # When SQLite applies notes.task_id's ON DELETE SET NULL and the
+        # task_notes cascade in the same DELETE statement, the search dirty
+        # triggers can attempt to write the same metadata row more than once
+        # and abort with a UNIQUE constraint error. These statements preserve
+        # the FK behavior while keeping each relationship change separate.
+        db.execute("UPDATE notes SET task_id = NULL WHERE task_id = ?", (task_id,))
+        db.execute("DELETE FROM task_notes WHERE task_id = ?", (task_id,))
+        db.execute("DELETE FROM project_tasks WHERE task_id = ?", (task_id,))
+        db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        db.commit()
+    except sqlite3.Error:
+        db.rollback()
+        raise
 
 
 # --- Notes ---------------------------------------------------------------

@@ -80,7 +80,7 @@ ONBOARDING_PAGES = {"Migration", "Setup", "Tutorial", "ExtensionGuide"}
 WINDOW_SCREEN_MARGIN = 24
 # Force a fresh top-level document after frontend changes. WebView2 keeps a
 # persistent profile, so the route itself also needs a versioned URL.
-FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1-native-backdrop-v4"
+FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1-native-backdrop-v5"
 
 # DWM system backdrop values used by Windows 11.  The native material is only
 # enabled when Windows' own transparency preference is enabled; the disabled
@@ -276,7 +276,8 @@ def _window_profile_for_page(page: str) -> str:
 
 def _frontend_url(page: str) -> str:
     separator = "&" if "?" in page else "?"
-    return f"http://{HOST}:{PORT}/{page}{separator}ui={FRONTEND_CACHE_TOKEN}"
+    native_hint = "&nativeBackdrop=1" if _is_windows_transparency_enabled() else ""
+    return f"http://{HOST}:{PORT}/{page}{separator}ui={FRONTEND_CACHE_TOKEN}{native_hint}"
 
 
 def _show_error(message: str) -> None:

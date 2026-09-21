@@ -2356,6 +2356,12 @@ html.native-backdrop-enabled .sidebar.sidebar--index {
   -webkit-backdrop-filter: none;
 }
 
+/* The non-native-titlebar geometry rule above resets this corner to zero.
+   Restore the native-backdrop corner with matching selector specificity. */
+html.native-backdrop-enabled .app-titlebar + .layout > .sidebar {
+  border-top-left-radius: var(--native-window-corner-radius);
+}
+
 html.native-backdrop-enabled .main,
 html.native-backdrop-enabled .home-page .main,
 html.native-backdrop-enabled .notes-page .main.notes-main,

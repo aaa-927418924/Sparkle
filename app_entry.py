@@ -857,8 +857,16 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
         native.Invalidate(True)
         if webview is not None:
             state = "true" if show_native_material else "false"
+            # The initial WebView2 document can still be installing the
+            # shell script when the native window's shown/loaded callbacks
+            # arrive. Keep the native result authoritative and retry inside
+            # the current document until the bridge function exists.
             webview.ExecuteScriptAsync(
-                f"window.__sparkleSetNativeBackdrop?.({state});"
+                "(function applySparkleBackdrop() {"
+                "if (typeof window.__sparkleSetNativeBackdrop === 'function') {"
+                "window.__sparkleSetNativeBackdrop(" + state + ");"
+                "} else { window.setTimeout(applySparkleBackdrop, 50); }"
+                "})();"
             )
     except Exception:
         pass
@@ -892,6 +900,17 @@ def _sync_native_backdrop() -> None:
             apply()
     except Exception:
         pass
+
+
+def _schedule_native_backdrop_sync() -> None:
+    """Retry the native/WebView handoff across the first-paint timing window."""
+    if os.name != "nt":
+        return
+
+    for delay in (0.05, 0.25, 0.75):
+        timer = threading.Timer(delay, _sync_native_backdrop)
+        timer.daemon = True
+        timer.start()
 
 
 def _on_windows_user_preference_changed(sender, event_args) -> None:
@@ -1377,6 +1396,7 @@ def _apply_native_chrome() -> None:
     _apply_window_caption(window, _get_window_titlebar_setting())
     _register_windows_transparency_listener()
     _sync_native_backdrop()
+    _schedule_native_backdrop_sync()
 
 
 def _build_tray_image():

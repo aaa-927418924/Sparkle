@@ -790,7 +790,14 @@ def _apply_native_system_backdrop(handle, enabled: bool) -> bool:
     try:
         import ctypes
 
-        _apply_dwm_backdrop_frame(handle, enabled)
+        # DWMWA_SYSTEMBACKDROP_TYPE already paints the system material through
+        # the full window bounds on supported Windows 11 builds.  Extending a
+        # legacy DWM glass frame over the same client area makes a transparent
+        # WebView2 fall through to the WinForms background instead of the
+        # system material, which is the source of the white page regression.
+        # Only clear a previously extended frame when turning the feature off.
+        if not enabled:
+            _apply_dwm_backdrop_frame(handle, False)
         dwmapi = ctypes.WinDLL("dwmapi")
         set_window_attr = ctypes.WINFUNCTYPE(
             ctypes.c_long,
@@ -920,9 +927,22 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
 
     background_color = str(getattr(window, "background_color", "#202231"))
     system_backdrop_applied = _apply_native_system_backdrop(handle, enabled)
-    acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
-        handle, enabled, background_color
-    )
+    if enabled:
+        # SystemBackdrop is the supported Windows 11 path.  Use the legacy
+        # Acrylic API only when that native attribute is unavailable; applying
+        # both effects to one HWND makes their client-area composition
+        # undefined and can expose the default white WebView surface.
+        acrylic_backdrop_applied = False
+        if not system_backdrop_applied:
+            acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
+                handle, True, background_color
+            )
+    else:
+        # Clear a legacy Acrylic state from a previous runtime toggle while
+        # preserving the existing opaque WebView path.
+        acrylic_backdrop_applied = _apply_native_acrylic_backdrop(
+            handle, False, background_color
+        )
     native_material_applied = bool(system_backdrop_applied or acrylic_backdrop_applied)
     show_native_material = bool(enabled and native_material_applied)
     # pywebview checks this flag inside its NavigationStarting handler. Keep it
@@ -1800,6 +1820,14 @@ def main() -> None:
         window_state["profile"] = initial_window_profile
         window_width, window_height, minimum_window_size = _get_window_size_config(initial_window_profile)
         native_backdrop_enabled = _is_windows_transparency_enabled()
+        # WebView2 defaults to white between navigations and before the first
+        # controller property update.  Set its documented transparent initial
+        # color before the environment/controller is created, but only when
+        # Windows Transparency effects are enabled.  The OFF path deliberately
+        # leaves the environment untouched so the existing opaque background
+        # remains the sole fallback.
+        if native_backdrop_enabled:
+            os.environ["WEBVIEW2_DEFAULT_BACKGROUND_COLOR"] = "00000000"
         window = webview.create_window(
             "Sparkle",
             url=_frontend_url(initial_page),

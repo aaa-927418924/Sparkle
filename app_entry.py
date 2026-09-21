@@ -791,14 +791,11 @@ def _apply_native_system_backdrop(handle, enabled: bool) -> bool:
     try:
         import ctypes
 
-        # DWMWA_SYSTEMBACKDROP_TYPE already paints the system material through
-        # the full window bounds on supported Windows 11 builds.  Extending a
-        # legacy DWM glass frame over the same client area makes a transparent
-        # WebView2 fall through to the WinForms background instead of the
-        # system material, which is the source of the white page regression.
-        # Only clear a previously extended frame when turning the feature off.
-        if not enabled:
-            _apply_dwm_backdrop_frame(handle, False)
+        # A frameless WinForms form has no non-client frame for DWM to carry
+        # into the client region. Extend the frame over the full window while
+        # the native material is enabled so transparent WebView2 pixels reveal
+        # the system backdrop. Clear the extension on the existing opaque path.
+        _apply_dwm_backdrop_frame(handle, enabled)
         dwmapi = ctypes.WinDLL("dwmapi")
         set_window_attr = ctypes.WINFUNCTYPE(
             ctypes.c_long,

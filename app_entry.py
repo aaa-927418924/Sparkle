@@ -7,6 +7,7 @@ uvicornサーバーをバックグラウンドスレッドで起動し、メイ�
 import os
 import socket
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -100,15 +101,32 @@ def _get_port() -> int:
 
 PORT = _get_port()
 LOG_PATH = get_app_data_dir() / "app.log"
-STDIO_LOG_PATH = get_app_data_dir() / "stdio.log"
+STDIO_LOG_PATH = Path(
+    os.environ.get("SPARKLE_STDIO_LOG_PATH", str(get_app_data_dir() / "stdio.log"))
+)
 WEBVIEW_STORAGE_PATH = get_app_data_dir() / "webview"
 WEBVIEW_STORAGE_PATH.mkdir(parents=True, exist_ok=True)
+
+
+def _open_stdio_log():
+    """Open the normal stdio log, with a writable test-host fallback."""
+    try:
+        STDIO_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        return open(STDIO_LOG_PATH, "a", encoding="utf-8", buffering=1)
+    except OSError:
+        try:
+            fallback = Path(tempfile.gettempdir()) / "Sparkle" / "stdio.log"
+            fallback.parent.mkdir(parents=True, exist_ok=True)
+            return open(fallback, "a", encoding="utf-8", buffering=1)
+        except OSError:
+            return open(os.devnull, "a", encoding="utf-8", buffering=1)
+
 
 # --noconsoleビルドでは sys.stdout / sys.stderr が None になり、
 # それに依存するライブラリ(uvicornのログ設定など)がクラッシュするため、
 # 最初にログファイルへリダイレクトしておく。
 if sys.stdout is None or sys.stderr is None:
-    _stream = open(STDIO_LOG_PATH, "a", encoding="utf-8", buffering=1)
+    _stream = _open_stdio_log()
     sys.stdout = _stream
     sys.stderr = _stream
 

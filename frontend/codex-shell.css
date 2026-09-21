@@ -1316,7 +1316,7 @@ body.native-titlebar .window-resize-handle {
   gap: 10px;
   padding: 0 12px;
   border-radius: 10px;
-  color: var(--muted);
+  color: #ffffff;
   text-align: start;
 }
 
@@ -1332,7 +1332,7 @@ body.native-titlebar .window-resize-handle {
 .sidebar.sidebar--index .side-btn:hover,
 .sidebar.sidebar--index .side-btn:focus-visible,
 .sidebar.sidebar--index .side-btn.active {
-  color: var(--text);
+  color: #ffffff;
   background: var(--surface-hover);
   box-shadow: none;
 }
@@ -1396,6 +1396,18 @@ body.native-titlebar .window-resize-handle {
 [data-theme="dark"] .sidebar.sidebar--index .side-btn:not(.active) .icon-nav {
   filter: brightness(0) invert(1);
   opacity: 0.72;
+}
+
+.sidebar .side-btn .sidebar-page-icon,
+.home-page .side-btn .sidebar-page-icon,
+.notes-page .side-btn .sidebar-page-icon,
+.sidebar.sidebar--index .side-btn .sidebar-page-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+  opacity: 1;
 }
 
 .sidebar-tools,

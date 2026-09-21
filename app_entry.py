@@ -958,11 +958,12 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
         )
     native_material_applied = bool(system_backdrop_applied or acrylic_backdrop_applied)
     show_native_material = bool(enabled and native_material_applied)
-    # pywebview checks this flag inside its NavigationStarting handler. Keep it
-    # synchronized with the actual native material so a transparency toggle
-    # does not leave the transparent-window navigation path active after the
-    # existing opaque background has been restored.
-    window.transparent = show_native_material
+    # Keep pywebview's own transparent-window flag disabled.  On WinForms it
+    # enables a Show/Activate workaround for every navigation; that workaround
+    # is useful for pywebview's standalone transparent windows but resets the
+    # DWM/WebView2 composition surface during Sparkle page changes.  The native
+    # path below controls the two surfaces explicitly instead.
+    window.transparent = False
 
     try:
         from System.Drawing import Color, ColorTranslator
@@ -984,6 +985,12 @@ def _apply_native_backdrop(window, enabled: bool) -> None:
             # fallback color for transparency-disabled systems.
             if not background_color:
                 return
+            try:
+                import System.Windows.Forms as WinForms
+
+                native.SetStyle(WinForms.ControlStyles.SupportsTransparentBackColor, False)
+            except Exception:
+                pass
             native.BackColor = ColorTranslator.FromHtml(background_color)
             if webview is not None:
                 webview.DefaultBackgroundColor = Color.FromArgb(
@@ -1857,7 +1864,10 @@ def main() -> None:
             # and drag/resize affordances inconsistent.
             zoomable=False,
             background_color="#202231",
-            transparent=native_backdrop_enabled,
+            # Keep pywebview's transparent-navigation workaround disabled.  The
+            # native backdrop path explicitly changes the Form/WebView2 surfaces
+            # after the handle and DWM material are ready.
+            transparent=False,
             hidden=(
                 "--hidden" in sys.argv[1:]
                 and not migration_required

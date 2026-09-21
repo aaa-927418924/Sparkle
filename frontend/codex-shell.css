@@ -2356,10 +2356,10 @@ html.native-backdrop-enabled .sidebar.sidebar--index {
   -webkit-backdrop-filter: none;
 }
 
-/* The non-native-titlebar geometry rule above resets this corner to zero.
-   Restore the native-backdrop corner with matching selector specificity. */
+/* The sidebar meets the titlebar with a square outer corner.  The rounded
+   corner belongs to the main surface at the sidebar split instead. */
 html.native-backdrop-enabled .app-titlebar + .layout > .sidebar {
-  border-top-left-radius: var(--native-window-corner-radius);
+  border-top-left-radius: 0;
 }
 
 html.native-backdrop-enabled .main,
@@ -2368,6 +2368,7 @@ html.native-backdrop-enabled .notes-page .main.notes-main,
 html.native-backdrop-enabled .editor-main {
   /* Keep exactly one main-surface tint over the native material. */
   background: rgba(36, 39, 58, 0.35) !important;
+  border-top-left-radius: var(--shell-main-corner-radius);
 }
 
 html.native-backdrop-enabled .main::before,

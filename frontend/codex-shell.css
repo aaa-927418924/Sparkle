@@ -2349,17 +2349,16 @@ html.native-backdrop-enabled .home-page .sidebar,
 html.native-backdrop-enabled .notes-page .sidebar,
 html.native-backdrop-enabled .sidebar.sidebar--index {
   background: rgba(var(--native-shell-color-rgb), var(--native-sidebar-alpha)) !important;
-  border-radius: var(--native-window-corner-radius) 0 0 var(--native-window-corner-radius);
+  border-radius: 0;
   box-shadow: none;
   overflow: hidden;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
 
-/* The sidebar meets the titlebar with a square outer corner.  The rounded
-   corner belongs to the main surface at the sidebar split instead. */
+/* Keep every sidebar corner square in the transparency-only path. */
 html.native-backdrop-enabled .app-titlebar + .layout > .sidebar {
-  border-top-left-radius: 0;
+  border-radius: 0;
 }
 
 html.native-backdrop-enabled .main,

@@ -318,12 +318,12 @@ class FrontendInteractionTests(unittest.TestCase):
         )
         self.assertNotIn("background: var(--sidebar-bg) !important;", native_source)
         self.assertIn(
-            "border-radius: var(--native-window-corner-radius) 0 0 var(--native-window-corner-radius);",
+            "border-radius: 0;",
             native_source,
         )
         self.assertIn(
             "html.native-backdrop-enabled .app-titlebar + .layout > .sidebar {\n"
-            "  border-top-left-radius: 0;\n",
+            "  border-radius: 0;\n",
             native_source,
         )
         self.assertIn(
@@ -361,7 +361,7 @@ class FrontendInteractionTests(unittest.TestCase):
         self.assertNotIn("background: var(--sidebar-bg) !important;", native_backdrop_css)
         self.assertIn(
             "html.native-backdrop-enabled .app-titlebar + .layout > .sidebar {\n"
-            "  border-top-left-radius: 0;\n",
+            "  border-radius: 0;\n",
             native_backdrop_css,
         )
         self.assertIn(
@@ -386,8 +386,8 @@ class FrontendInteractionTests(unittest.TestCase):
             "extension-guide.html",
         ):
             html = (ROOT / "frontend" / page).read_text(encoding="utf-8")
-            self.assertIn("native-backdrop-v11", html)
-            self.assertIn("native-backdrop-c5", html)
+            self.assertIn("native-backdrop-v12", html)
+            self.assertIn("native-backdrop-c6", html)
 
     def test_sidebar_rejects_horizontal_overflow_and_touch_pan(self):
         source = (ROOT / "frontend" / "codex-shell.css").read_text(encoding="utf-8")

@@ -41,10 +41,10 @@ html.native-backdrop-enabled body.home-page .app-titlebar {
   background: rgba(var(--native-shell-color-rgb), var(--native-titlebar-alpha)) !important;
 }
 
-/* Keep the corner placement effective even when this cache-busting stylesheet
-   is the last native-backdrop rule loaded. */
+/* Keep all sidebar corners square even when this cache-busting stylesheet is
+   the last native-backdrop rule loaded. */
 html.native-backdrop-enabled .app-titlebar + .layout > .sidebar {
-  border-top-left-radius: 0;
+  border-radius: 0;
 }
 
 html.native-backdrop-enabled .main,

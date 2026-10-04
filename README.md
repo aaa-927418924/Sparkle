@@ -1,4 +1,6 @@
-![Logo](Icon.png)
+<p align="center">
+  <img src="https://github.com/aaa-927418924/Sparkle/blob/main/Icon.png">
+</p>
 
 # Sparkle
 
@@ -11,9 +13,9 @@ Save interesting web pages through the Chrome extension and organize them with c
 > 
 > **Currently, Sparkle is available in Japanese only.**
 
-<!-- Remove the comment markers after adding a screenshot. -->
-
-<!-- ![Sparkle home screen](docs/images/sparkle-home.png) -->
+<p align="center">
+  <img src="https://github.com/aaa-927418924/Sparkle/blob/main/screenshot.png">
+</p>
 
 ## Features
 

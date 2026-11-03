@@ -31,6 +31,7 @@ from setup import (
 from remote_auth import get_auth_store, get_client_auth_store, get_mcp_auth_store
 from remote_client import RemoteClientError, get_remote_client
 from remote_proxy import RemoteClientProxy
+from plugin_api import router as plugin_router
 
 UPLOADS_DIR = get_uploads_dir()
 get_thumbnails_dir()
@@ -286,6 +287,7 @@ def remote_access_status():
 
 
 app.include_router(router)
+app.include_router(plugin_router)
 
 
 def _require_remote_access_manager():

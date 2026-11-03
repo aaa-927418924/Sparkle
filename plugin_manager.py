@@ -1,0 +1,696 @@
+"""Safe local storage and lifecycle helpers for Sparkle plugins."""
+
+from __future__ import annotations
+
+import json
+import io
+import os
+import re
+import shutil
+import stat
+import tempfile
+import uuid
+import zipfile
+import zlib
+from functools import wraps
+from pathlib import Path, PurePosixPath
+from threading import RLock
+from typing import Any
+
+from paths import get_plugin_data_dir, get_plugins_dir, get_resource_dir
+
+
+PLUGIN_API_VERSION = 1
+MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
+MAX_UNPACKED_BYTES = 40 * 1024 * 1024
+MAX_FILE_BYTES = 12 * 1024 * 1024
+MAX_FILE_COUNT = 256
+MAX_MANIFEST_BYTES = 128 * 1024
+MAX_PANEL_BYTES = 2 * 1024 * 1024
+MAX_STORAGE_BYTES = 2 * 1024 * 1024
+PLUGIN_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
+COLOR_PATTERN = re.compile(
+    r"^(?:#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?|"
+    r"rgba?\(\s*(?:\d{1,3}%?\s*,\s*){2}\d{1,3}%?"
+    r"(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\))$"
+)
+
+THEME_COLOR_PROPERTIES = {
+    "background": "--bg",
+    "surface": "--surface",
+    "surfaceRaised": "--surface-raised",
+    "surfaceHover": "--surface-hover",
+    "surfaceActive": "--surface-active",
+    "sidebar": "--sidebar-bg",
+    "border": "--border",
+    "borderStrong": "--border-strong",
+    "text": "--text",
+    "muted": "--muted",
+    "accent": "--accent",
+    "accentSoft": "--accent-soft",
+}
+ALLOWED_PLUGIN_TYPES = {"theme", "feature"}
+ALLOWED_PERMISSIONS = {"storage", "notifications"}
+RESERVED_PLUGIN_IDS = {"manager-state", "manager-state-json"}
+STATE_FILENAME = "manager-state.json"
+SKILL_ID = "sparkle-plugin-author"
+SKILL_MARKER = ".sparkle-managed.json"
+PLUGIN_LOCK = RLock()
+ENVIRONMENT_PATH_PATTERN = re.compile(r"%([^%]+)%|\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
+
+
+class PluginError(ValueError):
+    """A plugin package or lifecycle request is invalid."""
+
+
+def _serialized(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with PLUGIN_LOCK:
+            return function(*args, **kwargs)
+
+    return wrapped
+
+
+def _resolve_plugins_dir(directory: Path | None = None) -> Path:
+    root = Path(directory) if directory is not None else get_plugins_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    return root.resolve()
+
+
+def _state_path(directory: Path | None = None) -> Path:
+    return _resolve_plugins_dir(directory) / STATE_FILENAME
+
+
+def _read_state(directory: Path | None = None) -> dict[str, Any]:
+    try:
+        value = json.loads(_state_path(directory).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {"plugins": {}, "active_theme": None}
+    if not isinstance(value, dict):
+        return {"plugins": {}, "active_theme": None}
+    plugins = value.get("plugins")
+    if not isinstance(plugins, dict):
+        plugins = {}
+    return {
+        "plugins": plugins,
+        "active_theme": value.get("active_theme")
+        if isinstance(value.get("active_theme"), str)
+        else None,
+    }
+
+
+def _write_state(state: dict[str, Any], directory: Path | None = None) -> None:
+    path = _state_path(directory)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    payload = json.dumps(state, ensure_ascii=False, indent=2)
+    try:
+        temporary.write_text(payload, encoding="utf-8")
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _valid_plugin_id(plugin_id: str) -> bool:
+    return (
+        isinstance(plugin_id, str)
+        and len(plugin_id) <= 64
+        and PLUGIN_ID_PATTERN.fullmatch(plugin_id) is not None
+        and plugin_id not in RESERVED_PLUGIN_IDS
+    )
+
+
+def _plugin_dir(plugin_id: str, directory: Path | None = None) -> Path:
+    if not _valid_plugin_id(plugin_id):
+        raise PluginError("プラグインIDが不正です。")
+    root = _resolve_plugins_dir(directory)
+    target = root / plugin_id
+    if target.is_symlink():
+        raise PluginError("プラグインの保存先が安全ではありません。")
+    resolved = target.resolve()
+    if resolved.parent != root:
+        raise PluginError("プラグインの保存先が不正です。")
+    return resolved
+
+
+def _read_json(path: Path, max_bytes: int) -> Any:
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > max_bytes:
+            raise PluginError("プラグインファイルの形式またはサイズが不正です。")
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise PluginError("プラグインのJSONファイルを読み込めません。") from exc
+
+
+def _validate_theme_file(package_dir: Path) -> dict[str, Any]:
+    theme = _read_json(package_dir / "theme.json", MAX_MANIFEST_BYTES)
+    if not isinstance(theme, dict) or not isinstance(theme.get("colors"), dict):
+        raise PluginError("theme.jsonにはcolorsオブジェクトが必要です。")
+    colors = theme["colors"]
+    if not colors or len(colors) > len(THEME_COLOR_PROPERTIES):
+        raise PluginError("テーマ色は1色以上、許可された数以内で指定してください。")
+    normalized: dict[str, str] = {}
+    for key, value in colors.items():
+        if key not in THEME_COLOR_PROPERTIES or not isinstance(value, str):
+            raise PluginError("テーマに未対応の色プロパティがあります。")
+        if len(value) > 40 or COLOR_PATTERN.fullmatch(value.strip()) is None:
+            raise PluginError(f"テーマ色 {key} の値が不正です。HEXまたはRGB形式を使ってください。")
+        normalized[key] = value.strip()
+    return {"colors": normalized}
+
+
+def _validate_package_dir(
+    package_dir: Path,
+    *,
+    allow_incompatible_api: bool = False,
+) -> dict[str, Any]:
+    manifest = _read_json(package_dir / "manifest.json", MAX_MANIFEST_BYTES)
+    if not isinstance(manifest, dict):
+        raise PluginError("manifest.jsonの内容が不正です。")
+    plugin_id = manifest.get("id")
+    if not _valid_plugin_id(plugin_id):
+        raise PluginError("idには英小文字・数字・ハイフンの形式を指定してください。")
+    if not package_dir.name.startswith(".import-") and package_dir.name != plugin_id:
+        raise PluginError("保存フォルダー名とプラグインIDが一致しません。")
+    name = manifest.get("name")
+    description = manifest.get("description", "")
+    version = manifest.get("version")
+    plugin_type = manifest.get("type")
+    api_version = manifest.get("api_version")
+    if not isinstance(name, str) or not name.strip() or len(name) > 100:
+        raise PluginError("プラグイン名が不正です。")
+    if not isinstance(description, str) or len(description) > 1000:
+        raise PluginError("プラグインの説明が長すぎます。")
+    if not isinstance(version, str) or VERSION_PATTERN.fullmatch(version) is None:
+        raise PluginError("versionは例 1.0.0 の形式で指定してください。")
+    if not isinstance(plugin_type, str) or plugin_type not in ALLOWED_PLUGIN_TYPES:
+        raise PluginError("typeはthemeまたはfeatureを指定してください。")
+    if type(api_version) is not int or api_version < 1:
+        raise PluginError("プラグインのAPIバージョンが不正です。")
+    if not allow_incompatible_api and api_version != PLUGIN_API_VERSION:
+        raise PluginError(f"このSparkleはプラグインAPI {PLUGIN_API_VERSION} に対応しています。")
+
+    permissions = manifest.get("permissions", [])
+    if not isinstance(permissions, list) or any(
+        not isinstance(permission, str) or permission not in ALLOWED_PERMISSIONS
+        for permission in permissions
+    ):
+        raise PluginError("未対応のプラグイン権限が指定されています。")
+    if len(set(permissions)) != len(permissions):
+        raise PluginError("プラグイン権限が重複しています。")
+
+    result = {
+        "id": plugin_id,
+        "name": name.strip(),
+        "version": version,
+        "description": description.strip(),
+        "type": plugin_type,
+        "api_version": api_version,
+        "permissions": sorted(permissions),
+    }
+    if plugin_type == "theme":
+        result["theme"] = _validate_theme_file(package_dir)
+    else:
+        panel = package_dir / "panel.html"
+        if panel.is_symlink() or not panel.is_file() or panel.stat().st_size > MAX_PANEL_BYTES:
+            raise PluginError("機能プラグインには2MB以内のpanel.htmlが必要です。")
+        result["entry"] = "panel.html"
+    return result
+
+
+def _archive_member_path(name: str) -> PurePosixPath:
+    if not name or "\x00" in name or "\\" in name or name.startswith("/"):
+        raise PluginError("ZIP内に不正なパスがあります。")
+    path = PurePosixPath(name)
+    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+        raise PluginError("ZIP内に不正なパスがあります。")
+    if any(
+        ":" in part
+        or part.endswith((".", " "))
+        or len(part) > 128
+        or len(part.encode("utf-8")) > 240
+        for part in path.parts
+    ):
+        raise PluginError("ZIP内に移植できないファイル名があります。")
+    if any(any(char in part for char in '<>"|?*') for part in path.parts):
+        raise PluginError("ZIP内に移植できないファイル名があります。")
+    reserved = {"CON", "PRN", "AUX", "NUL"}
+    reserved.update(f"COM{number}" for number in range(1, 10))
+    reserved.update(f"LPT{number}" for number in range(1, 10))
+    if any(part.upper().split(".")[0] in reserved for part in path.parts):
+        raise PluginError("ZIP内に予約済みのファイル名があります。")
+    return path
+
+
+@_serialized
+def install_plugin_archive(
+    archive_bytes: bytes | bytearray,
+    directory: Path | None = None,
+) -> dict[str, Any]:
+    if not isinstance(archive_bytes, (bytes, bytearray)) or not archive_bytes:
+        raise PluginError("ZIPファイルが空です。")
+    if len(archive_bytes) > MAX_ARCHIVE_BYTES:
+        raise PluginError("ZIPファイルは20MB以下にしてください。")
+    root = _resolve_plugins_dir(directory)
+    stage = root / f".import-{uuid.uuid4().hex}"
+    stage.mkdir()
+    try:
+        try:
+            archive = zipfile.ZipFile(io.BytesIO(archive_bytes))
+        except (zipfile.BadZipFile, OSError) as exc:
+            raise PluginError("ZIPファイルを開けません。") from exc
+        with archive:
+            infos = archive.infolist()
+            files = [info for info in infos if not info.is_dir()]
+            if len(files) > MAX_FILE_COUNT or len(infos) > MAX_FILE_COUNT * 2:
+                raise PluginError("ZIP内のファイル数が上限を超えています。")
+            total_size = 0
+            seen: set[str] = set()
+            for info in infos:
+                member = _archive_member_path(info.filename.rstrip("/"))
+                key = member.as_posix().casefold()
+                if key in seen:
+                    raise PluginError("ZIP内に重複するファイルパスがあります。")
+                seen.add(key)
+                unix_mode = (info.external_attr >> 16) & 0xFFFF
+                if stat.S_ISLNK(unix_mode):
+                    raise PluginError("ZIP内のシンボリックリンクは使用できません。")
+                if info.is_dir():
+                    continue
+                if info.flag_bits & 0x1:
+                    raise PluginError("暗号化されたZIPは読み込めません。")
+                if info.file_size > MAX_FILE_BYTES:
+                    raise PluginError("ZIP内にサイズ上限を超えるファイルがあります。")
+                total_size += info.file_size
+                if total_size > MAX_UNPACKED_BYTES:
+                    raise PluginError("ZIP展開後の合計サイズが上限を超えています。")
+                if info.file_size > 1024 * 1024 and info.compress_size and info.file_size / info.compress_size > 200:
+                    raise PluginError("圧縮率が高すぎるファイルを含むZIPです。")
+
+            expanded_size = 0
+            for info in files:
+                member = _archive_member_path(info.filename)
+                target = stage.joinpath(*member.parts)
+                resolved = target.resolve()
+                if not resolved.is_relative_to(stage.resolve()):
+                    raise PluginError("ZIPの展開先がプラグイン領域の外です。")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                file_size = 0
+                with archive.open(info, "r") as source, target.open("xb") as destination:
+                    while chunk := source.read(64 * 1024):
+                        file_size += len(chunk)
+                        expanded_size += len(chunk)
+                        if file_size > info.file_size or file_size > MAX_FILE_BYTES:
+                            raise PluginError("ZIP内のファイルサイズ申告が不正です。")
+                        if expanded_size > MAX_UNPACKED_BYTES:
+                            raise PluginError("ZIP展開後の合計サイズが上限を超えています。")
+                        destination.write(chunk)
+                if file_size != info.file_size:
+                    raise PluginError("ZIP内のファイルサイズ申告が不正です。")
+
+        manifest = _validate_package_dir(stage)
+        destination = _plugin_dir(manifest["id"], root)
+        if destination.exists():
+            raise PluginError("同じIDのプラグインがすでにあります。先に既存プラグインを削除してください。")
+        os.replace(stage, destination)
+        state = _read_state(root)
+        state["plugins"].pop(manifest["id"], None)
+        _write_state(state, root)
+        return {**{key: value for key, value in manifest.items() if key != "theme"}, "enabled": False}
+    except PluginError:
+        raise
+    except (zipfile.BadZipFile, RuntimeError, EOFError, NotImplementedError, OSError, zlib.error) as exc:
+        raise PluginError("ZIP内に破損または非対応のデータがあります。") from exc
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage, ignore_errors=True)
+
+
+@_serialized
+def list_plugins(directory: Path | None = None) -> dict[str, Any]:
+    root = _resolve_plugins_dir(directory)
+    state = _read_state(root)
+    entries: list[dict[str, Any]] = []
+    for candidate in sorted(root.iterdir(), key=lambda path: path.name.casefold()):
+        if not candidate.is_dir() or candidate.is_symlink() or candidate.name.startswith("."):
+            continue
+        if not _valid_plugin_id(candidate.name):
+            continue
+        try:
+            manifest = _validate_package_dir(candidate, allow_incompatible_api=True)
+            active = state["plugins"].get(manifest["id"], {})
+            enabled = bool(active.get("enabled")) if isinstance(active, dict) else False
+            entries.append(
+                {
+                    key: value
+                    for key, value in manifest.items()
+                    if key != "theme"
+                }
+                | {
+                    "enabled": enabled,
+                    "compatible": manifest["api_version"] == PLUGIN_API_VERSION,
+                    "active_theme": state.get("active_theme") == manifest["id"],
+                }
+            )
+        except PluginError as exc:
+            entries.append(
+                {
+                    "id": candidate.name,
+                    "name": candidate.name,
+                    "enabled": False,
+                    "compatible": False,
+                    "error": str(exc),
+                }
+            )
+    return {"api_version": PLUGIN_API_VERSION, "plugins": entries}
+
+
+@_serialized
+def set_plugin_enabled(plugin_id: str, enabled: bool, directory: Path | None = None) -> dict[str, Any]:
+    root = _resolve_plugins_dir(directory)
+    plugin_dir = _plugin_dir(plugin_id, root)
+    manifest = _validate_package_dir(plugin_dir)
+    state = _read_state(root)
+    plugins = state["plugins"]
+    current = plugins.get(plugin_id, {})
+    if not isinstance(current, dict):
+        current = {}
+    current["enabled"] = bool(enabled)
+    plugins[plugin_id] = current
+    if not enabled and state.get("active_theme") == plugin_id:
+        state["active_theme"] = None
+    _write_state(state, root)
+    return {"id": plugin_id, "enabled": bool(enabled), "type": manifest["type"]}
+
+
+@_serialized
+def set_active_theme(plugin_id: str | None, directory: Path | None = None) -> dict[str, Any] | None:
+    root = _resolve_plugins_dir(directory)
+    state = _read_state(root)
+    if plugin_id is None:
+        state["active_theme"] = None
+        _write_state(state, root)
+        return None
+    plugin_dir = _plugin_dir(plugin_id, root)
+    manifest = _validate_package_dir(plugin_dir)
+    if manifest["type"] != "theme":
+        raise PluginError("テーマ以外のプラグインはテーマに設定できません。")
+    plugin_state = state["plugins"].get(plugin_id, {})
+    if not isinstance(plugin_state, dict) or not bool(plugin_state.get("enabled")):
+        raise PluginError("テーマを有効にしてから適用してください。")
+    state["active_theme"] = plugin_id
+    _write_state(state, root)
+    return get_active_theme(root)
+
+
+@_serialized
+def get_active_theme(directory: Path | None = None) -> dict[str, Any] | None:
+    root = _resolve_plugins_dir(directory)
+    state = _read_state(root)
+    plugin_id = state.get("active_theme")
+    plugin_state = state["plugins"].get(plugin_id, {}) if plugin_id else {}
+    if not plugin_id or not isinstance(plugin_state, dict) or not bool(plugin_state.get("enabled")):
+        return None
+    try:
+        plugin_dir = _plugin_dir(plugin_id, root)
+        manifest = _validate_package_dir(plugin_dir)
+    except PluginError:
+        return None
+    if manifest["type"] != "theme":
+        return None
+    return {
+        "id": plugin_id,
+        "name": manifest["name"],
+        "colors": manifest["theme"]["colors"],
+        "properties": THEME_COLOR_PROPERTIES,
+    }
+
+
+@_serialized
+def remove_plugin(
+    plugin_id: str,
+    *,
+    delete_data: bool = False,
+    directory: Path | None = None,
+) -> dict[str, Any]:
+    root = _resolve_plugins_dir(directory)
+    target = _plugin_dir(plugin_id, root)
+    if not target.exists():
+        raise PluginError("プラグインが見つかりません。")
+    state = _read_state(root)
+    state["plugins"].pop(plugin_id, None)
+    if state.get("active_theme") == plugin_id:
+        state["active_theme"] = None
+    _write_state(state, root)
+    shutil.rmtree(target)
+    if delete_data:
+        data_root = _plugin_data_root(directory)
+        data_target = data_root / plugin_id
+        if data_target.is_symlink() or data_target.resolve().parent != data_root:
+            raise PluginError("プラグインデータの保存先が安全ではありません。")
+        if data_target.exists():
+            shutil.rmtree(data_target)
+    return {"id": plugin_id, "removed": True, "data_deleted": bool(delete_data)}
+
+
+@_serialized
+def plugin_resource_path(
+    plugin_id: str,
+    relative_path: str,
+    directory: Path | None = None,
+) -> Path:
+    plugin_dir = _plugin_dir(plugin_id, directory)
+    state = _read_state(directory)
+    if not bool(state["plugins"].get(plugin_id, {}).get("enabled")):
+        raise PluginError("無効なプラグインのファイルは開けません。")
+    manifest = _validate_package_dir(plugin_dir)
+    if manifest["type"] != "feature":
+        raise PluginError("テーマプラグインは画面を持ちません。")
+    relative = _archive_member_path(relative_path)
+    target = plugin_dir.joinpath(*relative.parts)
+    resolved = target.resolve()
+    if not resolved.is_relative_to(plugin_dir.resolve()) or target.is_symlink() or not target.is_file():
+        raise PluginError("プラグインのリソースが見つからないか、安全ではありません。")
+    if target.name in {"manifest.json", "theme.json"}:
+        raise PluginError("プラグイン設定ファイルはリソースとして公開できません。")
+    return resolved
+
+
+def export_plugin_archive(plugin_id: str, directory: Path | None = None) -> bytes:
+    plugin_dir = _plugin_dir(plugin_id, directory)
+    _validate_package_dir(plugin_dir, allow_incompatible_api=True)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+        for path in sorted(plugin_dir.rglob("*"), key=lambda item: item.as_posix().casefold()):
+            if path.is_symlink() or not path.is_file():
+                continue
+            relative = path.relative_to(plugin_dir)
+            if any(part.startswith(".") for part in relative.parts):
+                continue
+            if path.stat().st_size > MAX_FILE_BYTES:
+                raise PluginError("プラグイン内にZIP上限を超えるファイルがあります。")
+            archive.write(path, relative.as_posix())
+    value = buffer.getvalue()
+    if len(value) > MAX_ARCHIVE_BYTES:
+        raise PluginError("作成したZIPがサイズ上限を超えています。")
+    return value
+
+
+def _validate_storage_key(key: str) -> None:
+    if not isinstance(key, str) or not key or len(key) > 128 or "\x00" in key:
+        raise PluginError("プラグインデータのキーが不正です。")
+
+
+def _plugin_data_root(directory: Path | None = None) -> Path:
+    data_root = Path(directory).parent / "plugin-data" if directory else get_plugin_data_dir()
+    data_root.mkdir(parents=True, exist_ok=True)
+    if data_root.is_symlink():
+        raise PluginError("プラグインデータの保存先が安全ではありません。")
+    return data_root.resolve()
+
+
+def _plugin_storage_path(plugin_id: str, directory: Path | None = None) -> Path:
+    if not _valid_plugin_id(plugin_id):
+        raise PluginError("プラグインIDが不正です。")
+    data_root = _plugin_data_root(directory)
+    target_dir = data_root / plugin_id
+    if target_dir.is_symlink():
+        raise PluginError("プラグインデータの保存先が安全ではありません。")
+    if target_dir.exists() and target_dir.resolve().parent != data_root:
+        raise PluginError("プラグインデータの保存先が安全ではありません。")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / "storage.json"
+    if path.is_symlink() or path.resolve().parent != target_dir.resolve():
+        raise PluginError("プラグインデータの保存先が安全ではありません。")
+    return path
+
+
+def _require_storage_permission(plugin_id: str, directory: Path | None) -> None:
+    plugin_dir = _plugin_dir(plugin_id, directory)
+    manifest = _validate_package_dir(plugin_dir)
+    state = _read_state(directory)
+    if not bool(state["plugins"].get(plugin_id, {}).get("enabled")):
+        raise PluginError("無効なプラグインはデータにアクセスできません。")
+    if "storage" not in manifest["permissions"]:
+        raise PluginError("このプラグインにストレージ権限はありません。")
+
+
+@_serialized
+def get_plugin_storage(plugin_id: str, key: str, directory: Path | None = None) -> dict[str, Any]:
+    _require_storage_permission(plugin_id, directory)
+    _validate_storage_key(key)
+    path = _plugin_storage_path(plugin_id, directory)
+    try:
+        if path.stat().st_size > MAX_STORAGE_BYTES:
+            raise PluginError("プラグインデータがサイズ上限を超えています。")
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        value = {}
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise PluginError("プラグインデータを読み込めません。") from exc
+    if not isinstance(value, dict):
+        raise PluginError("プラグインデータの形式が不正です。")
+    return {"key": key, "value": value.get(key)}
+
+
+@_serialized
+def put_plugin_storage(
+    plugin_id: str,
+    key: str,
+    value: Any,
+    directory: Path | None = None,
+) -> dict[str, Any]:
+    _require_storage_permission(plugin_id, directory)
+    _validate_storage_key(key)
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError) as exc:
+        raise PluginError("プラグインデータはJSON形式で指定してください。") from exc
+    if len(encoded.encode("utf-8")) > MAX_STORAGE_BYTES:
+        raise PluginError("保存できるプラグインデータは1項目あたり2MBまでです。")
+    path = _plugin_storage_path(plugin_id, directory)
+    current: dict[str, Any] = {}
+    if path.exists():
+        current = _read_json(path, MAX_STORAGE_BYTES)
+        if not isinstance(current, dict):
+            raise PluginError("プラグインデータの形式が不正です。")
+    current[key] = value
+    serialized = json.dumps(current, ensure_ascii=False, separators=(",", ":"))
+    if len(serialized.encode("utf-8")) > MAX_STORAGE_BYTES:
+        raise PluginError("プラグインデータの合計が2MBを超えています。")
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text(serialized, encoding="utf-8")
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return {"key": key, "value": value}
+
+
+def _skill_source_dir(source_dir: Path | None = None) -> Path:
+    source = Path(source_dir) if source_dir else get_resource_dir() / "skills" / SKILL_ID
+    source = source.resolve()
+    if not (source / "SKILL.md").is_file():
+        raise PluginError("同梱されたプラグイン作成スキルが見つかりません。")
+    return source
+
+
+def get_agent_skill_targets(
+    *,
+    home: Path | None = None,
+    environ: dict[str, str] | None = None,
+) -> dict[str, Path]:
+    env = dict(os.environ if environ is None else environ)
+    user_home = Path(home).expanduser() if home is not None else Path.home()
+
+    def configured_path(value: str) -> Path:
+        portable_env = {**env, "HOME": env.get("HOME", str(user_home))}
+        portable_env.setdefault("USERPROFILE", str(user_home))
+
+        def expand(match: re.Match[str]) -> str:
+            name = next(group for group in match.groups() if group is not None)
+            return portable_env.get(name, match.group(0))
+
+        expanded = ENVIRONMENT_PATH_PATTERN.sub(expand, value.strip())
+        if expanded == "~" or expanded.startswith(("~/", "~\\")):
+            expanded = str(user_home) + expanded[1:]
+        return Path(expanded)
+
+    codex_home_value = env.get("CODEX_HOME", "").strip()
+    codex_home = configured_path(codex_home_value) if codex_home_value else user_home / ".codex"
+    xdg_value = env.get("XDG_CONFIG_HOME", "").strip()
+    config_home = configured_path(xdg_value) if xdg_value else user_home / ".config"
+    claude_config_value = env.get("CLAUDE_CONFIG_DIR", "").strip()
+    claude_config = configured_path(claude_config_value) if claude_config_value else user_home / ".claude"
+    return {
+        "OpenCode": config_home / "opencode" / "skills" / SKILL_ID,
+        "Codex": codex_home / "skills" / SKILL_ID,
+        "Claude Code": claude_config / "skills" / SKILL_ID,
+    }
+
+
+def _install_skill_for_target(source: Path, target: Path) -> str:
+    if target.is_symlink():
+        return "conflict"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    managed = False
+    if target.exists():
+        marker = target / SKILL_MARKER
+        try:
+            marker_value = json.loads(marker.read_text(encoding="utf-8"))
+            managed = marker_value.get("owner") == "Sparkle" and marker_value.get("skill") == SKILL_ID
+        except (OSError, ValueError, AttributeError):
+            managed = False
+        if not managed:
+            return "conflict"
+
+    stage_parent = Path(tempfile.mkdtemp(prefix=".sparkle-skill-", dir=target.parent))
+    stage = stage_parent / SKILL_ID
+    backup = target.with_name(f".{target.name}.backup-{uuid.uuid4().hex}")
+    try:
+        shutil.copytree(source, stage)
+        (stage / SKILL_MARKER).write_text(
+            json.dumps({"owner": "Sparkle", "skill": SKILL_ID, "version": "1.0.0"}),
+            encoding="utf-8",
+        )
+        if managed:
+            os.replace(target, backup)
+        try:
+            os.replace(stage, target)
+        except OSError:
+            if managed and backup.exists():
+                os.replace(backup, target)
+            raise
+        if backup.exists():
+            shutil.rmtree(backup)
+        return "updated" if managed else "installed"
+    except OSError:
+        return "failed"
+    finally:
+        shutil.rmtree(stage_parent, ignore_errors=True)
+        if backup.exists() and not target.exists():
+            try:
+                os.replace(backup, target)
+            except OSError:
+                pass
+
+
+def install_authoring_skill(
+    *,
+    source_dir: Path | None = None,
+    home: Path | None = None,
+    environ: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    source = _skill_source_dir(source_dir)
+    results: list[dict[str, str]] = []
+    for agent, target in get_agent_skill_targets(home=home, environ=environ).items():
+        try:
+            status = _install_skill_for_target(source, target)
+        except OSError:
+            status = "failed"
+        results.append({"agent": agent, "status": status})
+    return {"skill": SKILL_ID, "results": results}

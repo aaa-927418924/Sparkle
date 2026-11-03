@@ -20,7 +20,7 @@ a = Analysis(
     ['app_entry.py'],
     pathex=[],
     binaries=[],
-    datas=[('frontend', 'frontend'), ('Icon.png', '.')] + core_datas,
+    datas=[('frontend', 'frontend'), ('skills', 'skills'), ('Icon.png', '.')] + core_datas,
     hiddenimports=['remote_auth', 'remote_gateway', 'remote_runtime', 'remote_mcp', 'mcp.server.auth.provider', 'mcp.server.auth.settings', 'mcp.server.streamable_http', 'uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan', 'uvicorn.lifespan.on', 'pystray._win32', 'webview.platforms.winforms', 'webview.platforms.edgechromium'] + core_hiddenimports,
     hookspath=[],
     hooksconfig={},

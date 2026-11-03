@@ -1,0 +1,305 @@
+.plugin-settings-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 212px;
+  align-items: start;
+  gap: 24px;
+}
+
+.plugin-settings-panels {
+  min-width: 0;
+}
+
+.plugin-settings-category-nav {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 6px;
+  width: 212px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-raised);
+}
+
+.plugin-settings-category-button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plugin-settings-category-button[aria-pressed="true"] {
+  border-color: var(--border);
+  color: var(--text);
+  background: var(--surface-active);
+}
+
+.plugin-settings-category-button:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.settings-category-icon {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.plugin-settings-category-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.plugin-settings-panel[hidden] {
+  display: none;
+}
+
+.plugin-settings-content {
+  width: 100%;
+}
+
+.plugin-manager-card,
+.plugin-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+
+.plugin-manager-card {
+  display: grid;
+  gap: 10px;
+  margin-block: 16px;
+}
+
+.plugin-manager-card .modal-sub {
+  margin: 0;
+}
+
+.plugin-file-label {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--surface-active);
+  font: inherit;
+  cursor: pointer;
+}
+
+.plugin-file-label:hover {
+  background: var(--surface-hover);
+}
+
+.plugin-file-input {
+  max-width: 100%;
+  color: var(--muted);
+  font: inherit;
+}
+
+.plugin-file-input:focus-visible,
+.plugin-file-label:focus-visible,
+.plugin-actions button:focus-visible,
+#pluginSkillInstall:focus-visible,
+#pluginPanelClose:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.plugin-agent-status-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plugin-agent-status-list li {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.plugin-list {
+  display: grid;
+  gap: 12px;
+  margin-block: 16px;
+}
+
+.plugin-card {
+  display: grid;
+  gap: 12px;
+}
+
+.plugin-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 14px;
+}
+
+.plugin-card-title {
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.plugin-card-meta,
+.plugin-card-description,
+.plugin-card-error {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.plugin-card-error {
+  color: var(--accent);
+}
+
+.plugin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.plugin-actions .modal-btn {
+  min-height: 38px;
+  white-space: normal;
+}
+
+.plugin-actions .modal-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.plugin-panel-dialog {
+  width: min(920px, calc(100vw - 32px));
+  height: min(760px, calc(100vh - 40px));
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.plugin-panel-dialog::backdrop {
+  background: rgb(0 0 0 / 58%);
+}
+
+.plugin-panel-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.plugin-panel-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-block-end: 1px solid var(--border);
+}
+
+.plugin-panel-dialog-header .modal-title {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.plugin-panel-frame {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--bg);
+}
+
+.plugin-panel-status {
+  min-height: 0;
+  margin: 0;
+  padding-inline: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.plugin-panel-status:empty {
+  display: none;
+}
+
+@media (max-width: 520px) {
+  .plugin-settings-layout {
+    grid-template-columns: minmax(0, 1fr) 48px;
+    gap: 8px;
+  }
+
+  .plugin-settings-category-nav {
+    width: 48px;
+    padding: 4px;
+  }
+
+  .plugin-settings-category-button {
+    justify-content: center;
+    width: 40px;
+    min-height: 40px;
+    padding: 8px;
+  }
+
+  .plugin-settings-category-button .settings-category-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .plugin-manager-card,
+  .plugin-card {
+    padding: 12px;
+  }
+
+  .plugin-panel-dialog {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+    border-radius: 12px;
+  }
+
+  .plugin-panel-dialog-header {
+    align-items: flex-start;
+  }
+}

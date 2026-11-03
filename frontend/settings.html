@@ -14,6 +14,7 @@
     </script>
     <link rel="stylesheet" href="style.css?v=settings-remote-mcp-disabled-20260921-v1" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1-black-background-v1-bg24273a-sidebar202231-v2-surface-raised-202231-v2-custom-titlebar-history-v4-fixed-sidebar-icons-left-v5-compact-sidebar-v1-main-corner-v1-unified-controls-v1-flat-notes-v1-static-ui-v1-sidebar-gap-v1-notes-outline-v1-task-panel-frameless-v1-no-card-lift-v1-project-borderless-v1-memo-outline-inset-v1-note-editor-corner-v1-shell-scroll-v1-sidebar-nav-icons-v1-page-transition-fade-v1-native-backdrop-v12" />
+    <link rel="stylesheet" href="plugin-manager.css?v=plugin-manager-v1" />
     <script>document.documentElement.setAttribute("data-theme", "dark");
       try {
         document.documentElement.classList.toggle(
@@ -60,7 +61,9 @@
       </nav>
 
       <main id="mainContent" class="main settings-main">
-        <section class="settings-page-card" aria-labelledby="settingsPageTitle">
+        <div class="plugin-settings-layout">
+          <div class="plugin-settings-panels">
+        <section id="generalSettingsPanel" class="settings-page-card" aria-labelledby="settingsPageTitle">
           <h2 id="settingsPageTitle" class="sr-only">Sparkleの設定項目</h2>
           <div class="settings-columns">
             <div class="settings-col">
@@ -359,6 +362,44 @@
             <button id="settingsReset" class="modal-btn ghost" type="button">設定をすべてデフォルトに戻す</button>
           </div>
         </section>
+        <section id="pluginSettingsPanel" class="settings-page-card plugin-settings-panel" aria-labelledby="pluginSettingsTitle" hidden>
+          <h2 id="pluginSettingsTitle" class="sr-only">プラグイン設定</h2>
+          <div class="settings-col plugin-settings-content">
+            <h3 class="modal-sub">プラグイン</h3>
+            <p class="file-save-desc">プラグインはSparkle本体とは別に保存されます。API非対応のプラグインは無効状態で保持されます。</p>
+
+            <section class="plugin-manager-card" aria-labelledby="pluginSkillTitle">
+              <h4 id="pluginSkillTitle" class="modal-sub">AI向けプラグイン作成スキル</h4>
+              <p class="file-save-desc">OpenCode・Codex・Claude Codeで、Sparkle用プラグインを作成する手順を導入します。</p>
+              <button id="pluginSkillInstall" class="modal-btn ghost" type="button">作成スキルを3つのAIへ導入</button>
+              <div id="pluginSkillStatus" class="ai-export-status" role="status" aria-live="polite"></div>
+              <ul id="pluginSkillAgents" class="plugin-agent-status-list" aria-label="AIスキルの導入状況"></ul>
+            </section>
+
+            <section class="plugin-manager-card" aria-labelledby="pluginImportTitle">
+              <h4 id="pluginImportTitle" class="modal-sub">プラグインをインポート</h4>
+              <label class="plugin-file-label" for="pluginZipInput">ZIPファイルを選択</label>
+              <input id="pluginZipInput" class="plugin-file-input" type="file" accept=".zip,application/zip" />
+              <p class="file-save-desc">ZIPのルートにmanifest.jsonがある形式に対応しています。インポートしたプラグインは無効状態で追加されます。</p>
+              <div id="pluginImportStatus" class="ai-export-status" role="status" aria-live="polite"></div>
+            </section>
+
+            <div id="pluginList" class="plugin-list" aria-live="polite"></div>
+            <p id="pluginEmpty" class="file-save-desc">プラグインはまだありません。作成したZIPをインポートできます。</p>
+          </div>
+        </section>
+          </div>
+          <nav class="plugin-settings-category-nav" aria-label="設定カテゴリ">
+            <button class="plugin-settings-category-button" type="button" data-plugin-category-button="general" aria-pressed="true" aria-controls="generalSettingsPanel" title="設定">
+              <svg class="settings-category-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16" /><circle cx="9" cy="6" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="7" cy="18" r="2" /></svg>
+              <span class="settings-category-label">設定</span>
+            </button>
+            <button class="plugin-settings-category-button" type="button" data-plugin-category-button="plugins" aria-pressed="false" aria-controls="pluginSettingsPanel" title="プラグイン">
+              <svg class="settings-category-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 4a2 2 0 1 1 4 0v2h3a2 2 0 0 1 2 2v3h2a2 2 0 1 1 0 4h-2v3a2 2 0 0 1-2 2h-3v-2a2 2 0 1 0-4 0v2H6a2 2 0 0 1-2-2v-3H2a2 2 0 1 1 0-4h2V8a2 2 0 0 1 2-2h3V4Z" /></svg>
+              <span class="settings-category-label">プラグイン</span>
+            </button>
+          </nav>
+        </div>
       </main>
     </div>
 
@@ -381,5 +422,7 @@
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v2-sidebar-shift-click-v1-native-backdrop-v7"></script>
     <script src="remote-access.js?v=remote-access-20260921-disabled-v1"></script>
     <script src="remote-client-settings.js?v=remote-client-settings-20260821-v1"></script>
+    <script src="plugin-theme.js?v=plugin-theme-v1"></script>
+    <script src="plugin-manager.js?v=plugin-manager-v1"></script>
   </body>
 </html>

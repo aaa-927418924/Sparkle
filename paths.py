@@ -56,6 +56,20 @@ def get_profile_dir() -> Path:
     return d
 
 
+def get_plugins_dir() -> Path:
+    """Return the writable, update-persistent directory for Sparkle plugins."""
+    d = get_app_data_dir() / "plugins"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def get_plugin_data_dir() -> Path:
+    """Return the separate root for data owned by installed plugins."""
+    d = get_app_data_dir() / "plugin-data"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def get_ai_export_dir() -> Path:
     """Return the human-readable export directory intended for AI tools."""
     documents = Path.home() / "Documents"

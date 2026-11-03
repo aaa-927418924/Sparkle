@@ -38,6 +38,44 @@
     margin: "length", padding: "length", width: "length", height: "length",
     radius: "length", fontSize: "length", opacity: "number",
   };
+  const permissionText = {
+    storage: {
+      title: "プラグイン専用ストレージ",
+      detail: "このプラグインが自分専用の設定や保存データを読み書きします。Sparkleのクリップやプロジェクトにはアクセスしません。",
+    },
+    notifications: {
+      title: "Sparkle内通知",
+      detail: "このプラグインがSparkle画面内に通知を表示できます。",
+    },
+    "ui.customize": {
+      title: "SparkleのUI変更",
+      detail: "このプラグインが申告した範囲で、UI項目を追加・非表示・並び替え・スタイル変更できます。アプリのデータや機能は変更しません。",
+    },
+    "clips.read": {
+      title: "クリップの読み取り",
+      detail: "クリップのURL、タイトル、コメント、カテゴリ、タグ、プロジェクトとの関連を読み取れます。保存済みファイルの内容やローカルパスは取得できません。",
+    },
+    "clips.write": {
+      title: "クリップの作成・編集",
+      detail: "Webクリップを作成し、タイトル、コメント、カテゴリ、タグなどを編集できます。必要な場合はSparkleが公開URLからメタデータを取得します。変更はプラグイン削除後も残ります。",
+    },
+    "clips.delete": {
+      title: "クリップの削除",
+      detail: "Sparkleからクリップを削除できます。コピー保存されたローカルファイルも削除される場合があります。削除はプラグインを消しても元に戻りません。",
+    },
+    "projects.read": {
+      title: "プロジェクトの読み取り",
+      detail: "プロジェクト名、説明、完了状態を読み取れます。クリップの内容を読むには、別途クリップの読み取り許可が必要です。",
+    },
+    "projects.write": {
+      title: "プロジェクトの作成・編集",
+      detail: "プロジェクトの作成と名前・説明の変更ができます。完了状態の変更は含みません。変更はプラグイン削除後も残ります。",
+    },
+    "projects.delete": {
+      title: "プロジェクトの削除",
+      detail: "プロジェクトを削除して関連付けとそのプロジェクトのAI履歴を解除できます。クリップやタスクなどのレコード自体は削除しません。削除はプラグインを消しても元に戻りません。",
+    },
+  };
   const hostUiSelectors = {
     "sidebar.home": ".sidebar a[data-nav='home']",
     "sidebar.memo": ".sidebar a[data-nav='memo']",
@@ -77,8 +115,11 @@
 
   let plugins = [];
   let activePanelId = null;
+  let activePanelContext = {};
   let messageTimes = [];
   let dialogParts = null;
+  let permissionDialogParts = null;
+  let permissionPromptQueue = Promise.resolve();
 
   function make(tag, className, value) {
     const element = document.createElement(tag);
@@ -92,7 +133,7 @@
       const stylesheet = make("link");
       stylesheet.id = "pluginUiStylesheet";
       stylesheet.rel = "stylesheet";
-      stylesheet.href = "plugin-ui.css?v=plugin-ui-api-v2";
+      stylesheet.href = "plugin-ui.css?v=plugin-ui-api-v3-permissions-v1";
       document.head.append(stylesheet);
     }
     for (const [target, selector] of Object.entries(hostUiSelectors)) {
@@ -106,8 +147,106 @@
     const response = await fetch(apiRoot + path, options);
     let body = {};
     try { body = await response.json(); } catch {}
-    if (!response.ok) throw new Error(String(body.detail || "プラグイン操作に失敗しました。"));
+    if (!response.ok) {
+      const detail = body.detail;
+      const message = detail && typeof detail === "object" ? detail.message : detail;
+      const error = new Error(String(message || "プラグイン操作に失敗しました。"));
+      if (detail && typeof detail === "object" && typeof detail.permission_required === "string") {
+        error.permissionRequired = detail.permission_required;
+      }
+      throw error;
+    }
     return body;
+  }
+
+  function ensurePermissionDialog() {
+    if (!permissionDialogParts) {
+      const dialog = make("dialog", "plugin-permission-dialog");
+      dialog.setAttribute("aria-labelledby", "pluginPermissionTitle");
+      const title = make("h2", "plugin-permission-title");
+      title.id = "pluginPermissionTitle";
+      const description = make("p", "plugin-permission-description");
+      const persistence = make("p", "plugin-permission-persistence", "許可はこのPCに保存されます。各プラグインの「権限を削除」から、いつでもすべて取り消せます。");
+      const status = make("p", "plugin-permission-status");
+      status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
+      const actions = make("div", "plugin-permission-actions");
+      const deny = make("button", "modal-btn ghost", "今回は許可しない");
+      deny.type = "button";
+      const allow = make("button", "modal-btn", "許可する");
+      allow.type = "button";
+      actions.append(deny, allow);
+      dialog.append(title, description, persistence, status, actions);
+      document.body.append(dialog);
+      permissionDialogParts = { dialog, title, description, status, deny, allow };
+    }
+    return permissionDialogParts;
+  }
+
+  function requestPermission(pluginId, permission, pluginHint) {
+    const run = async () => {
+      await refresh();
+      const plugin = plugins.find((entry) => entry.id === pluginId) || pluginHint;
+      if (!plugin || !plugin.permissions?.includes(permission)) return false;
+      if (plugin.granted_permissions?.includes(permission)) return true;
+      const copy = permissionText[permission];
+      if (!copy) return false;
+
+      const parts = ensurePermissionDialog();
+      parts.title.textContent = (plugin.name || plugin.id) + "が権限を要求しています";
+      parts.description.textContent = copy.title + "：" + copy.detail;
+      parts.status.textContent = "";
+      parts.allow.disabled = false;
+      parts.deny.disabled = false;
+
+      return new Promise((resolve) => {
+        let settled = false;
+        const finish = (granted) => {
+          if (settled) return;
+          settled = true;
+          parts.allow.removeEventListener("click", allowPermission);
+          parts.deny.removeEventListener("click", denyPermission);
+          parts.dialog.removeEventListener("cancel", cancelPermission);
+          parts.dialog.removeEventListener("close", closePermission);
+          if (parts.dialog.open) parts.dialog.close();
+          resolve(granted);
+        };
+        const denyPermission = () => finish(false);
+        const cancelPermission = (event) => {
+          event.preventDefault();
+          finish(false);
+        };
+        const closePermission = () => finish(false);
+        const allowPermission = async () => {
+          parts.allow.disabled = true;
+          parts.deny.disabled = true;
+          try {
+            const result = await request("/" + encodeURIComponent(pluginId) + "/permissions/" + encodeURIComponent(permission), {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ granted: true }),
+            });
+            plugins = plugins.map((entry) => entry.id === pluginId
+              ? { ...entry, granted_permissions: result.granted_permissions || [] }
+              : entry);
+            await refresh();
+            finish(true);
+          } catch (error) {
+            parts.status.textContent = error.message;
+            parts.allow.disabled = false;
+            parts.deny.disabled = false;
+          }
+        };
+        parts.allow.addEventListener("click", allowPermission);
+        parts.deny.addEventListener("click", denyPermission);
+        parts.dialog.addEventListener("cancel", cancelPermission);
+        parts.dialog.addEventListener("close", closePermission);
+        parts.dialog.showModal();
+      });
+    };
+    const next = permissionPromptQueue.then(run, run);
+    permissionPromptQueue = next.then(() => undefined, () => undefined);
+    return next;
   }
 
   function ensureDialog() {
@@ -151,22 +290,37 @@
     return dialogParts;
   }
 
-  function openPanel(pluginId) {
+  function openPanel(pluginId, context = {}) {
     const plugin = plugins.find((entry) => entry.id === pluginId);
     if (!plugin || !plugin.enabled || !plugin.compatible || plugin.type !== "feature") return;
+    const safeContext = {};
+    if (context?.view === "list" || context?.view === "detail") safeContext.view = context.view;
+    if (context?.project_id !== undefined) {
+      try { safeContext.project_id = positiveId(context.project_id); } catch {}
+    }
     const parts = ensureDialog();
     activePanelId = plugin.id;
+    activePanelContext = safeContext;
     messageTimes = [];
     parts.title.textContent = plugin.name || plugin.id;
     parts.status.textContent = "";
     parts.frame.title = plugin.name || "プラグイン画面";
+    parts.frame.onload = () => {
+      if (activePanelId !== plugin.id) return;
+      parts.frame.contentWindow?.postMessage({
+        type: "sparkle-plugin-context",
+        context: activePanelContext,
+      }, "*");
+    };
     parts.frame.src = apiRoot + "/" + encodeURIComponent(plugin.id) + "/panel";
     if (!parts.dialog.open) parts.dialog.showModal();
   }
 
-  function closePanel() {
+  function closePanel(pluginId) {
     if (!dialogParts) return;
+    if (pluginId && activePanelId !== pluginId) return;
     activePanelId = null;
+    activePanelContext = {};
     dialogParts.frame.src = "about:blank";
     dialogParts.status.textContent = "";
     if (dialogParts.dialog.open) dialogParts.dialog.close();
@@ -229,7 +383,14 @@
         button.title = item.label;
         button.setAttribute("aria-label", item.label);
         button.append(makeIcon(item.icon), make("span", "plugin-project-action-label", item.label));
-        button.addEventListener("click", () => openPanel(item.plugin_id));
+        button.addEventListener("click", () => {
+          const detailView = slot.closest("#detailView");
+          const context = { view: detailView && !detailView.hidden ? "detail" : "list" };
+          if (context.view === "detail" && detailView.dataset.projectId) {
+            context.project_id = detailView.dataset.projectId;
+          }
+          openPanel(item.plugin_id, context);
+        });
         slot.append(button);
       }
     }
@@ -351,6 +512,84 @@
     }, "*");
   }
 
+  function objectValue(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  }
+
+  function positiveId(value) {
+    const id = Number(value);
+    if (!Number.isSafeInteger(id) || id < 1) throw new Error("IDには正の整数を指定してください。");
+    return id;
+  }
+
+  async function executePanelRequest(plugin, parts, data) {
+    if (data.method === "notify") {
+      if (!plugin.permissions?.includes("notifications")) throw new Error("このプラグインは通知権限を要求していません。");
+      if (!plugin.granted_permissions?.includes("notifications")) {
+        const error = new Error("Sparkle内通知の許可が必要です。");
+        error.permissionRequired = "notifications";
+        throw error;
+      }
+      if (typeof data.message !== "string" || data.message.length > 500) throw new Error("通知メッセージが長すぎます。");
+      parts.status.textContent = data.message;
+      return null;
+    }
+    if (data.method === "storage.get" || data.method === "storage.set") {
+      if (!plugin.permissions?.includes("storage")) throw new Error("このプラグインはストレージ権限を要求していません。");
+      if (typeof data.key !== "string") throw new Error("ストレージキーが不正です。");
+      const path = "/" + encodeURIComponent(plugin.id) + "/storage/" + encodeURIComponent(data.key);
+      if (data.method === "storage.get") {
+        const result = await request(path, { cache: "no-store" });
+        return result.value;
+      }
+      const result = await request(path, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: data.value }),
+      });
+      return result.value;
+    }
+
+    const base = "/" + encodeURIComponent(plugin.id) + "/data/";
+    const payload = objectValue(data.payload);
+    const methods = {
+      "clips.list": () => {
+        const query = new URLSearchParams();
+        const filters = objectValue(data.filters) || {};
+        for (const key of ["category", "tag", "url"]) {
+          if (typeof filters[key] === "string") query.set(key, filters[key]);
+        }
+        for (const key of ["project_id", "exclude_project"]) {
+          if (filters[key] !== undefined && filters[key] !== null) query.set(key, String(positiveId(filters[key])));
+        }
+        const serialized = query.toString();
+        return request(base + "clips" + (serialized ? "?" + serialized : ""), { cache: "no-store" });
+      },
+      "clips.get": () => request(base + "clips/" + positiveId(data.id), { cache: "no-store" }),
+      "clips.create": () => request(base + "clips", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload || {}),
+      }),
+      "clips.update": () => request(base + "clips/" + positiveId(data.id), {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload || {}),
+      }),
+      "clips.delete": () => request(base + "clips/" + positiveId(data.id), { method: "DELETE" }),
+      "projects.list": () => request(base + "projects", { cache: "no-store" }),
+      "projects.get": () => request(base + "projects/" + positiveId(data.id), { cache: "no-store" }),
+      "projects.create": () => request(base + "projects", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload || {}),
+      }),
+      "projects.update": () => request(base + "projects/" + positiveId(data.id), {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload || {}),
+      }),
+      "projects.delete": () => request(base + "projects/" + positiveId(data.id), { method: "DELETE" }),
+    };
+    if (typeof data.method !== "string" || !Object.hasOwn(methods, data.method)) {
+      throw new Error("未対応のプラグインAPIです。");
+    }
+    const execute = methods[data.method];
+    return execute();
+  }
+
   async function handlePanelMessage(event) {
     const parts = dialogParts;
     if (!parts || !activePanelId || event.source !== parts.frame.contentWindow) return;
@@ -366,27 +605,17 @@
       return;
     }
     try {
-      if (data.method === "notify" && plugin.permissions?.includes("notifications")) {
-        if (typeof data.message !== "string" || data.message.length > 500) throw new Error("通知メッセージが長すぎます。");
-        parts.status.textContent = data.message;
-        respond(parts.frame, data.requestId, true, null);
-        return;
+      let value;
+      try {
+        value = await executePanelRequest(plugin, parts, data);
+      } catch (error) {
+        if (!error.permissionRequired) throw error;
+        const granted = await requestPermission(plugin.id, error.permissionRequired, plugin);
+        if (!granted) throw new Error("権限は許可されませんでした。");
+        const refreshedPlugin = plugins.find((entry) => entry.id === plugin.id) || plugin;
+        value = await executePanelRequest(refreshedPlugin, parts, data);
       }
-      if (data.method === "storage.get" && plugin.permissions?.includes("storage") && typeof data.key === "string") {
-        const value = await request("/" + encodeURIComponent(plugin.id) + "/storage/" + encodeURIComponent(data.key), { cache: "no-store" });
-        respond(parts.frame, data.requestId, true, value.value);
-        return;
-      }
-      if (data.method === "storage.set" && plugin.permissions?.includes("storage") && typeof data.key === "string") {
-        const value = await request("/" + encodeURIComponent(plugin.id) + "/storage/" + encodeURIComponent(data.key), {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ value: data.value }),
-        });
-        respond(parts.frame, data.requestId, true, value.value);
-        return;
-      }
-      throw new Error("プラグインAPIの権限がありません。");
+      respond(parts.frame, data.requestId, true, value);
     } catch (error) {
       respond(parts.frame, data.requestId, false, null, error.message);
     }
@@ -417,6 +646,7 @@
     refreshUI: refresh,
     open: openPanel,
     close: closePanel,
+    requestPermission,
   });
   void refresh();
 })();

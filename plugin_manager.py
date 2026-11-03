@@ -12,16 +12,17 @@ import tempfile
 import uuid
 import zipfile
 import zlib
+from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path, PurePosixPath
 from threading import RLock
-from typing import Any
+from typing import Any, Iterator
 
 from paths import get_plugin_data_dir, get_plugins_dir, get_resource_dir
 
 
-PLUGIN_API_VERSION = 2
-SUPPORTED_PLUGIN_API_VERSIONS = {1, 2}
+PLUGIN_API_VERSION = 3
+SUPPORTED_PLUGIN_API_VERSIONS = {1, 2, 3}
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 MAX_UNPACKED_BYTES = 40 * 1024 * 1024
 MAX_FILE_BYTES = 12 * 1024 * 1024
@@ -52,7 +53,15 @@ THEME_COLOR_PROPERTIES = {
     "accentSoft": "--accent-soft",
 }
 ALLOWED_PLUGIN_TYPES = {"theme", "feature"}
-ALLOWED_PERMISSIONS = {"storage", "notifications", "ui.customize"}
+DATA_PERMISSIONS = {
+    "clips.read",
+    "clips.write",
+    "clips.delete",
+    "projects.read",
+    "projects.write",
+    "projects.delete",
+}
+ALLOWED_PERMISSIONS = {"storage", "notifications", "ui.customize", *DATA_PERMISSIONS}
 ALLOWED_SIDEBAR_ICONS = {
     "home",
     "tasks",
@@ -119,6 +128,14 @@ ENVIRONMENT_PATH_PATTERN = re.compile(r"%([^%]+)%|\$\{([^}]+)\}|\$([A-Za-z_][A-Z
 
 class PluginError(ValueError):
     """A plugin package or lifecycle request is invalid."""
+
+
+class PluginPermissionRequired(PluginError):
+    """A plugin requested an operation whose permission has not been granted."""
+
+    def __init__(self, permission: str):
+        self.permission = permission
+        super().__init__(f"この操作には「{permission}」権限が必要です。")
 
 
 def _serialized(function):
@@ -377,6 +394,8 @@ def _validate_package_dir(
             raise PluginError("プラグイン権限が重複しています。")
         if api_version < 2 and ("ui.customize" in permissions or "contributes" in manifest):
             raise PluginError("UI寄与はプラグインAPI 2以降で使用できます。")
+        if api_version < 3 and set(permissions) & DATA_PERMISSIONS:
+            raise PluginError("クリップ・プロジェクト権限はプラグインAPI 3以降で使用できます。")
 
     result = {
         "id": plugin_id,
@@ -533,6 +552,7 @@ def list_plugins(directory: Path | None = None) -> dict[str, Any]:
             manifest = _validate_package_dir(candidate, allow_incompatible_api=True)
             active = state["plugins"].get(manifest["id"], {})
             enabled = bool(active.get("enabled")) if isinstance(active, dict) else False
+            granted_permissions = _effective_granted_permissions(manifest, active)
             entries.append(
                 {
                     key: value
@@ -541,6 +561,7 @@ def list_plugins(directory: Path | None = None) -> dict[str, Any]:
                 }
                 | {
                     "enabled": enabled,
+                    "granted_permissions": granted_permissions,
                     "compatible": manifest["api_version"] in SUPPORTED_PLUGIN_API_VERSIONS,
                     "active_theme": state.get("active_theme") == manifest["id"],
                 }
@@ -568,7 +589,7 @@ def get_plugin_ui_state(directory: Path | None = None) -> dict[str, Any]:
         if plugin.get("enabled")
         and plugin.get("compatible")
         and plugin.get("type") == "feature"
-        and "ui.customize" in plugin.get("permissions", [])
+        and "ui.customize" in plugin.get("granted_permissions", [])
         and isinstance(plugin.get("contributes"), dict)
     ]
     contributors.sort(key=lambda plugin: (plugin.get("priority", 0), plugin["id"]))
@@ -631,6 +652,103 @@ def set_plugin_enabled(plugin_id: str, enabled: bool, directory: Path | None = N
         state["active_theme"] = None
     _write_state(state, root)
     return {"id": plugin_id, "enabled": bool(enabled), "type": manifest["type"]}
+
+
+def _effective_granted_permissions(
+    manifest: dict[str, Any],
+    plugin_state: Any,
+) -> list[str]:
+    requested = set(manifest.get("permissions", []))
+    if isinstance(plugin_state, dict) and isinstance(plugin_state.get("granted_permissions"), list):
+        granted = {
+            permission
+            for permission in plugin_state["granted_permissions"]
+            if isinstance(permission, str)
+        }
+        return sorted(requested & granted)
+    # Keep legacy API v1/v2 plugins working until the user explicitly revokes
+    # their old manifest-declared grants. API v3 starts with no grants.
+    if manifest.get("api_version", 1) < 3:
+        return sorted(requested)
+    return []
+
+
+@_serialized
+def set_plugin_permission_grant(
+    plugin_id: str,
+    permission: str,
+    granted: bool,
+    directory: Path | None = None,
+) -> dict[str, Any]:
+    root = _resolve_plugins_dir(directory)
+    manifest = _validate_package_dir(_plugin_dir(plugin_id, root))
+    if permission not in manifest.get("permissions", []):
+        raise PluginError("このプラグインはその権限を要求していません。")
+    state = _read_state(root)
+    current = state["plugins"].get(plugin_id, {})
+    if not isinstance(current, dict):
+        current = {}
+    permissions = set(_effective_granted_permissions(manifest, current))
+    if granted:
+        permissions.add(permission)
+    else:
+        permissions.discard(permission)
+    current["granted_permissions"] = sorted(permissions)
+    state["plugins"][plugin_id] = current
+    _write_state(state, root)
+    return {"id": plugin_id, "granted_permissions": sorted(permissions)}
+
+
+@_serialized
+def revoke_plugin_permissions(plugin_id: str, directory: Path | None = None) -> dict[str, Any]:
+    root = _resolve_plugins_dir(directory)
+    target = _plugin_dir(plugin_id, root)
+    if not target.exists():
+        raise PluginError("プラグインが見つかりません。")
+    state = _read_state(root)
+    current = state["plugins"].get(plugin_id, {})
+    if not isinstance(current, dict):
+        current = {}
+    try:
+        manifest = _validate_package_dir(target, allow_incompatible_api=True)
+        previous = _effective_granted_permissions(manifest, current)
+    except PluginError:
+        previous = []
+    if not previous and isinstance(current.get("granted_permissions"), list):
+        previous = [item for item in current.get("granted_permissions", []) if isinstance(item, str)]
+    current["granted_permissions"] = []
+    state["plugins"][plugin_id] = current
+    _write_state(state, root)
+    return {"id": plugin_id, "granted_permissions": [], "revoked": len(previous)}
+
+
+def _require_plugin_permission(
+    plugin_id: str,
+    permission: str,
+    directory: Path | None = None,
+) -> dict[str, Any]:
+    root = _resolve_plugins_dir(directory)
+    manifest = _validate_package_dir(_plugin_dir(plugin_id, root))
+    state = _read_state(root)
+    plugin_state = state["plugins"].get(plugin_id, {})
+    if not isinstance(plugin_state, dict) or not bool(plugin_state.get("enabled")):
+        raise PluginError("無効なプラグインはSparkleデータにアクセスできません。")
+    if permission not in manifest.get("permissions", []):
+        raise PluginError("このプラグインはその権限を要求していません。")
+    if permission not in _effective_granted_permissions(manifest, plugin_state):
+        raise PluginPermissionRequired(permission)
+    return manifest
+
+
+@contextmanager
+def plugin_permission_guard(
+    plugin_id: str,
+    permission: str,
+    directory: Path | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Keep a permission grant stable for the full host operation."""
+    with PLUGIN_LOCK:
+        yield _require_plugin_permission(plugin_id, permission, directory)
 
 
 @_serialized
@@ -776,13 +894,7 @@ def _plugin_storage_path(plugin_id: str, directory: Path | None = None) -> Path:
 
 
 def _require_storage_permission(plugin_id: str, directory: Path | None) -> None:
-    plugin_dir = _plugin_dir(plugin_id, directory)
-    manifest = _validate_package_dir(plugin_dir)
-    state = _read_state(directory)
-    if not bool(state["plugins"].get(plugin_id, {}).get("enabled")):
-        raise PluginError("無効なプラグインはデータにアクセスできません。")
-    if "storage" not in manifest["permissions"]:
-        raise PluginError("このプラグインにストレージ権限はありません。")
+    _require_plugin_permission(plugin_id, "storage", directory)
 
 
 @_serialized

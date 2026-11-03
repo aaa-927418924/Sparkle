@@ -106,6 +106,52 @@
   display: none;
 }
 
+.plugin-permission-dialog {
+  width: min(480px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100vh - 32px);
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.plugin-permission-dialog::backdrop {
+  background: rgb(0 0 0 / 62%);
+}
+
+.plugin-permission-title {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.plugin-permission-description {
+  margin: 0;
+  line-height: 1.65;
+}
+
+.plugin-permission-persistence,
+.plugin-permission-status {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.plugin-permission-status:empty {
+  display: none;
+}
+
+.plugin-permission-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+}
+
 @media (max-width: 520px) {
   .plugin-sidebar-dialog {
     width: calc(100vw - 16px);

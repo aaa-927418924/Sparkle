@@ -1,5 +1,6 @@
 import io
 import json
+import sqlite3
 import tempfile
 import unittest
 import zipfile
@@ -9,6 +10,7 @@ from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import db
 import plugin_api
 
 
@@ -52,6 +54,30 @@ def make_ui_feature_archive():
     return output.getvalue()
 
 
+def make_data_feature_archive():
+    output = io.BytesIO()
+    manifest = {
+        "id": "api-data-panel",
+        "name": "API Data Panel",
+        "version": "1.0.0",
+        "api_version": 3,
+        "type": "feature",
+        "description": "Data permission API test",
+        "permissions": [
+            "clips.read",
+            "clips.write",
+            "clips.delete",
+            "projects.read",
+            "projects.write",
+            "projects.delete",
+        ],
+    }
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+        archive.writestr("panel.html", "<main>Data panel</main>")
+    return output.getvalue()
+
+
 class PluginApiTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -61,6 +87,8 @@ class PluginApiTests(unittest.TestCase):
         self.app = FastAPI()
         self.app.include_router(plugin_api.router)
         self.client = TestClient(self.app)
+        self.app.dependency_overrides[plugin_api.get_db] = lambda: None
+        self.addCleanup(self.app.dependency_overrides.clear)
         self.patches = [
             patch("plugin_manager.get_plugins_dir", return_value=self.plugins),
             patch("plugin_manager.get_plugin_data_dir", return_value=self.base / "plugin-data"),
@@ -72,6 +100,20 @@ class PluginApiTests(unittest.TestCase):
     def tearDown(self):
         self.client.close()
         self.temporary.cleanup()
+
+    def test_opaque_origins_cannot_read_or_grant_plugin_permissions(self):
+        # Sandboxed plugin panels use the parent-page message broker and do
+        # not need direct API access from their opaque ("null") origin.
+        from main import app as sparkle_app
+
+        client = TestClient(sparkle_app)
+        opaque_origin = client.get("/openapi.json", headers={"Origin": "null"})
+        self.assertNotIn("access-control-allow-origin", opaque_origin.headers)
+
+        app_origin = "http://127.0.0.1:8000"
+        same_origin = client.get("/openapi.json", headers={"Origin": app_origin})
+        self.assertEqual(same_origin.headers.get("access-control-allow-origin"), app_origin)
+        client.close()
 
     def test_import_lists_disabled_then_feature_panel_runs_with_sandbox_headers(self):
         response = self.client.post(
@@ -139,6 +181,211 @@ class PluginApiTests(unittest.TestCase):
         self.assertEqual(restored["hidden"], [])
         self.assertEqual(restored["sidebar_items"], [])
         self.assertEqual(restored["project_actions"], [])
+
+    def test_api_v3_permission_grants_are_persistent_and_revoke_all(self):
+        response = self.client.post(
+            "/plugins/import",
+            files={"file": ("data.zip", make_data_feature_archive(), "application/zip")},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(
+            self.client.get("/plugins").json()["plugins"][0]["granted_permissions"],
+            [],
+        )
+        self.assertEqual(
+            self.client.post("/plugins/api-data-panel/enabled", json={"enabled": True}).status_code,
+            200,
+        )
+
+        denied = self.client.get("/plugins/api-data-panel/data/clips")
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied.json()["detail"]["permission_required"], "clips.read")
+
+        granted = self.client.put(
+            "/plugins/api-data-panel/permissions/clips.read",
+            json={"granted": True},
+        )
+        self.assertEqual(granted.status_code, 200, granted.text)
+        self.assertEqual(granted.json()["granted_permissions"], ["clips.read"])
+        listed = self.client.get("/plugins").json()["plugins"][0]
+        self.assertEqual(listed["granted_permissions"], ["clips.read"])
+
+        revoked = self.client.delete("/plugins/api-data-panel/permissions")
+        self.assertEqual(revoked.status_code, 200, revoked.text)
+        self.assertEqual(revoked.json()["granted_permissions"], [])
+        self.assertEqual(
+            self.client.get("/plugins").json()["plugins"][0]["granted_permissions"],
+            [],
+        )
+
+    def test_api_v3_clip_and_project_data_scopes_are_separate_and_restrict_writes(self):
+        response = self.client.post(
+            "/plugins/import",
+            files={"file": ("data.zip", make_data_feature_archive(), "application/zip")},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.client.post("/plugins/api-data-panel/enabled", json={"enabled": True})
+
+        with patch("plugin_api.host_list_clips", return_value=[]):
+            self.client.put(
+                "/plugins/api-data-panel/permissions/clips.read",
+                json={"granted": True},
+            )
+            clips = self.client.get("/plugins/api-data-panel/data/clips")
+            self.assertEqual(clips.status_code, 200, clips.text)
+            self.assertEqual(clips.json(), [])
+        projects_without_grant = self.client.get("/plugins/api-data-panel/data/projects")
+        self.assertEqual(projects_without_grant.status_code, 403)
+        self.assertEqual(
+            projects_without_grant.json()["detail"]["permission_required"],
+            "projects.read",
+        )
+        self.client.put(
+            "/plugins/api-data-panel/permissions/projects.read",
+            json={"granted": True},
+        )
+        with patch("plugin_api.host_list_projects", return_value=[]):
+            projects = self.client.get("/plugins/api-data-panel/data/projects")
+            self.assertEqual(projects.status_code, 200, projects.text)
+            self.assertEqual(projects.json(), [])
+
+        self.client.put(
+            "/plugins/api-data-panel/permissions/clips.write",
+            json={"granted": True},
+        )
+        with patch("plugin_api.host_create_clip", return_value={"id": 5, "url": "https://example.com"}):
+            local_clip = self.client.post(
+                "/plugins/api-data-panel/data/clips",
+                json={"url": "local://not-allowed", "clip_type": "local"},
+            )
+            self.assertEqual(local_clip.status_code, 422)
+            missing_project_grant = self.client.post(
+                "/plugins/api-data-panel/data/clips",
+                json={"url": "https://example.com", "project_id": 7},
+            )
+            self.assertEqual(missing_project_grant.status_code, 403)
+            self.assertEqual(
+                missing_project_grant.json()["detail"]["permission_required"],
+                "projects.write",
+            )
+
+            created = self.client.post(
+                "/plugins/api-data-panel/data/clips",
+                json={"url": "https://example.com"},
+            )
+            self.assertEqual(created.status_code, 201, created.text)
+            self.assertEqual(created.json()["id"], 5)
+
+        self.client.put(
+            "/plugins/api-data-panel/permissions/projects.write",
+            json={"granted": True},
+        )
+        with patch("plugin_api.host_create_clip", return_value={"id": 6, "url": "https://example.com"}):
+            linked = self.client.post(
+                "/plugins/api-data-panel/data/clips",
+                json={"url": "https://example.com", "project_id": 7},
+            )
+            self.assertEqual(linked.status_code, 201, linked.text)
+
+        with patch("plugin_api.host_update_project") as update_project:
+            done_change = self.client.put(
+                "/plugins/api-data-panel/data/projects/7",
+                json={"is_done": True},
+            )
+            self.assertEqual(done_change.status_code, 422)
+            update_project.assert_not_called()
+
+        denied_delete = self.client.delete("/plugins/api-data-panel/data/clips/5")
+        self.assertEqual(denied_delete.status_code, 403)
+        self.assertEqual(denied_delete.json()["detail"]["permission_required"], "clips.delete")
+        self.client.put(
+            "/plugins/api-data-panel/permissions/clips.delete",
+            json={"granted": True},
+        )
+        with patch("plugin_api.host_delete_clip", return_value=None) as delete_clip:
+            deleted = self.client.delete("/plugins/api-data-panel/data/clips/5")
+            self.assertEqual(deleted.status_code, 204)
+            delete_clip.assert_called_once()
+
+        denied_project_delete = self.client.delete("/plugins/api-data-panel/data/projects/7")
+        self.assertEqual(denied_project_delete.status_code, 403)
+        self.assertEqual(
+            denied_project_delete.json()["detail"]["permission_required"],
+            "projects.delete",
+        )
+
+    def test_api_v3_reads_and_writes_real_project_and_clip_rows_with_temporary_db(self):
+        response = self.client.post(
+            "/plugins/import",
+            files={"file": ("data.zip", make_data_feature_archive(), "application/zip")},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.client.post("/plugins/api-data-panel/enabled", json={"enabled": True})
+        for permission in ("projects.read", "projects.write", "clips.read", "clips.write"):
+            granted = self.client.put(
+                "/plugins/api-data-panel/permissions/" + permission,
+                json={"granted": True},
+            )
+            self.assertEqual(granted.status_code, 200, granted.text)
+
+        connection = sqlite3.connect(":memory:", check_same_thread=False)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.executescript(db._SCHEMA)
+        db._migrate(connection)
+        self.app.dependency_overrides[plugin_api.get_db] = lambda: connection
+        self.addCleanup(connection.close)
+
+        project_response = self.client.post(
+            "/plugins/api-data-panel/data/projects",
+            json={"name": "Plugin project", "description": "Created through the plugin API"},
+        )
+        self.assertEqual(project_response.status_code, 201, project_response.text)
+        project = project_response.json()
+        self.assertEqual(project["name"], "Plugin project")
+
+        # Complete metadata keeps the host's URL metadata path local. The
+        # validator is also patched so this test never performs network I/O.
+        with patch("routers._validate_metadata_url", side_effect=lambda value: value):
+            clip_response = self.client.post(
+                "/plugins/api-data-panel/data/clips",
+                json={
+                    "url": "https://example.com/plugin-clip",
+                    "title": "Plugin clip",
+                    "thumbnail_url": "https://example.com/plugin-clip.png",
+                    "comment": "Created through the plugin API",
+                    "project_id": project["id"],
+                },
+            )
+        self.assertEqual(clip_response.status_code, 201, clip_response.text)
+        clip = clip_response.json()
+        self.assertEqual(clip["title"], "Plugin clip")
+        self.assertIn(project["id"], clip["project_ids"])
+
+        projects_response = self.client.get("/plugins/api-data-panel/data/projects")
+        self.assertEqual(projects_response.status_code, 200, projects_response.text)
+        self.assertEqual(projects_response.json()[0]["id"], project["id"])
+
+        clips_response = self.client.get(
+            "/plugins/api-data-panel/data/clips",
+            params={"project_id": project["id"]},
+        )
+        self.assertEqual(clips_response.status_code, 200, clips_response.text)
+        self.assertEqual(clips_response.json()[0]["id"], clip["id"])
+
+        updated_clip = self.client.put(
+            "/plugins/api-data-panel/data/clips/" + str(clip["id"]),
+            json={"title": "Updated plugin clip", "comment": "Updated safely"},
+        )
+        self.assertEqual(updated_clip.status_code, 200, updated_clip.text)
+        self.assertEqual(updated_clip.json()["title"], "Updated plugin clip")
+
+        updated_project = self.client.put(
+            "/plugins/api-data-panel/data/projects/" + str(project["id"]),
+            json={"name": "Updated plugin project"},
+        )
+        self.assertEqual(updated_project.status_code, 200, updated_project.text)
+        self.assertEqual(updated_project.json()["name"], "Updated plugin project")
 
     def test_authoring_skill_status_endpoint_reports_all_targets(self):
         expected = {

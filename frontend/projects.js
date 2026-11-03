@@ -351,6 +351,7 @@ async function openDetail(projectId, { pushHistory = true } = {}) {
     await showProjectList({ syncUrl: true });
     return;
   }
+  els.detailView.dataset.projectId = String(projectId);
   els.detailTitle.textContent = proj.name;
   els.detailDesc.textContent = proj.description || "";
   els.detailDesc.hidden = !proj.description;
@@ -367,6 +368,7 @@ async function showProjectList({ syncUrl = true, reload = true } = {}) {
   clearDetailClipSelection();
   cancelDetailClipRubberBand();
   state.currentProjectId = null;
+  delete els.detailView.dataset.projectId;
   window.projectAssistant?.setProject?.(null);
   els.listView.hidden = false;
   els.detailView.hidden = true;

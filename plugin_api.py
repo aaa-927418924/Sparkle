@@ -4,14 +4,34 @@ from __future__ import annotations
 
 import mimetypes
 from pathlib import Path
+from contextlib import contextmanager
+from typing import Iterator
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
+from sqlite3 import Connection
+
+from routers import (
+    create_clip as host_create_clip,
+    create_project as host_create_project,
+    delete_clip as host_delete_clip,
+    delete_project as host_delete_project,
+    get_clip as host_get_clip,
+    get_db,
+    get_project as host_get_project,
+    list_clips as host_list_clips,
+    list_projects as host_list_projects,
+    update_clip as host_update_clip,
+    update_project as host_update_project,
+    _validate_metadata_url as host_validate_metadata_url,
+)
+from schemas import ClipCreate, ClipUpdate, ProjectCreate, ProjectUpdate
 
 from plugin_manager import (
     MAX_ARCHIVE_BYTES,
     PluginError,
+    PluginPermissionRequired,
     export_plugin_archive,
     get_active_theme,
     get_authoring_skill_status,
@@ -20,9 +40,12 @@ from plugin_manager import (
     install_plugin_archive,
     list_plugins,
     plugin_resource_path,
+    plugin_permission_guard,
     put_plugin_storage,
     get_plugin_storage,
     remove_plugin,
+    revoke_plugin_permissions,
+    set_plugin_permission_grant,
     set_active_theme,
     set_plugin_enabled,
 )
@@ -57,12 +80,30 @@ class PluginStorageRequest(BaseModel):
     value: object
 
 
+class PluginPermissionGrantRequest(BaseModel):
+    granted: bool
+
+
 def _plugin_http_error(exc: PluginError) -> HTTPException:
+    if isinstance(exc, PluginPermissionRequired):
+        return HTTPException(
+            status_code=403,
+            detail={"permission_required": exc.permission, "message": str(exc)},
+        )
     text = str(exc)
     status = 409 if "すでにあります" in text else 400
     if "見つかりません" in text:
         status = 404
     return HTTPException(status_code=status, detail=text)
+
+
+@contextmanager
+def _require_data_permission(plugin_id: str, permission: str) -> Iterator[None]:
+    try:
+        with plugin_permission_guard(plugin_id, permission):
+            yield
+    except PluginError as exc:
+        raise _plugin_http_error(exc) from exc
 
 
 @router.get("")
@@ -125,6 +166,126 @@ def update_plugin_enabled(plugin_id: str, body: PluginEnabledRequest):
         return set_plugin_enabled(plugin_id, body.enabled)
     except PluginError as exc:
         raise _plugin_http_error(exc) from exc
+
+
+@router.put("/{plugin_id}/permissions/{permission}")
+def update_plugin_permission(plugin_id: str, permission: str, body: PluginPermissionGrantRequest):
+    try:
+        return set_plugin_permission_grant(plugin_id, permission, body.granted)
+    except PluginError as exc:
+        raise _plugin_http_error(exc) from exc
+
+
+@router.delete("/{plugin_id}/permissions")
+def delete_plugin_permissions(plugin_id: str):
+    try:
+        return revoke_plugin_permissions(plugin_id)
+    except PluginError as exc:
+        raise _plugin_http_error(exc) from exc
+
+
+@router.get("/{plugin_id}/data/clips")
+def plugin_list_clips(
+    plugin_id: str,
+    category: str | None = Query(None),
+    tag: str | None = Query(None),
+    url: str | None = Query(None),
+    project_id: int | None = Query(None),
+    exclude_project: int | None = Query(None),
+    db: Connection = Depends(get_db),
+):
+    with _require_data_permission(plugin_id, "clips.read"):
+        return host_list_clips(
+            category=category,
+            tag=tag,
+            url=url,
+            project_id=project_id,
+            exclude_project=exclude_project,
+            db=db,
+        )
+
+
+@router.get("/{plugin_id}/data/clips/{clip_id}")
+def plugin_get_clip(plugin_id: str, clip_id: int, db: Connection = Depends(get_db)):
+    with _require_data_permission(plugin_id, "clips.read"):
+        return host_get_clip(clip_id, db=db)
+
+
+@router.post("/{plugin_id}/data/clips", status_code=201)
+def plugin_create_clip(plugin_id: str, payload: ClipCreate, db: Connection = Depends(get_db)):
+    with _require_data_permission(plugin_id, "clips.write"):
+        if payload.clip_type not in (None, "url") or payload.file_ref is not None:
+            raise HTTPException(status_code=422, detail="プラグインからローカルファイルのクリップは作成できません。")
+        try:
+            payload.url = host_validate_metadata_url(payload.url)
+            if payload.thumbnail_url is not None:
+                payload.thumbnail_url = host_validate_metadata_url(payload.thumbnail_url)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="公開WebサイトのHTTP/HTTPS URLのみ指定できます。") from exc
+        if payload.project_id is not None:
+            with _require_data_permission(plugin_id, "projects.write"):
+                return host_create_clip(payload, db=db)
+        return host_create_clip(payload, db=db)
+
+
+@router.put("/{plugin_id}/data/clips/{clip_id}")
+def plugin_update_clip(plugin_id: str, clip_id: int, payload: ClipUpdate, db: Connection = Depends(get_db)):
+    with _require_data_permission(plugin_id, "clips.write"):
+        if "project_id" in payload.model_fields_set or "project_ids" in payload.model_fields_set:
+            with _require_data_permission(plugin_id, "projects.write"):
+                if payload.thumbnail_url is not None:
+                    try:
+                        payload.thumbnail_url = host_validate_metadata_url(payload.thumbnail_url)
+                    except ValueError as exc:
+                        raise HTTPException(status_code=422, detail="公開WebサイトのHTTP/HTTPS URLのみ指定できます。") from exc
+                return host_update_clip(clip_id, payload, db=db)
+        if payload.thumbnail_url is not None:
+            try:
+                payload.thumbnail_url = host_validate_metadata_url(payload.thumbnail_url)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail="公開WebサイトのHTTP/HTTPS URLのみ指定できます。") from exc
+        return host_update_clip(clip_id, payload, db=db)
+
+
+@router.delete("/{plugin_id}/data/clips/{clip_id}", status_code=204)
+def plugin_delete_clip(plugin_id: str, clip_id: int, db: Connection = Depends(get_db)):
+    with _require_data_permission(plugin_id, "clips.delete"):
+        return host_delete_clip(clip_id, db=db)
+
+
+@router.get("/{plugin_id}/data/projects")
+def plugin_list_projects(plugin_id: str, done: bool | None = Query(None), db: Connection = Depends(get_db)):
+    with _require_data_permission(plugin_id, "projects.read"):
+        return host_list_projects(done=done, db=db)
+
+
+@router.get("/{plugin_id}/data/projects/{project_id}")
+def plugin_get_project(plugin_id: str, project_id: int, db: Connection = Depends(get_db)):
+    with _require_data_permission(plugin_id, "projects.read"):
+        return host_get_project(project_id, db=db)
+
+
+@router.post("/{plugin_id}/data/projects", status_code=201)
+def plugin_create_project(plugin_id: str, payload: ProjectCreate, db: Connection = Depends(get_db)):
+    with _require_data_permission(plugin_id, "projects.write"):
+        return host_create_project(payload, db=db)
+
+
+@router.put("/{plugin_id}/data/projects/{project_id}")
+def plugin_update_project(plugin_id: str, project_id: int, payload: ProjectUpdate, db: Connection = Depends(get_db)):
+    with _require_data_permission(plugin_id, "projects.write"):
+        if "is_done" in payload.model_fields_set:
+            raise HTTPException(
+                status_code=422,
+                detail="プロジェクトの完了状態変更はタスクやメモにも影響するため、プラグインAPIでは未対応です。",
+            )
+        return host_update_project(project_id, payload, db=db)
+
+
+@router.delete("/{plugin_id}/data/projects/{project_id}", status_code=204)
+def plugin_delete_project(plugin_id: str, project_id: int, db: Connection = Depends(get_db)):
+    with _require_data_permission(plugin_id, "projects.delete"):
+        return host_delete_project(project_id, db=db)
 
 
 @router.delete("/{plugin_id}")

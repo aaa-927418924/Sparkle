@@ -13,17 +13,10 @@
     importStatus: document.getElementById("pluginImportStatus"),
     list: document.getElementById("pluginList"),
     empty: document.getElementById("pluginEmpty"),
-    dialog: document.getElementById("pluginPanelDialog"),
-    dialogTitle: document.getElementById("pluginPanelTitle"),
-    dialogClose: document.getElementById("pluginPanelClose"),
-    frame: document.getElementById("pluginPanelFrame"),
-    panelStatus: document.getElementById("pluginPanelStatus"),
   };
-  if (!elements.list || !elements.skillButton || !elements.dialog) return;
+  if (!elements.list || !elements.skillButton) return;
 
   let plugins = [];
-  let activePanelId = null;
-  let messageTimes = [];
 
   function setText(element, value) {
     if (element) element.textContent = String(value || "");
@@ -98,6 +91,18 @@
     return plugin.enabled ? "有効" : "無効";
   }
 
+  const permissionLabels = {
+    storage: "プラグイン専用ストレージ",
+    notifications: "Sparkle内通知",
+    "ui.customize": "SparkleのUI変更",
+    "clips.read": "クリップの読み取り",
+    "clips.write": "クリップの作成・編集",
+    "clips.delete": "クリップの削除",
+    "projects.read": "プロジェクトの読み取り",
+    "projects.write": "プロジェクトの作成・編集",
+    "projects.delete": "プロジェクトの削除",
+  };
+
   function renderPlugin(plugin) {
     const card = node("article", "plugin-card");
     card.setAttribute("aria-label", plugin.name + "、" + statusForPlugin(plugin));
@@ -117,6 +122,12 @@
     if (plugin.description) {
       card.append(node("p", "plugin-card-description", plugin.description));
     }
+    const granted = Array.isArray(plugin.granted_permissions) ? plugin.granted_permissions : [];
+    card.append(node(
+      "p",
+      "plugin-card-permissions",
+      "許可中の権限: " + (granted.length ? granted.map((permission) => permissionLabels[permission] || permission).join("、") : "なし"),
+    ));
     if (plugin.contributes) {
       const capabilities = [];
       if (plugin.contributes.sidebar?.label) {
@@ -167,6 +178,11 @@
       }
       actions.append(makeButton("ZIPでエクスポート", () => void exportPlugin(plugin)));
     }
+    actions.append(makeButton(
+      "権限を削除",
+      () => void revokePluginPermissions(plugin),
+      granted.length === 0,
+    ));
     actions.append(
       makeButton(
         "削除",
@@ -212,6 +228,13 @@
     const enabled = input ? input.checked : !plugin.enabled;
     if (input) input.disabled = true;
     try {
+      if (
+        enabled &&
+        plugin.permissions?.includes("ui.customize") &&
+        !plugin.granted_permissions?.includes("ui.customize")
+      ) {
+        await window.SparklePluginUI?.requestPermission?.(plugin.id, "ui.customize", plugin);
+      }
       await request("/" + encodeURIComponent(plugin.id) + "/enabled", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -225,6 +248,19 @@
         input.disabled = false;
         updateToggleLabel(input, input.checked);
       }
+      setText(elements.importStatus, error.message);
+    }
+  }
+
+  async function revokePluginPermissions(plugin) {
+    try {
+      const result = await request("/" + encodeURIComponent(plugin.id) + "/permissions", { method: "DELETE" });
+      window.SparklePluginUI?.close?.(plugin.id);
+      await syncTheme();
+      setText(elements.importStatus, (plugin.name || plugin.id) + "の権限をすべて削除しました。必要になった権限は再度許可できます。");
+      await refresh();
+      return result;
+    } catch (error) {
       setText(elements.importStatus, error.message);
     }
   }
@@ -246,14 +282,14 @@
 
   async function deletePlugin(plugin) {
     const removeData = window.confirm(
-      "「" + (plugin.name || plugin.id) + "」を削除しますか？\n\nキャンセルすると削除しません。OKを選ぶとプラグイン専用データも削除します。",
+      "「" + (plugin.name || plugin.id) + "」を削除しますか？\n\nOKを選ぶとプラグイン本体・権限・専用データを削除します。プラグインがSparkleのクリップやプロジェクトに加えた変更はそのまま残ります。",
     );
     if (!removeData) return;
     try {
       await request("/" + encodeURIComponent(plugin.id) + "?delete_data=true", {
         method: "DELETE",
       });
-      if (activePanelId === plugin.id) closeFeaturePanel();
+      window.SparklePluginUI?.close?.(plugin.id);
       await syncTheme();
       setText(elements.importStatus, "プラグインと専用データを削除しました。");
       await refresh();
@@ -286,99 +322,7 @@
 
   function openFeaturePanel(plugin) {
     if (!plugin.enabled || plugin.type !== "feature") return;
-    activePanelId = plugin.id;
-    messageTimes = [];
-    setText(elements.dialogTitle, plugin.name || plugin.id);
-    setText(elements.panelStatus, "");
-    elements.frame.title = plugin.name || "プラグイン画面";
-    elements.frame.src = apiRoot + "/" + encodeURIComponent(plugin.id) + "/panel";
-    elements.dialog.showModal();
-  }
-
-  function closeFeaturePanel() {
-    activePanelId = null;
-    elements.frame.src = "about:blank";
-    setText(elements.panelStatus, "");
-    if (elements.dialog.open) elements.dialog.close();
-  }
-
-  function sendPanelResponse(requestId, ok, value, error) {
-    if (!elements.frame.contentWindow) return;
-    elements.frame.contentWindow.postMessage(
-      {
-        type: "sparkle-plugin-response",
-        requestId,
-        ok,
-        value,
-        error: error || undefined,
-      },
-      "*",
-    );
-  }
-
-  function allowPanelMessage() {
-    const now = Date.now();
-    messageTimes = messageTimes.filter((time) => now - time < 10000);
-    if (messageTimes.length >= 50) return false;
-    messageTimes.push(now);
-    return true;
-  }
-
-  async function handlePanelMessage(event) {
-    if (!activePanelId || event.source !== elements.frame.contentWindow) return;
-    const data = event.data;
-    if (!data || data.type !== "sparkle-plugin-request") return;
-    if (typeof data.requestId !== "string" || data.requestId.length > 100) return;
-    if (!allowPanelMessage()) {
-      sendPanelResponse(data.requestId, false, null, "要求が多すぎます。");
-      return;
-    }
-    const plugin = plugins.find((entry) => entry.id === activePanelId);
-    if (!plugin || !plugin.enabled) {
-      sendPanelResponse(data.requestId, false, null, "プラグインは無効です。");
-      return;
-    }
-    try {
-      if (data.method === "notify" && plugin.permissions?.includes("notifications")) {
-        if (typeof data.message !== "string" || data.message.length > 500) {
-          throw new Error("通知メッセージが長すぎます。");
-        }
-        setText(elements.panelStatus, data.message);
-        sendPanelResponse(data.requestId, true, null);
-        return;
-      }
-      if (
-        data.method === "storage.get" &&
-        plugin.permissions?.includes("storage") &&
-        typeof data.key === "string"
-      ) {
-        const result = await request(
-          "/" + encodeURIComponent(plugin.id) + "/storage/" + encodeURIComponent(data.key),
-          { cache: "no-store" },
-        );
-        sendPanelResponse(data.requestId, true, result.value);
-        return;
-      }
-      if (
-        data.method === "storage.set" &&
-        plugin.permissions?.includes("storage") &&
-        typeof data.key === "string"
-      ) {
-        const result = await request(
-          "/" + encodeURIComponent(plugin.id) + "/storage/" + encodeURIComponent(data.key),
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ value: data.value }),
-          },
-        );
-        sendPanelResponse(data.requestId, true, result.value);
-        return;
-      }
-      throw new Error("プラグインAPIの権限がありません。");
-    } catch (error) {
-      sendPanelResponse(data.requestId, false, null, error.message);
-    }
+    window.SparklePluginUI?.open?.(plugin.id);
   }
 
   function statusLabel(status) {
@@ -463,18 +407,6 @@
     elements.zipInput?.click();
   });
   elements.zipInput?.addEventListener("change", () => void importPlugin());
-  elements.dialogClose?.addEventListener("click", closeFeaturePanel);
-  elements.dialog.addEventListener("close", () => {
-    if (activePanelId) closeFeaturePanel();
-  });
-  elements.dialog.addEventListener("cancel", () => {
-    activePanelId = null;
-    elements.frame.src = "about:blank";
-  });
-  elements.dialog.addEventListener("click", (event) => {
-    if (event.target === elements.dialog) closeFeaturePanel();
-  });
-  window.addEventListener("message", (event) => void handlePanelMessage(event));
   window.SparklePluginUI = Object.assign(window.SparklePluginUI || {}, {
     refresh,
     refreshAuthoringSkillStatus,

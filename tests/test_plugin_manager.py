@@ -18,7 +18,9 @@ from plugin_manager import (
     list_plugins,
     plugin_resource_path,
     put_plugin_storage,
+    revoke_plugin_permissions,
     remove_plugin,
+    set_plugin_permission_grant,
     set_active_theme,
     set_plugin_enabled,
 )
@@ -58,6 +60,25 @@ def feature_manifest(plugin_id="personal-tool"):
         "type": "feature",
         "description": "An isolated personal panel",
         "permissions": ["storage", "notifications"],
+    }
+
+
+def data_feature_manifest(plugin_id="data-tool", *, api_version=3, permissions=None):
+    return {
+        "id": plugin_id,
+        "name": "Data Tool",
+        "version": "1.0.0",
+        "api_version": api_version,
+        "type": "feature",
+        "description": "A feature plugin with explicit data permissions",
+        "permissions": permissions or [
+            "clips.read",
+            "clips.write",
+            "clips.delete",
+            "projects.read",
+            "projects.write",
+            "projects.delete",
+        ],
     }
 
 
@@ -187,7 +208,7 @@ class PluginManagerTests(unittest.TestCase):
         plugin_dir = self.plugins / "future-theme"
         plugin_dir.mkdir()
         (plugin_dir / "manifest.json").write_text(
-            json.dumps(theme_manifest("future-theme", api_version=3)),
+            json.dumps(theme_manifest("future-theme", api_version=4)),
             encoding="utf-8",
         )
         (plugin_dir / "theme.json").write_text(
@@ -201,7 +222,7 @@ class PluginManagerTests(unittest.TestCase):
         exported = export_plugin_archive("future-theme", self.plugins)
         with zipfile.ZipFile(io.BytesIO(exported)) as archive:
             manifest = json.loads(archive.read("manifest.json"))
-        self.assertEqual(manifest["api_version"], 2)
+        self.assertEqual(manifest["api_version"], 4)
         self.assertTrue(plugin_dir.is_dir())
 
     def test_zip_traversal_and_incompatible_api_are_rejected(self):
@@ -215,7 +236,7 @@ class PluginManagerTests(unittest.TestCase):
         self.assertFalse((self.base.parent / "outside.txt").exists())
 
         incompatible = make_archive(
-            theme_manifest("future-theme", api_version=3),
+            theme_manifest("future-theme", api_version=4),
             theme={"colors": {"background": "#102030"}},
         )
         with self.assertRaises(PluginError):
@@ -279,6 +300,24 @@ class PluginManagerTests(unittest.TestCase):
             home / ".config" / "opencode" / "skills" / "sparkle-plugin-author",
         )
 
+        source = self.base / "bundled-skill"
+        source.mkdir()
+        (source / "SKILL.md").write_text("Portable skill", encoding="utf-8")
+        first = install_authoring_skill(
+            source_dir=source,
+            home=home,
+            environ={"CODEX_HOME": str(codex_home), "XDG_CONFIG_HOME": str(xdg_home)},
+        )
+        self.assertEqual([result["status"] for result in first["results"]], ["installed"] * 3)
+        second = install_authoring_skill(
+            source_dir=source,
+            home=home,
+            environ={"CODEX_HOME": str(codex_home), "XDG_CONFIG_HOME": str(xdg_home)},
+        )
+        self.assertEqual([result["status"] for result in second["results"]], ["updated"] * 3)
+        for target in targets.values():
+            self.assertEqual((target / "SKILL.md").read_text(encoding="utf-8"), "Portable skill")
+
     def test_authoring_skill_status_requires_all_three_managed_current_copies(self):
         home = self.base / "skill-home"
         environment = {
@@ -326,7 +365,7 @@ class PluginManagerTests(unittest.TestCase):
             set_plugin_enabled(manifest["id"], True, self.plugins)
 
         listed = list_plugins(self.plugins)
-        self.assertEqual(listed["api_version"], 2)
+        self.assertEqual(listed["api_version"], 3)
         self.assertTrue(all(plugin["compatible"] for plugin in listed["plugins"]))
         state = get_plugin_ui_state(self.plugins)
         self.assertEqual(state["hidden"], ["home.sort", "sidebar.profile"])
@@ -352,7 +391,7 @@ class PluginManagerTests(unittest.TestCase):
             with self.assertRaises(PluginError):
                 install_plugin_archive(archive, self.plugins)
 
-    def test_api_v1_plugin_remains_compatible_on_api_v2_host(self):
+    def test_api_v1_plugin_remains_compatible_on_api_v3_host(self):
         archive = make_archive(
             theme_manifest("legacy-theme"),
             theme={"colors": {"background": "#102030"}},
@@ -361,29 +400,57 @@ class PluginManagerTests(unittest.TestCase):
         plugin = list_plugins(self.plugins)["plugins"][0]
         self.assertEqual(plugin["api_version"], 1)
         self.assertTrue(plugin["compatible"])
-        self.assertEqual(
-            environment_targets["Claude Code"],
-            home / ".claude-custom" / "skills" / "sparkle-plugin-author",
-        )
 
-        source = self.base / "bundled-skill"
-        source.mkdir()
-        skill_file = source / "SKILL.md"
-        skill_file.write_text("Portable skill", encoding="utf-8")
-        first = install_authoring_skill(
-            source_dir=source,
-            home=home,
-            environ={"CODEX_HOME": str(codex_home), "XDG_CONFIG_HOME": str(xdg_home)},
+    def test_api_v2_legacy_permission_is_available_until_explicit_revoke(self):
+        manifest = data_feature_manifest(
+            "legacy-data-tool",
+            api_version=2,
+            permissions=["storage"],
         )
-        self.assertEqual([result["status"] for result in first["results"]], ["installed"] * 3)
-        second = install_authoring_skill(
-            source_dir=source,
-            home=home,
-            environ={"CODEX_HOME": str(codex_home), "XDG_CONFIG_HOME": str(xdg_home)},
+        install_plugin_archive(make_archive(manifest, panel="<main>legacy</main>"), self.plugins)
+        set_plugin_enabled("legacy-data-tool", True, self.plugins)
+        listed = list_plugins(self.plugins)["plugins"][0]
+        self.assertEqual(listed["granted_permissions"], ["storage"])
+        revoked = revoke_plugin_permissions("legacy-data-tool", self.plugins)
+        self.assertEqual(revoked["granted_permissions"], [])
+        self.assertEqual(list_plugins(self.plugins)["plugins"][0]["granted_permissions"], [])
+
+    def test_api_v3_permissions_start_empty_and_revoke_all_grants(self):
+        manifest = data_feature_manifest("permission-tool")
+        install_plugin_archive(make_archive(manifest, panel="<main>permissions</main>"), self.plugins)
+        set_plugin_enabled("permission-tool", True, self.plugins)
+        listed = list_plugins(self.plugins)["plugins"][0]
+        self.assertEqual(listed["granted_permissions"], [])
+
+        self.assertEqual(
+            set_plugin_permission_grant("permission-tool", "clips.read", True, self.plugins)["granted_permissions"],
+            ["clips.read"],
         )
-        self.assertEqual([result["status"] for result in second["results"]], ["updated"] * 3)
-        for target in targets.values():
-            self.assertEqual((target / "SKILL.md").read_text(encoding="utf-8"), "Portable skill")
+        self.assertEqual(
+            set_plugin_permission_grant("permission-tool", "projects.write", True, self.plugins)["granted_permissions"],
+            ["clips.read", "projects.write"],
+        )
+        self.assertEqual(
+            list_plugins(self.plugins)["plugins"][0]["granted_permissions"],
+            ["clips.read", "projects.write"],
+        )
+        self.assertEqual(revoke_plugin_permissions("permission-tool", self.plugins)["revoked"], 2)
+        self.assertEqual(list_plugins(self.plugins)["plugins"][0]["granted_permissions"], [])
+
+    def test_api_v3_ui_contributions_wait_for_explicit_ui_permission(self):
+        manifest = ui_feature_manifest(
+            "permissioned-ui-tool",
+            contributes={"ui": {"hide": ["home.search"]}},
+        )
+        manifest["api_version"] = 3
+        install_plugin_archive(make_archive(manifest, panel="<main>UI</main>"), self.plugins)
+        set_plugin_enabled("permissioned-ui-tool", True, self.plugins)
+
+        self.assertEqual(get_plugin_ui_state(self.plugins)["hidden"], [])
+        set_plugin_permission_grant("permissioned-ui-tool", "ui.customize", True, self.plugins)
+        self.assertEqual(get_plugin_ui_state(self.plugins)["hidden"], ["home.search"])
+        revoke_plugin_permissions("permissioned-ui-tool", self.plugins)
+        self.assertEqual(get_plugin_ui_state(self.plugins)["hidden"], [])
 
     def test_bundled_authoring_skill_has_no_machine_specific_paths(self):
         skill_root = Path(__file__).resolve().parents[1] / "skills" / "sparkle-plugin-author"

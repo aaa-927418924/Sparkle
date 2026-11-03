@@ -138,7 +138,7 @@
 .plugin-file-label:focus-visible,
 .plugin-actions button:focus-visible,
 #pluginSkillInstall:focus-visible,
-#pluginPanelClose:focus-visible {
+#pluginZipLabel:focus-visible {
   outline: 2px solid var(--text);
   outline-offset: 2px;
 }
@@ -188,6 +188,7 @@
 .plugin-card-meta,
 .plugin-card-description,
 .plugin-card-capabilities,
+.plugin-card-permissions,
 .plugin-card-error {
   margin: 0;
   color: var(--muted);
@@ -201,6 +202,10 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
+}
+
+.plugin-card-permissions {
+  color: var(--text);
 }
 
 .plugin-card-error {
@@ -294,65 +299,6 @@
   font-size: 13px;
 }
 
-.plugin-panel-dialog {
-  width: min(920px, calc(100vw - 32px));
-  height: min(760px, calc(100vh - 40px));
-  max-width: none;
-  max-height: none;
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  color: var(--text);
-  background: var(--surface-raised);
-  box-shadow: var(--shadow);
-}
-
-.plugin-panel-dialog::backdrop {
-  background: rgb(0 0 0 / 58%);
-}
-
-.plugin-panel-dialog[open] {
-  display: flex;
-  flex-direction: column;
-}
-
-.plugin-panel-dialog-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
-  border-block-end: 1px solid var(--border);
-}
-
-.plugin-panel-dialog-header .modal-title {
-  min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.plugin-panel-frame {
-  display: block;
-  flex: 1 1 auto;
-  width: 100%;
-  min-height: 0;
-  border: 0;
-  background: var(--bg);
-}
-
-.plugin-panel-status {
-  min-height: 0;
-  margin: 0;
-  padding-inline: 16px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.plugin-panel-status:empty {
-  display: none;
-}
-
 @media (max-width: 520px) {
   .plugin-settings-layout {
     grid-template-columns: minmax(0, 1fr) 48px;
@@ -389,13 +335,4 @@
     padding: 12px;
   }
 
-  .plugin-panel-dialog {
-    width: calc(100vw - 16px);
-    height: calc(100vh - 16px);
-    border-radius: 12px;
-  }
-
-  .plugin-panel-dialog-header {
-    align-items: flex-start;
-  }
 }

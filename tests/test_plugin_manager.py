@@ -113,7 +113,7 @@ class PluginManagerTests(unittest.TestCase):
         settings = (root / "frontend" / "settings.html").read_text(encoding="utf-8")
         self.assertIn('data-plugin-category-button="plugins"', settings)
         self.assertIn('id="pluginSettingsPanel"', settings)
-        self.assertIn('plugin-manager.js?v=plugin-manager-v1', settings)
+        self.assertIn('plugin-manager.js?v=plugin-manager-v3-permissions-v1', settings)
         self.assertIn('plugin-theme.js?v=plugin-theme-v1', settings)
         html_pages = tuple((root / "frontend").rglob("*.html"))
         self.assertTrue(html_pages)

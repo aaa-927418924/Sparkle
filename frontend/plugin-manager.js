@@ -13,6 +13,11 @@
     importStatus: document.getElementById("pluginImportStatus"),
     list: document.getElementById("pluginList"),
     empty: document.getElementById("pluginEmpty"),
+    categoryButtons: Array.from(document.querySelectorAll("[data-plugin-category-button]")),
+    categoryPanels: {
+      general: document.getElementById("generalSettingsPanel"),
+      plugins: document.getElementById("pluginSettingsPanel"),
+    },
   };
   if (!elements.list || !elements.skillButton) return;
 
@@ -53,6 +58,16 @@
     button.disabled = disabled === true;
     button.addEventListener("click", action);
     return button;
+  }
+
+  function selectCategory(category) {
+    for (const button of elements.categoryButtons) {
+      const selected = button.dataset.pluginCategoryButton === category;
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+    }
+    for (const [name, panel] of Object.entries(elements.categoryPanels)) {
+      if (panel) panel.hidden = name !== category;
+    }
   }
 
   function updateToggleLabel(input, checked) {
@@ -400,6 +415,10 @@
     }
   }
 
+  for (const button of elements.categoryButtons) {
+    button.addEventListener("click", () => selectCategory(button.dataset.pluginCategoryButton));
+  }
+  selectCategory("general");
   elements.skillButton.addEventListener("click", () => void installAuthoringSkill());
   elements.zipLabel?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;

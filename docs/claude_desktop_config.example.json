@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "sparkle": {
-      "command": "C:\\Users\\PC_User.DESKTOP-N70PB5O\\Documents\\OpenCode\\Sparkle\\dist\\SparkleMCP.exe",
+      "command": "<replace-with-full-path-to-SparkleMCP.exe>",
       "args": []
     }
   }

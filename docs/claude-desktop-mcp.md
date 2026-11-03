@@ -22,7 +22,7 @@ PyInstallerでビルドした配布物を使う場合は、stdioの標準入出�
 {
   "mcpServers": {
     "sparkle": {
-      "command": "C:\\Users\\PC_User.DESKTOP-N70PB5O\\Documents\\OpenCode\\Sparkle\\dist\\SparkleMCP.exe",
+      "command": "<replace-with-full-path-to-SparkleMCP.exe>",
       "args": []
     }
   }

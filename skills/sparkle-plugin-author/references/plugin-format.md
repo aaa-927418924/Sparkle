@@ -3,7 +3,7 @@
 Sparkle accepts a ZIP whose root contains `manifest.json`. The ZIP is imported
 disabled. Users must enable it in Sparkle Settings.
 
-The current contracts are API v1, API v2, and API v3:
+The current contracts are API v1, API v2, API v3, and API v4:
 
 - API v1 supports theme tokens and isolated feature panels.
 - API v2 supports everything in v1 and adds the declarative UI contributions
@@ -11,14 +11,17 @@ The current contracts are API v1, API v2, and API v3:
 - API v3 supports everything in v2 and adds the permissioned clip/project data
   bridge described below. An API v3 host treats API v1 and API v2 plugins as
   compatible.
+- API v4 supports everything in v3 and adds permissioned note/task CRUD, calls
+  to the AI provider configured in Sparkle, and host-mediated public HTTPS
+  requests. An API v4 host treats API v1, v2, and v3 plugins as compatible.
 - An API v1 or v2 host treats a newer API plugin as incompatible. It keeps the package
   and private data, leaves the plugin disabled, and allows the package to be
   exported for use with a compatible Sparkle release.
 
 Set `api_version` to the lowest API version the plugin needs. Use API v2 for a
-feature plugin that declares `contributes`. Use API v3 for a plugin that
-declares any clip/project data permission. A plugin that needs both uses API v3
-and can still declare the API v2 UI contributions.
+feature plugin that declares `contributes`, API v3 for clip/project data, and
+API v4 for notes/tasks, configured AI, or public HTTPS requests. API v4 also
+supports the earlier UI and data APIs.
 
 ## Update compatibility
 
@@ -53,7 +56,7 @@ manifest.json:
 ~~~~
 
 The id uses lowercase letters, numbers, and single hyphens. The version uses
-major.minor.patch. `api_version` is an integer, currently 1, 2, or 3.
+major.minor.patch. `api_version` is an integer, currently 1, 2, 3, or 4.
 
 theme.json:
 
@@ -91,7 +94,8 @@ assets/...
 ~~~~
 
 Set type to feature, include panel.html at the package root, and list only the
-permissions the panel uses. API v3 data permissions are opt-in and independent:
+permissions the panel uses. Data and capability permissions are opt-in and
+independent:
 
 | Permission | Allows |
 | --- | --- |
@@ -104,8 +108,16 @@ permissions the panel uses. API v3 data permissions are opt-in and independent:
 | `projects.read` | List and read project name, description, and completion state. |
 | `projects.write` | Create projects and edit name/description. |
 | `projects.delete` | Delete a project grouping and detach its relationships. |
+| `notes.read` | List and read note text, completion state, dates, and relationship IDs. Linked clip objects are omitted. |
+| `notes.write` | Create or edit notes. Adding project/clip relationships also requires the matching project/clip write permission. |
+| `notes.delete` | Delete notes through Sparkle's normal note lifecycle. |
+| `tasks.read` | List and read task title, status, due date, priority, and relationship IDs. Linked clip objects are omitted. |
+| `tasks.write` | Create or edit tasks. Adding project/clip relationships also requires the matching project/clip write permission. |
+| `tasks.delete` | Delete tasks through Sparkle's normal task lifecycle. |
+| `ai.request` | Send plugin-supplied prompts to the active AI provider configured in Sparkle and receive a response. Provider credentials stay in Sparkle. |
+| `network.request` | Make bounded HTTPS requests to public hosts through Sparkle. Private/local addresses and redirects are not followed. |
 
-API v3 starts with no permissions granted. Sparkle asks separately the first
+API v3 and v4 start with no permissions granted. Sparkle asks separately the first
 time an operation needs each permission and stores the decision for that
 plugin on that installation. `ui.customize` is requested when the user enables
 the plugin. In Settings > Plugins, `権限を削除` revokes all grants for that
@@ -114,8 +126,9 @@ manifest-based grants for compatibility until the user uses this revoke
 action. Importing a plugin starts disabled.
 
 The panel is loaded only after the user clicks its Open button. It runs in a
-sandboxed frame with no direct Sparkle DOM access and no network access. Local
-assets can be referenced relative to panel.html.
+sandboxed frame with no direct Sparkle DOM access or direct network access.
+Local assets can be referenced relative to panel.html. API v4 network requests
+go through Sparkle's parent bridge and require `network.request`.
 
 ### Host message bridge
 
@@ -136,6 +149,40 @@ window.parent.postMessage(
 );
 ~~~~
 
+Use a request ID to pair asynchronous responses. The sandboxed frame has an
+opaque origin, so validate `event.source` against `window.parent`:
+
+~~~~js
+const pending = new Map();
+
+window.addEventListener("message", (event) => {
+  if (event.source !== window.parent) return;
+  const message = event.data;
+  if (message?.type !== "sparkle-plugin-response") return;
+  const request = pending.get(message.requestId);
+  if (!request) return;
+  pending.delete(message.requestId);
+  if (message.ok) request.resolve(message.value);
+  else request.reject(new Error(message.error || "Sparkle request failed"));
+});
+
+function sparkleRequest(method, values = {}) {
+  const requestId = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    pending.set(requestId, { resolve, reject });
+    window.parent.postMessage(
+      { type: "sparkle-plugin-request", requestId, method, ...values },
+      "*"
+    );
+  });
+}
+
+const { response } = await sparkleRequest("ai.generate", {
+  system_prompt: "Answer briefly.",
+  prompt: "Summarize the data I collected.",
+});
+~~~~
+
 Supported methods:
 
 - notify: { method: "notify", message: "..." }
@@ -152,6 +199,18 @@ Supported methods:
 - projects.create: create a project with a JSON `payload`.
 - projects.update: update a project by numeric `id` with a JSON `payload`.
 - projects.delete: delete a project grouping by numeric `id`.
+- notes.list: list notes; optional `filters` contains `project_id` or `exclude_project`.
+- notes.get: read one note by numeric `id`.
+- notes.create: create a note with a JSON `payload`.
+- notes.update: update a note by numeric `id` with a JSON `payload`.
+- notes.delete: delete a note by numeric `id`.
+- tasks.list: list tasks; optional `filters` contains `done`, `project_id`, or `exclude_project`.
+- tasks.get: read one task by numeric `id`.
+- tasks.create: create a task with a JSON `payload`.
+- tasks.update: update a task by numeric `id` with a JSON `payload`.
+- tasks.delete: delete a task by numeric `id`.
+- ai.generate: send `{ system_prompt?, prompt }` to the active configured AI provider. The result contains `response`, `provider`, and `model`.
+- network.request: send `{ url, requestMethod?, headers?, body? }` to a public HTTPS URL on port 443. The result contains `status`, a small response header set, and text `body`.
 
 The data methods use the same request/response envelope as the storage bridge:
 include a unique `requestId`, then read `ok`, `value`, and (on failure)
@@ -175,12 +234,12 @@ window.addEventListener("message", (event) => {
 The storage bridge works only when storage is declared, granted, and the plugin
 is enabled. Values are isolated by plugin ID and limited to 2 MB.
 
-### API v3 data boundary
+### API v3/v4 data boundary
 
 Clip and project access is intentionally narrower than the host's own routes:
 
-- A plugin never receives a database handle, SQL, arbitrary filesystem path, or
-  network capability. It sees only the JSON returned by the methods above.
+- A plugin never receives a database handle, SQL, or arbitrary filesystem
+  path. It sees only the JSON returned by the methods above.
 - `clips.read` and `projects.read` are separate. Reading a project's metadata
   does not implicitly grant access to its clips; a plugin must request both
   permissions when it needs both.
@@ -196,6 +255,19 @@ Clip and project access is intentionally narrower than the host's own routes:
 - `projects.delete` removes the project grouping and links while preserving
   the underlying clips, notes, and tasks. It also removes project-owned AI
   history and proposals, as Sparkle does for a normal project deletion.
+- `notes.read` and `tasks.read` do not grant clip content access. Returned
+  records omit linked clip objects; use the separate clip API and permission
+  if that content is needed.
+- `notes.write` and `tasks.write` do not bypass project or clip permissions
+  when changing those relationships. Deletes are separate permissions and
+  changes to Sparkle data remain after the plugin is removed.
+- `ai.request` uses the active provider selected in Sparkle Settings and does
+  not give the plugin its API key. The plugin controls the prompt, so any
+  Sparkle data it includes is sent to that provider. Sparkle does not expose a
+  Codex ChatGPT OAuth session through this API.
+- `network.request` supports public HTTPS on port 443 only, limits request and
+  response sizes, blocks private/local addresses, and does not follow redirects.
+  It is not a general-purpose proxy for Sparkle's local server or local network.
 - Plugin removal deletes the plugin package and its grants, but does not undo
   changes already made to the user's clips or projects. Those are Sparkle data,
   so the user should review write/delete permissions before granting them.
@@ -214,10 +286,10 @@ Example API v3 manifest:
 }
 ~~~~
 
-## API v2/v3 declarative UI contributions
+## API v2/v3/v4 declarative UI contributions
 
 UI contributions are available only to `type: "feature"` plugins on an API v2
-or v3 host. They are active only while the plugin is enabled and the
+or newer host. They are active only while the plugin is enabled and the
 `ui.customize` permission is granted. Disabling or removing the plugin removes
 its sidebar entry, restores hidden UI, and restores the previous order and
 styles. Existing host behavior, APIs, and data remain enabled; `hide` changes
@@ -328,8 +400,11 @@ plugins provide the same style or order value, the later contribution wins.
 
 API v1 supports theme tokens and isolated feature panels. API v2 adds the
 declarative UI contributions above. API v3 additionally adds the explicitly
-permissioned clip/project JSON bridge. No version permits replacing or
+permissioned clip/project JSON bridge. API v4 adds note/task CRUD, configured
+AI calls, and permissioned HTTPS requests through Sparkle. No version permits replacing or
 monkey-patching existing Sparkle behavior. UI contributions can hide controls,
 reorder the documented lists, and add the plugin's own sidebar or project
 action buttons, but they cannot disable the underlying feature, access the
-host DOM, database, filesystem, or network, or change another plugin's package.
+host DOM, database, or filesystem, or change another plugin's package. Plugins
+have no direct network access; API v4's network bridge is limited to public
+HTTPS destinations and is permission-gated.

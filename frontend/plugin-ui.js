@@ -75,6 +75,38 @@
       title: "プロジェクトの削除",
       detail: "プロジェクトを削除して関連付けとそのプロジェクトのAI履歴を解除できます。クリップやタスクなどのレコード自体は削除しません。削除はプラグインを消しても元に戻りません。",
     },
+    "notes.read": {
+      title: "メモの読み取り",
+      detail: "メモのタイトル、本文、完了状態、作成・更新日時と関連付けIDを読み取れます。リンク先のクリップ情報はクリップの読み取り権限が別途必要です。",
+    },
+    "notes.write": {
+      title: "メモの作成・編集",
+      detail: "メモの作成とタイトル・本文の編集ができます。プロジェクトやクリップとの関連付けには、それぞれの書き込み権限も必要です。変更はプラグインを削除しても残ります。",
+    },
+    "notes.delete": {
+      title: "メモの削除",
+      detail: "Sparkleのメモを削除できます。削除はプラグインを削除しても元に戻りません。",
+    },
+    "tasks.read": {
+      title: "タスクの読み取り",
+      detail: "タスク名、完了状態、期限、優先度と関連付けIDを読み取れます。リンク先のクリップ情報はクリップの読み取り権限が別途必要です。",
+    },
+    "tasks.write": {
+      title: "タスクの作成・編集",
+      detail: "タスクの作成と名前・完了状態・期限・優先度の編集ができます。プロジェクトやクリップとの関連付けには、それぞれの書き込み権限も必要です。",
+    },
+    "tasks.delete": {
+      title: "タスクの削除",
+      detail: "Sparkleのタスクを削除できます。タスクの削除で関連するメモとのリンクも解除されます。削除は元に戻りません。",
+    },
+    "ai.request": {
+      title: "設定済みAIへの送信",
+      detail: "プラグインが指定したプロンプトを、設定画面で選択中のAIプロバイダーへ送信し、回答を受け取れます。プロバイダーのAPIキーはプラグインに渡しません。プロンプトに含めたSparkleデータはそのAIプロバイダーへ送信されます。",
+    },
+    "network.request": {
+      title: "外部ネットワークアクセス",
+      detail: "プラグインから公開HTTPSサイトへリクエストを送信できます。localhostやプライベートネットワークには接続できません。プラグインが送信したデータは接続先へ渡ります。",
+    },
   };
   const hostUiSelectors = {
     "sidebar.home": ".sidebar a[data-nav='home']",
@@ -133,7 +165,7 @@
       const stylesheet = make("link");
       stylesheet.id = "pluginUiStylesheet";
       stylesheet.rel = "stylesheet";
-      stylesheet.href = "plugin-ui.css?v=plugin-ui-api-v3-permissions-v1";
+      stylesheet.href = "plugin-ui.css?v=plugin-ui-api-v4-permissions-v1";
       document.head.append(stylesheet);
     }
     for (const [target, selector] of Object.entries(hostUiSelectors)) {
@@ -582,6 +614,54 @@
         method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload || {}),
       }),
       "projects.delete": () => request(base + "projects/" + positiveId(data.id), { method: "DELETE" }),
+      "notes.list": () => {
+        const query = new URLSearchParams();
+        const filters = objectValue(data.filters) || {};
+        for (const key of ["project_id", "exclude_project"]) {
+          if (filters[key] !== undefined && filters[key] !== null) query.set(key, String(positiveId(filters[key])));
+        }
+        const serialized = query.toString();
+        return request(base + "notes" + (serialized ? "?" + serialized : ""), { cache: "no-store" });
+      },
+      "notes.get": () => request(base + "notes/" + positiveId(data.id), { cache: "no-store" }),
+      "notes.create": () => request(base + "notes", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload || {}),
+      }),
+      "notes.update": () => request(base + "notes/" + positiveId(data.id), {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload || {}),
+      }),
+      "notes.delete": () => request(base + "notes/" + positiveId(data.id), { method: "DELETE" }),
+      "tasks.list": () => {
+        const query = new URLSearchParams();
+        const filters = objectValue(data.filters) || {};
+        if (typeof filters.done === "boolean") query.set("done", String(filters.done));
+        for (const key of ["project_id", "exclude_project"]) {
+          if (filters[key] !== undefined && filters[key] !== null) query.set(key, String(positiveId(filters[key])));
+        }
+        const serialized = query.toString();
+        return request(base + "tasks" + (serialized ? "?" + serialized : ""), { cache: "no-store" });
+      },
+      "tasks.get": () => request(base + "tasks/" + positiveId(data.id), { cache: "no-store" }),
+      "tasks.create": () => request(base + "tasks", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload || {}),
+      }),
+      "tasks.update": () => request(base + "tasks/" + positiveId(data.id), {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload || {}),
+      }),
+      "tasks.delete": () => request(base + "tasks/" + positiveId(data.id), { method: "DELETE" }),
+      "ai.generate": () => request("/" + encodeURIComponent(plugin.id) + "/ai/generate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ system_prompt: data.system_prompt, prompt: data.prompt }),
+      }),
+      "network.request": () => request("/" + encodeURIComponent(plugin.id) + "/network/request", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: data.url,
+          method: data.requestMethod || "GET",
+          headers: objectValue(data.headers) || {},
+          body: data.body,
+        }),
+      }),
     };
     if (typeof data.method !== "string" || !Object.hasOwn(methods, data.method)) {
       throw new Error("未対応のプラグインAPIです。");

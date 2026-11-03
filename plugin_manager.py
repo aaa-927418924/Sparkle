@@ -21,8 +21,8 @@ from typing import Any, Iterator
 from paths import get_plugin_data_dir, get_plugins_dir, get_resource_dir
 
 
-PLUGIN_API_VERSION = 3
-SUPPORTED_PLUGIN_API_VERSIONS = {1, 2, 3}
+PLUGIN_API_VERSION = 4
+SUPPORTED_PLUGIN_API_VERSIONS = {1, 2, 3, 4}
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 MAX_UNPACKED_BYTES = 40 * 1024 * 1024
 MAX_FILE_BYTES = 12 * 1024 * 1024
@@ -53,7 +53,7 @@ THEME_COLOR_PROPERTIES = {
     "accentSoft": "--accent-soft",
 }
 ALLOWED_PLUGIN_TYPES = {"theme", "feature"}
-DATA_PERMISSIONS = {
+CLIP_PROJECT_DATA_PERMISSIONS = {
     "clips.read",
     "clips.write",
     "clips.delete",
@@ -61,7 +61,28 @@ DATA_PERMISSIONS = {
     "projects.write",
     "projects.delete",
 }
-ALLOWED_PERMISSIONS = {"storage", "notifications", "ui.customize", *DATA_PERMISSIONS}
+NOTES_TASK_DATA_PERMISSIONS = {
+    "notes.read",
+    "notes.write",
+    "notes.delete",
+    "tasks.read",
+    "tasks.write",
+    "tasks.delete",
+}
+API_V4_PERMISSIONS = {
+    *NOTES_TASK_DATA_PERMISSIONS,
+    "ai.request",
+    "network.request",
+}
+DATA_PERMISSIONS = CLIP_PROJECT_DATA_PERMISSIONS | NOTES_TASK_DATA_PERMISSIONS
+ALLOWED_PERMISSIONS = {
+    "storage",
+    "notifications",
+    "ui.customize",
+    "ai.request",
+    "network.request",
+    *DATA_PERMISSIONS,
+}
 ALLOWED_SIDEBAR_ICONS = {
     "home",
     "tasks",
@@ -120,7 +141,7 @@ UI_NUMBER_PATTERN = re.compile(r"^(?:0|1|0?\.\d+)$")
 RESERVED_PLUGIN_IDS = {"manager-state", "manager-state-json"}
 STATE_FILENAME = "manager-state.json"
 SKILL_ID = "sparkle-plugin-author"
-SKILL_VERSION = "2.0.0"
+SKILL_VERSION = "2.1.0"
 SKILL_MARKER = ".sparkle-managed.json"
 PLUGIN_LOCK = RLock()
 ENVIRONMENT_PATH_PATTERN = re.compile(r"%([^%]+)%|\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
@@ -394,7 +415,9 @@ def _validate_package_dir(
             raise PluginError("プラグイン権限が重複しています。")
         if api_version < 2 and ("ui.customize" in permissions or "contributes" in manifest):
             raise PluginError("UI寄与はプラグインAPI 2以降で使用できます。")
-        if api_version < 3 and set(permissions) & DATA_PERMISSIONS:
+        if api_version < 4 and set(permissions) & API_V4_PERMISSIONS:
+            raise PluginError("Notes, tasks, AI, and network permissions require plugin API 4.")
+        if api_version < 3 and set(permissions) & CLIP_PROJECT_DATA_PERMISSIONS:
             raise PluginError("クリップ・プロジェクト権限はプラグインAPI 3以降で使用できます。")
 
     result = {

@@ -4,29 +4,51 @@ from __future__ import annotations
 
 import mimetypes
 from pathlib import Path
-from contextlib import contextmanager
-from typing import Iterator
+from contextlib import ExitStack, contextmanager
+from typing import Iterator, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlite3 import Connection
 
 from routers import (
     create_clip as host_create_clip,
+    create_note as host_create_note,
     create_project as host_create_project,
+    create_task as host_create_task,
     delete_clip as host_delete_clip,
+    delete_note as host_delete_note,
     delete_project as host_delete_project,
+    delete_task as host_delete_task,
     get_clip as host_get_clip,
     get_db,
+    get_note as host_get_note,
     get_project as host_get_project,
+    get_task as host_get_task,
     list_clips as host_list_clips,
+    list_notes as host_list_notes,
     list_projects as host_list_projects,
+    list_tasks as host_list_tasks,
     update_clip as host_update_clip,
+    update_note as host_update_note,
     update_project as host_update_project,
+    update_task as host_update_task,
     _validate_metadata_url as host_validate_metadata_url,
 )
-from schemas import ClipCreate, ClipUpdate, ProjectCreate, ProjectUpdate
+from schemas import (
+    ClipCreate,
+    ClipUpdate,
+    NoteCreate,
+    NoteUpdate,
+    ProjectCreate,
+    ProjectUpdate,
+    TaskCreate,
+    TaskUpdate,
+)
+from plugin_ai import generate_plugin_ai_response
+from plugin_network import PluginNetworkError, perform_plugin_network_request
+from project_assistant import ProjectAssistantError
 
 from plugin_manager import (
     MAX_ARCHIVE_BYTES,
@@ -84,6 +106,18 @@ class PluginPermissionGrantRequest(BaseModel):
     granted: bool
 
 
+class PluginAIGenerateRequest(BaseModel):
+    system_prompt: str | None = Field(default=None, max_length=4_000)
+    prompt: str = Field(..., min_length=1, max_length=32_000)
+
+
+class PluginNetworkRequest(BaseModel):
+    url: str = Field(..., min_length=1, max_length=2_048)
+    method: Literal["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] = "GET"
+    headers: dict[str, str] = Field(default_factory=dict)
+    body: str | None = Field(default=None, max_length=512 * 1024)
+
+
 def _plugin_http_error(exc: PluginError) -> HTTPException:
     if isinstance(exc, PluginPermissionRequired):
         return HTTPException(
@@ -104,6 +138,30 @@ def _require_data_permission(plugin_id: str, permission: str) -> Iterator[None]:
             yield
     except PluginError as exc:
         raise _plugin_http_error(exc) from exc
+
+
+@contextmanager
+def _require_plugin_permissions(plugin_id: str, *permissions: str) -> Iterator[None]:
+    with ExitStack() as stack:
+        for permission in permissions:
+            stack.enter_context(_require_data_permission(plugin_id, permission))
+        yield
+
+
+def _plugin_note_data(note):
+    if hasattr(note, "model_dump"):
+        return note.model_dump(exclude={"clips"})
+    result = dict(note)
+    result.pop("clips", None)
+    return result
+
+
+def _plugin_task_data(task):
+    if hasattr(task, "model_dump"):
+        return task.model_dump(exclude={"clip"})
+    result = dict(task)
+    result.pop("clip", None)
+    return result
 
 
 @router.get("")
@@ -286,6 +344,147 @@ def plugin_update_project(plugin_id: str, project_id: int, payload: ProjectUpdat
 def plugin_delete_project(plugin_id: str, project_id: int, db: Connection = Depends(get_db)):
     with _require_data_permission(plugin_id, "projects.delete"):
         return host_delete_project(project_id, db=db)
+
+
+@router.get("/{plugin_id}/data/notes")
+def plugin_list_notes(
+    plugin_id: str,
+    project_id: int | None = Query(None),
+    exclude_project: int | None = Query(None),
+    db: Connection = Depends(get_db),
+):
+    permissions = ["notes.read"]
+    if project_id is not None or exclude_project is not None:
+        permissions.append("projects.read")
+    with _require_plugin_permissions(plugin_id, *permissions):
+        return [_plugin_note_data(note) for note in host_list_notes(project_id, exclude_project, db=db)]
+
+
+@router.get("/{plugin_id}/data/notes/{note_id}")
+def plugin_get_note(plugin_id: str, note_id: int, db: Connection = Depends(get_db)):
+    with _require_data_permission(plugin_id, "notes.read"):
+        return _plugin_note_data(host_get_note(note_id, db=db))
+
+
+@router.post("/{plugin_id}/data/notes", status_code=201)
+def plugin_create_note(plugin_id: str, payload: NoteCreate, db: Connection = Depends(get_db)):
+    permissions = ["notes.write"]
+    if payload.project_id is not None or payload.project_ids:
+        permissions.append("projects.write")
+    if payload.clip_ids:
+        permissions.append("clips.write")
+    with _require_plugin_permissions(plugin_id, *permissions):
+        return _plugin_note_data(host_create_note(payload, db=db))
+
+
+@router.put("/{plugin_id}/data/notes/{note_id}")
+def plugin_update_note(
+    plugin_id: str,
+    note_id: int,
+    payload: NoteUpdate,
+    db: Connection = Depends(get_db),
+):
+    permissions = ["notes.write"]
+    if "project_id" in payload.model_fields_set or "project_ids" in payload.model_fields_set:
+        permissions.append("projects.write")
+    if "clip_ids" in payload.model_fields_set and payload.clip_ids is not None:
+        permissions.append("clips.write")
+    with _require_plugin_permissions(plugin_id, *permissions):
+        return _plugin_note_data(host_update_note(note_id, payload, db=db))
+
+
+@router.delete("/{plugin_id}/data/notes/{note_id}", status_code=204)
+def plugin_delete_note(plugin_id: str, note_id: int, db: Connection = Depends(get_db)):
+    with _require_data_permission(plugin_id, "notes.delete"):
+        return host_delete_note(note_id, db=db)
+
+
+@router.get("/{plugin_id}/data/tasks")
+def plugin_list_tasks(
+    plugin_id: str,
+    done: bool | None = Query(None),
+    project_id: int | None = Query(None),
+    exclude_project: int | None = Query(None),
+    db: Connection = Depends(get_db),
+):
+    permissions = ["tasks.read"]
+    if project_id is not None or exclude_project is not None:
+        permissions.append("projects.read")
+    with _require_plugin_permissions(plugin_id, *permissions):
+        return [
+            _plugin_task_data(task)
+            for task in host_list_tasks(done, project_id, exclude_project, db=db)
+        ]
+
+
+@router.get("/{plugin_id}/data/tasks/{task_id}")
+def plugin_get_task(plugin_id: str, task_id: int, db: Connection = Depends(get_db)):
+    with _require_data_permission(plugin_id, "tasks.read"):
+        return _plugin_task_data(host_get_task(task_id, db=db))
+
+
+@router.post("/{plugin_id}/data/tasks", status_code=201)
+def plugin_create_task(plugin_id: str, payload: TaskCreate, db: Connection = Depends(get_db)):
+    permissions = ["tasks.write"]
+    if payload.project_id is not None:
+        permissions.append("projects.write")
+    if payload.clip_id is not None:
+        permissions.append("clips.write")
+    with _require_plugin_permissions(plugin_id, *permissions):
+        return _plugin_task_data(host_create_task(payload, db=db))
+
+
+@router.put("/{plugin_id}/data/tasks/{task_id}")
+def plugin_update_task(
+    plugin_id: str,
+    task_id: int,
+    payload: TaskUpdate,
+    db: Connection = Depends(get_db),
+):
+    permissions = ["tasks.write"]
+    if "project_id" in payload.model_fields_set:
+        permissions.append("projects.write")
+    if "clip_id" in payload.model_fields_set:
+        permissions.append("clips.write")
+    with _require_plugin_permissions(plugin_id, *permissions):
+        return _plugin_task_data(host_update_task(task_id, payload, db=db))
+
+
+@router.delete("/{plugin_id}/data/tasks/{task_id}", status_code=204)
+def plugin_delete_task(plugin_id: str, task_id: int, db: Connection = Depends(get_db)):
+    with _require_data_permission(plugin_id, "tasks.delete"):
+        return host_delete_task(task_id, db=db)
+
+
+@router.post("/{plugin_id}/ai/generate")
+def plugin_ai_generate(
+    plugin_id: str,
+    payload: PluginAIGenerateRequest,
+    db: Connection = Depends(get_db),
+):
+    with _require_data_permission(plugin_id, "ai.request"):
+        try:
+            return generate_plugin_ai_response(
+                db,
+                system_prompt=payload.system_prompt,
+                prompt=payload.prompt,
+            )
+        except ProjectAssistantError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.post("/{plugin_id}/network/request")
+def plugin_network_request(plugin_id: str, payload: PluginNetworkRequest):
+    with _require_data_permission(plugin_id, "network.request"):
+        try:
+            return perform_plugin_network_request(
+                url=payload.url,
+                method=payload.method,
+                headers=payload.headers,
+                body=payload.body,
+            )
+        except PluginNetworkError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.delete("/{plugin_id}")

@@ -78,6 +78,36 @@ def make_data_feature_archive():
     return output.getvalue()
 
 
+def make_v4_feature_archive(plugin_id="api-v4-panel", permissions=None):
+    output = io.BytesIO()
+    manifest = {
+        "id": plugin_id,
+        "name": "API v4 Panel",
+        "version": "1.0.0",
+        "api_version": 4,
+        "type": "feature",
+        "description": "Notes, tasks, AI, and network permission API test",
+        "permissions": permissions or [
+            "notes.read",
+            "notes.write",
+            "notes.delete",
+            "tasks.read",
+            "tasks.write",
+            "tasks.delete",
+            "ai.request",
+            "network.request",
+            "projects.read",
+            "projects.write",
+            "clips.read",
+            "clips.write",
+        ],
+    }
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+        archive.writestr("panel.html", "<main>API v4 panel</main>")
+    return output.getvalue()
+
+
 class PluginApiTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -387,10 +417,144 @@ class PluginApiTests(unittest.TestCase):
         self.assertEqual(updated_project.status_code, 200, updated_project.text)
         self.assertEqual(updated_project.json()["name"], "Updated plugin project")
 
+    def test_api_v4_notes_and_tasks_are_readable_and_writable_with_separate_grants(self):
+        response = self.client.post(
+            "/plugins/import",
+            files={"file": ("v4.zip", make_v4_feature_archive(), "application/zip")},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.client.post("/plugins/api-v4-panel/enabled", json={"enabled": True})
+
+        denied_notes = self.client.get("/plugins/api-v4-panel/data/notes")
+        self.assertEqual(denied_notes.status_code, 403)
+        self.assertEqual(denied_notes.json()["detail"]["permission_required"], "notes.read")
+        denied_tasks = self.client.get("/plugins/api-v4-panel/data/tasks")
+        self.assertEqual(denied_tasks.status_code, 403)
+        self.assertEqual(denied_tasks.json()["detail"]["permission_required"], "tasks.read")
+
+        connection = sqlite3.connect(":memory:", check_same_thread=False)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.executescript(db._SCHEMA)
+        db._migrate(connection)
+        self.app.dependency_overrides[plugin_api.get_db] = lambda: connection
+        self.addCleanup(connection.close)
+
+        for permission in ("notes.read", "notes.write", "tasks.read", "tasks.write"):
+            granted = self.client.put(
+                "/plugins/api-v4-panel/permissions/" + permission,
+                json={"granted": True},
+            )
+            self.assertEqual(granted.status_code, 200, granted.text)
+
+        created_note = self.client.post(
+            "/plugins/api-v4-panel/data/notes",
+            json={"title": "Plugin note", "body": "Read and write note content"},
+        )
+        self.assertEqual(created_note.status_code, 201, created_note.text)
+        note = created_note.json()
+        self.assertEqual(note["body"], "Read and write note content")
+        self.assertNotIn("clips", note)
+        read_note = self.client.get(f"/plugins/api-v4-panel/data/notes/{note['id']}")
+        self.assertEqual(read_note.status_code, 200)
+        updated_note = self.client.put(
+            f"/plugins/api-v4-panel/data/notes/{note['id']}",
+            json={"title": "Updated plugin note"},
+        )
+        self.assertEqual(updated_note.status_code, 200, updated_note.text)
+        self.assertEqual(updated_note.json()["title"], "Updated plugin note")
+
+        blocked_note_link = self.client.post(
+            "/plugins/api-v4-panel/data/notes",
+            json={"title": "Linked note", "project_id": 1},
+        )
+        self.assertEqual(blocked_note_link.status_code, 403)
+        self.assertEqual(blocked_note_link.json()["detail"]["permission_required"], "projects.write")
+
+        created_task = self.client.post(
+            "/plugins/api-v4-panel/data/tasks",
+            json={"title": "Plugin task", "due_date": "2026-12-01", "priority": 2},
+        )
+        self.assertEqual(created_task.status_code, 201, created_task.text)
+        task = created_task.json()
+        self.assertNotIn("clip", task)
+        read_task = self.client.get(f"/plugins/api-v4-panel/data/tasks/{task['id']}")
+        self.assertEqual(read_task.status_code, 200)
+        updated_task = self.client.put(
+            f"/plugins/api-v4-panel/data/tasks/{task['id']}",
+            json={"is_done": True},
+        )
+        self.assertEqual(updated_task.status_code, 200, updated_task.text)
+        self.assertTrue(updated_task.json()["is_done"])
+        blocked_task_link = self.client.post(
+            "/plugins/api-v4-panel/data/tasks",
+            json={"title": "Linked task", "project_id": 1},
+        )
+        self.assertEqual(blocked_task_link.status_code, 403)
+        self.assertEqual(blocked_task_link.json()["detail"]["permission_required"], "projects.write")
+
+        self.assertEqual(self.client.delete(f"/plugins/api-v4-panel/data/notes/{note['id']}").status_code, 403)
+        self.assertEqual(self.client.delete(f"/plugins/api-v4-panel/data/tasks/{task['id']}").status_code, 403)
+        for permission in ("notes.delete", "tasks.delete"):
+            self.client.put(
+                "/plugins/api-v4-panel/permissions/" + permission,
+                json={"granted": True},
+            )
+        self.assertEqual(self.client.delete(f"/plugins/api-v4-panel/data/notes/{note['id']}").status_code, 204)
+        self.assertEqual(self.client.delete(f"/plugins/api-v4-panel/data/tasks/{task['id']}").status_code, 204)
+
+    def test_api_v4_ai_and_network_requests_prompt_and_reuse_active_grants(self):
+        self.client.post(
+            "/plugins/import",
+            files={"file": ("v4.zip", make_v4_feature_archive(), "application/zip")},
+        )
+        self.client.post("/plugins/api-v4-panel/enabled", json={"enabled": True})
+
+        denied_ai = self.client.post(
+            "/plugins/api-v4-panel/ai/generate",
+            json={"prompt": "Summarize my data"},
+        )
+        self.assertEqual(denied_ai.status_code, 403)
+        self.assertEqual(denied_ai.json()["detail"]["permission_required"], "ai.request")
+        denied_network = self.client.post(
+            "/plugins/api-v4-panel/network/request",
+            json={"url": "https://example.com"},
+        )
+        self.assertEqual(denied_network.status_code, 403)
+        self.assertEqual(denied_network.json()["detail"]["permission_required"], "network.request")
+
+        for permission in ("ai.request", "network.request"):
+            self.client.put(
+                "/plugins/api-v4-panel/permissions/" + permission,
+                json={"granted": True},
+            )
+        with patch(
+            "plugin_api.generate_plugin_ai_response",
+            return_value={"response": "Answer", "provider": "openai", "model": "gpt-test"},
+        ) as generate, patch(
+            "plugin_api.perform_plugin_network_request",
+            return_value={"status": 200, "headers": {"content-type": "text/plain"}, "body": "ok"},
+        ) as network:
+            ai = self.client.post(
+                "/plugins/api-v4-panel/ai/generate",
+                json={"system_prompt": "Be concise", "prompt": "Summarize my data"},
+            )
+            self.assertEqual(ai.status_code, 200, ai.text)
+            self.assertEqual(ai.json()["response"], "Answer")
+            generate.assert_called_once()
+
+            fetched = self.client.post(
+                "/plugins/api-v4-panel/network/request",
+                json={"url": "https://example.com/api", "method": "POST", "body": "{}"},
+            )
+            self.assertEqual(fetched.status_code, 200, fetched.text)
+            self.assertEqual(fetched.json()["body"], "ok")
+            network.assert_called_once()
+
     def test_authoring_skill_status_endpoint_reports_all_targets(self):
         expected = {
             "skill": "sparkle-plugin-author",
-            "version": "2.0.0",
+            "version": "2.1.0",
             "all_installed": False,
             "results": [
                 {"agent": "OpenCode", "status": "installed"},

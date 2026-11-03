@@ -116,6 +116,14 @@
     "projects.read": "プロジェクトの読み取り",
     "projects.write": "プロジェクトの作成・編集",
     "projects.delete": "プロジェクトの削除",
+    "notes.read": "メモの読み取り",
+    "notes.write": "メモの作成・編集",
+    "notes.delete": "メモの削除",
+    "tasks.read": "タスクの読み取り",
+    "tasks.write": "タスクの作成・編集",
+    "tasks.delete": "タスクの削除",
+    "ai.request": "設定済みAIの利用",
+    "network.request": "外部ネットワークアクセス",
   };
 
   function renderPlugin(plugin) {

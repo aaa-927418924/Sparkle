@@ -208,7 +208,7 @@ class PluginManagerTests(unittest.TestCase):
         plugin_dir = self.plugins / "future-theme"
         plugin_dir.mkdir()
         (plugin_dir / "manifest.json").write_text(
-            json.dumps(theme_manifest("future-theme", api_version=4)),
+            json.dumps(theme_manifest("future-theme", api_version=5)),
             encoding="utf-8",
         )
         (plugin_dir / "theme.json").write_text(
@@ -222,7 +222,7 @@ class PluginManagerTests(unittest.TestCase):
         exported = export_plugin_archive("future-theme", self.plugins)
         with zipfile.ZipFile(io.BytesIO(exported)) as archive:
             manifest = json.loads(archive.read("manifest.json"))
-        self.assertEqual(manifest["api_version"], 4)
+        self.assertEqual(manifest["api_version"], 5)
         self.assertTrue(plugin_dir.is_dir())
 
     def test_zip_traversal_and_incompatible_api_are_rejected(self):
@@ -236,7 +236,7 @@ class PluginManagerTests(unittest.TestCase):
         self.assertFalse((self.base.parent / "outside.txt").exists())
 
         incompatible = make_archive(
-            theme_manifest("future-theme", api_version=4),
+            theme_manifest("future-theme", api_version=5),
             theme={"colors": {"background": "#102030"}},
         )
         with self.assertRaises(PluginError):
@@ -365,7 +365,7 @@ class PluginManagerTests(unittest.TestCase):
             set_plugin_enabled(manifest["id"], True, self.plugins)
 
         listed = list_plugins(self.plugins)
-        self.assertEqual(listed["api_version"], 3)
+        self.assertEqual(listed["api_version"], 4)
         self.assertTrue(all(plugin["compatible"] for plugin in listed["plugins"]))
         state = get_plugin_ui_state(self.plugins)
         self.assertEqual(state["hidden"], ["home.sort", "sidebar.profile"])
@@ -400,6 +400,33 @@ class PluginManagerTests(unittest.TestCase):
         plugin = list_plugins(self.plugins)["plugins"][0]
         self.assertEqual(plugin["api_version"], 1)
         self.assertTrue(plugin["compatible"])
+
+    def test_api_v4_permissions_require_v4_and_start_ungranted(self):
+        too_old = data_feature_manifest(
+            "notes-api-v3",
+            api_version=3,
+            permissions=["notes.read"],
+        )
+        with self.assertRaises(PluginError):
+            install_plugin_archive(make_archive(too_old, panel="<main>notes</main>"), self.plugins)
+
+        manifest = data_feature_manifest(
+            "notes-api-v4",
+            api_version=4,
+            permissions=["notes.read", "tasks.write", "ai.request", "network.request"],
+        )
+        install_plugin_archive(make_archive(manifest, panel="<main>notes</main>"), self.plugins)
+        listed = list_plugins(self.plugins)
+        self.assertEqual(listed["api_version"], 4)
+        self.assertTrue(listed["plugins"][0]["compatible"])
+        self.assertEqual(listed["plugins"][0]["granted_permissions"], [])
+        set_plugin_enabled("notes-api-v4", True, self.plugins)
+        set_plugin_permission_grant("notes-api-v4", "notes.read", True, self.plugins)
+        self.assertEqual(
+            list_plugins(self.plugins)["plugins"][0]["granted_permissions"],
+            ["notes.read"],
+        )
+        self.assertEqual(revoke_plugin_permissions("notes-api-v4", self.plugins)["revoked"], 1)
 
     def test_api_v2_legacy_permission_is_available_until_explicit_revoke(self):
         manifest = data_feature_manifest(

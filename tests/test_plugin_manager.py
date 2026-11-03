@@ -9,7 +9,9 @@ from plugin_manager import (
     PluginError,
     export_plugin_archive,
     get_active_theme,
+    get_authoring_skill_status,
     get_agent_skill_targets,
+    get_plugin_ui_state,
     get_plugin_storage,
     install_authoring_skill,
     install_plugin_archive,
@@ -57,6 +59,22 @@ def feature_manifest(plugin_id="personal-tool"):
         "description": "An isolated personal panel",
         "permissions": ["storage", "notifications"],
     }
+
+
+def ui_feature_manifest(plugin_id="ui-tool", *, priority=0, contributes=None):
+    manifest = {
+        "id": plugin_id,
+        "name": "UI Tool",
+        "version": "1.0.0",
+        "api_version": 2,
+        "type": "feature",
+        "description": "A feature plugin with optional UI contributions",
+        "permissions": ["ui.customize"],
+        "priority": priority,
+    }
+    if contributes is not None:
+        manifest["contributes"] = contributes
+    return manifest
 
 
 class PluginManagerTests(unittest.TestCase):
@@ -169,7 +187,7 @@ class PluginManagerTests(unittest.TestCase):
         plugin_dir = self.plugins / "future-theme"
         plugin_dir.mkdir()
         (plugin_dir / "manifest.json").write_text(
-            json.dumps(theme_manifest("future-theme", api_version=2)),
+            json.dumps(theme_manifest("future-theme", api_version=3)),
             encoding="utf-8",
         )
         (plugin_dir / "theme.json").write_text(
@@ -197,7 +215,7 @@ class PluginManagerTests(unittest.TestCase):
         self.assertFalse((self.base.parent / "outside.txt").exists())
 
         incompatible = make_archive(
-            theme_manifest("future-theme", api_version=2),
+            theme_manifest("future-theme", api_version=3),
             theme={"colors": {"background": "#102030"}},
         )
         with self.assertRaises(PluginError):
@@ -260,6 +278,89 @@ class PluginManagerTests(unittest.TestCase):
             environment_targets["OpenCode"],
             home / ".config" / "opencode" / "skills" / "sparkle-plugin-author",
         )
+
+    def test_authoring_skill_status_requires_all_three_managed_current_copies(self):
+        home = self.base / "skill-home"
+        environment = {
+            "CODEX_HOME": str(self.base / "codex-home"),
+            "XDG_CONFIG_HOME": str(self.base / "config-home"),
+            "CLAUDE_CONFIG_DIR": str(self.base / "claude-home"),
+        }
+        status = get_authoring_skill_status(home=home, environ=environment)
+        self.assertFalse(status["all_installed"])
+        self.assertEqual({item["status"] for item in status["results"]}, {"missing"})
+        self.assertFalse((self.base / "codex-home").exists())
+
+        source = Path(__file__).resolve().parents[1] / "skills" / "sparkle-plugin-author"
+        install_authoring_skill(source_dir=source, home=home, environ=environment)
+        status = get_authoring_skill_status(home=home, environ=environment)
+        self.assertTrue(status["all_installed"])
+        self.assertEqual({item["status"] for item in status["results"]}, {"installed"})
+
+    def test_api_v2_ui_contributions_merge_and_revert_when_plugins_are_disabled(self):
+        first = ui_feature_manifest(
+            "tetris-tool",
+            priority=10,
+            contributes={
+                "sidebar": {"label": "テトリス", "icon": "game"},
+                "ui": {
+                    "hide": ["home.sort"],
+                    "order": {"sidebar.primary": ["home", "plugin:tetris-tool", "memo", "projects"]},
+                    "styles": {"home.search": {"accent": "#88C0D0", "radius": "14px"}},
+                },
+            },
+        )
+        second = ui_feature_manifest(
+            "compact-layout",
+            priority=20,
+            contributes={
+                "ui": {
+                    "hide": ["sidebar.profile"],
+                    "order": {"sidebar.primary": ["projects", "home", "memo"]},
+                    "styles": {"home.search": {"radius": "8px"}},
+                },
+            },
+        )
+        for manifest in (first, second):
+            install_plugin_archive(make_archive(manifest, panel="<main>UI</main>"), self.plugins)
+            set_plugin_enabled(manifest["id"], True, self.plugins)
+
+        listed = list_plugins(self.plugins)
+        self.assertEqual(listed["api_version"], 2)
+        self.assertTrue(all(plugin["compatible"] for plugin in listed["plugins"]))
+        state = get_plugin_ui_state(self.plugins)
+        self.assertEqual(state["hidden"], ["home.sort", "sidebar.profile"])
+        self.assertEqual(state["order"]["sidebar.primary"], ["projects", "home", "memo"])
+        self.assertEqual(state["styles"]["home.search"], {"accent": "#88C0D0", "radius": "8px"})
+        self.assertEqual(state["sidebar_items"], [{"plugin_id": "tetris-tool", "label": "テトリス", "icon": "game"}])
+
+        set_plugin_enabled("compact-layout", False, self.plugins)
+        state = get_plugin_ui_state(self.plugins)
+        self.assertEqual(state["hidden"], ["home.sort"])
+        self.assertEqual(state["order"]["sidebar.primary"], ["home", "plugin:tetris-tool", "memo", "projects"])
+        self.assertEqual(state["styles"]["home.search"]["radius"], "14px")
+
+    def test_api_v2_ui_contributions_reject_protected_targets_and_css_payloads(self):
+        invalid_contributions = [
+            {"ui": {"hide": ["sidebar.settings"]}},
+            {"ui": {"styles": {"home.search": {"background": "url(https://example.invalid/x)"}}}},
+            {"sidebar": {"label": "Tool", "icon": "../../remote.svg"}},
+        ]
+        for index, contributes in enumerate(invalid_contributions):
+            manifest = ui_feature_manifest(f"unsafe-ui-{index}", contributes=contributes)
+            archive = make_archive(manifest, panel="<main>UI</main>")
+            with self.assertRaises(PluginError):
+                install_plugin_archive(archive, self.plugins)
+
+    def test_api_v1_plugin_remains_compatible_on_api_v2_host(self):
+        archive = make_archive(
+            theme_manifest("legacy-theme"),
+            theme={"colors": {"background": "#102030"}},
+        )
+        install_plugin_archive(archive, self.plugins)
+        plugin = list_plugins(self.plugins)["plugins"][0]
+        self.assertEqual(plugin["api_version"], 1)
+        self.assertTrue(plugin["compatible"])
         self.assertEqual(
             environment_targets["Claude Code"],
             home / ".claude-custom" / "skills" / "sparkle-plugin-author",

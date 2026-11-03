@@ -14,6 +14,8 @@ from plugin_manager import (
     PluginError,
     export_plugin_archive,
     get_active_theme,
+    get_authoring_skill_status,
+    get_plugin_ui_state,
     install_authoring_skill,
     install_plugin_archive,
     list_plugins,
@@ -66,6 +68,19 @@ def _plugin_http_error(exc: PluginError) -> HTTPException:
 @router.get("")
 def get_plugins():
     return list_plugins()
+
+
+@router.get("/ui")
+def get_plugin_ui():
+    return get_plugin_ui_state()
+
+
+@router.get("/authoring-skill/status")
+def get_plugin_authoring_skill_status():
+    try:
+        return get_authoring_skill_status()
+    except PluginError as exc:
+        raise _plugin_http_error(exc) from exc
 
 
 @router.post("/import")

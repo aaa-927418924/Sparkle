@@ -20,7 +20,8 @@ from typing import Any
 from paths import get_plugin_data_dir, get_plugins_dir, get_resource_dir
 
 
-PLUGIN_API_VERSION = 1
+PLUGIN_API_VERSION = 2
+SUPPORTED_PLUGIN_API_VERSIONS = {1, 2}
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 MAX_UNPACKED_BYTES = 40 * 1024 * 1024
 MAX_FILE_BYTES = 12 * 1024 * 1024
@@ -51,10 +52,66 @@ THEME_COLOR_PROPERTIES = {
     "accentSoft": "--accent-soft",
 }
 ALLOWED_PLUGIN_TYPES = {"theme", "feature"}
-ALLOWED_PERMISSIONS = {"storage", "notifications"}
+ALLOWED_PERMISSIONS = {"storage", "notifications", "ui.customize"}
+ALLOWED_SIDEBAR_ICONS = {
+    "home",
+    "tasks",
+    "projects",
+    "puzzle",
+    "game",
+    "star",
+    "sparkles",
+    "book",
+    "calendar",
+    "calculator",
+    "settings",
+}
+UI_HIDE_TARGETS = {
+    "sidebar.home",
+    "sidebar.memo",
+    "sidebar.projects",
+    "sidebar.profile",
+    "home.search",
+    "home.sort",
+    "home.categories",
+    "home.clips",
+    "notes.status-tabs",
+    "notes.task-list",
+    "notes.memo-list",
+    "notes.new-note",
+    "projects.list",
+    "projects.create",
+    "profile.details",
+    "profile.picks",
+    "settings.category.general",
+    "settings.category.theme",
+    "settings.category.connections",
+    "settings.category.ai",
+    "settings.category.advanced",
+}
+UI_ORDER_TARGETS = {
+    "sidebar.primary": {"home", "memo", "projects"},
+    "settings.categories": {"general", "theme", "connections", "ai", "advanced", "plugins"},
+}
+UI_STYLE_VALUE_TYPES = {
+    "accent": "color",
+    "background": "color",
+    "color": "color",
+    "border": "color",
+    "margin": "length",
+    "padding": "length",
+    "width": "length",
+    "height": "length",
+    "radius": "length",
+    "fontSize": "length",
+    "opacity": "number",
+}
+UI_LENGTH_PATTERN = re.compile(r"^(?:0|\d+(?:\.\d+)?(?:px|rem|em|%|vw|vh))$")
+UI_NUMBER_PATTERN = re.compile(r"^(?:0|1|0?\.\d+)$")
 RESERVED_PLUGIN_IDS = {"manager-state", "manager-state-json"}
 STATE_FILENAME = "manager-state.json"
 SKILL_ID = "sparkle-plugin-author"
+SKILL_VERSION = "2.0.0"
 SKILL_MARKER = ".sparkle-managed.json"
 PLUGIN_LOCK = RLock()
 ENVIRONMENT_PATH_PATTERN = re.compile(r"%([^%]+)%|\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
@@ -163,6 +220,121 @@ def _validate_theme_file(package_dir: Path) -> dict[str, Any]:
     return {"colors": normalized}
 
 
+def _validate_ui_contributions(manifest: dict[str, Any], plugin_type: str) -> dict[str, Any]:
+    contributions = manifest.get("contributes")
+    if contributions is None:
+        if "ui.customize" in manifest.get("permissions", []):
+            raise PluginError("ui.customize権限にはcontributesの指定が必要です。")
+        return {}
+    if not isinstance(contributions, dict) or not contributions:
+        raise PluginError("contributesは1つ以上のUI寄与を含むオブジェクトにしてください。")
+    if plugin_type != "feature":
+        raise PluginError("UI寄与は機能プラグインでのみ使用できます。")
+    if "ui.customize" not in manifest.get("permissions", []):
+        raise PluginError("UI寄与にはui.customize権限が必要です。")
+    if set(contributions) - {"sidebar", "project_action", "ui"}:
+        raise PluginError("未対応のプラグイン寄与が指定されています。")
+
+    normalized: dict[str, Any] = {}
+    sidebar = contributions.get("sidebar")
+    if sidebar is not None:
+        if not isinstance(sidebar, dict) or set(sidebar) != {"label", "icon"}:
+            raise PluginError("contributes.sidebarにはlabelとiconを指定してください。")
+        label = sidebar.get("label")
+        icon = sidebar.get("icon")
+        if not isinstance(label, str) or not label.strip() or len(label.strip()) > 40:
+            raise PluginError("サイドバー項目のlabelは1〜40文字で指定してください。")
+        if not isinstance(icon, str) or icon not in ALLOWED_SIDEBAR_ICONS:
+            raise PluginError("サイドバー項目のiconが未対応です。")
+        normalized["sidebar"] = {"label": label.strip(), "icon": icon}
+
+    project_action = contributions.get("project_action")
+    if project_action is not None:
+        if not isinstance(project_action, dict) or set(project_action) != {"label", "icon"}:
+            raise PluginError("contributes.project_actionにはlabelとiconを指定してください。")
+        label = project_action.get("label")
+        icon = project_action.get("icon")
+        if not isinstance(label, str) or not label.strip() or len(label.strip()) > 40:
+            raise PluginError("プロジェクトボタンのlabelは1〜40文字で指定してください。")
+        if not isinstance(icon, str) or icon not in ALLOWED_SIDEBAR_ICONS:
+            raise PluginError("プロジェクトボタンのiconが未対応です。")
+        normalized["project_action"] = {"label": label.strip(), "icon": icon}
+
+    ui = contributions.get("ui")
+    if ui is not None:
+        if not isinstance(ui, dict) or not ui or set(ui) - {"hide", "order", "styles"}:
+            raise PluginError("contributes.uiに未対応の項目があります。")
+        normalized_ui: dict[str, Any] = {}
+
+        hide = ui.get("hide", [])
+        if not isinstance(hide, list) or len(hide) > len(UI_HIDE_TARGETS):
+            raise PluginError("contributes.ui.hideの形式が不正です。")
+        if any(not isinstance(target, str) or target not in UI_HIDE_TARGETS for target in hide):
+            raise PluginError("非表示にできないUI IDが指定されています。")
+        if len(set(hide)) != len(hide):
+            raise PluginError("contributes.ui.hideに重複があります。")
+        if hide:
+            normalized_ui["hide"] = sorted(hide)
+
+        order = ui.get("order", {})
+        if not isinstance(order, dict) or set(order) - set(UI_ORDER_TARGETS):
+            raise PluginError("contributes.ui.orderのグループが未対応です。")
+        normalized_order: dict[str, list[str]] = {}
+        for group, values in order.items():
+            if not isinstance(values, list) or not values or len(values) > 64:
+                raise PluginError("並び替えの項目数が不正です。")
+            allowed = set(UI_ORDER_TARGETS[group])
+            if group == "sidebar.primary":
+                for value in values:
+                    if isinstance(value, str) and value.startswith("plugin:"):
+                        plugin_id = value.removeprefix("plugin:")
+                        if _valid_plugin_id(plugin_id):
+                            allowed.add(value)
+            if any(not isinstance(value, str) or value not in allowed for value in values):
+                raise PluginError(f"{group}に未対応の並び替えIDがあります。")
+            if len(set(values)) != len(values):
+                raise PluginError(f"{group}に重複した並び替えIDがあります。")
+            normalized_order[group] = list(values)
+        if normalized_order:
+            normalized_ui["order"] = normalized_order
+
+        styles = ui.get("styles", {})
+        if not isinstance(styles, dict) or len(styles) > len(UI_HIDE_TARGETS):
+            raise PluginError("contributes.ui.stylesの形式が不正です。")
+        normalized_styles: dict[str, dict[str, str]] = {}
+        for target, properties in styles.items():
+            if target not in UI_HIDE_TARGETS or not isinstance(properties, dict) or not properties:
+                raise PluginError("スタイル対象には許可されたUI IDとプロパティを指定してください。")
+            if set(properties) - set(UI_STYLE_VALUE_TYPES):
+                raise PluginError(f"{target}に未対応のスタイルプロパティがあります。")
+            normalized_properties: dict[str, str] = {}
+            for property_name, raw_value in properties.items():
+                if not isinstance(raw_value, str) or len(raw_value.strip()) > 80:
+                    raise PluginError("UIスタイルの値が不正です。")
+                value = raw_value.strip()
+                value_type = UI_STYLE_VALUE_TYPES[property_name]
+                valid = (
+                    COLOR_PATTERN.fullmatch(value) is not None
+                    if value_type == "color"
+                    else UI_LENGTH_PATTERN.fullmatch(value) is not None
+                    if value_type == "length"
+                    else UI_NUMBER_PATTERN.fullmatch(value) is not None
+                )
+                if not valid:
+                    raise PluginError(f"{target}の{property_name}の値が未対応形式です。")
+                normalized_properties[property_name] = value
+            normalized_styles[target] = normalized_properties
+        if normalized_styles:
+            normalized_ui["styles"] = normalized_styles
+        if not normalized_ui:
+            raise PluginError("contributes.uiに有効な寄与がありません。")
+        normalized["ui"] = normalized_ui
+
+    if not normalized:
+        raise PluginError("contributesに有効な寄与がありません。")
+    return normalized
+
+
 def _validate_package_dir(
     package_dir: Path,
     *,
@@ -191,17 +363,20 @@ def _validate_package_dir(
         raise PluginError("typeはthemeまたはfeatureを指定してください。")
     if type(api_version) is not int or api_version < 1:
         raise PluginError("プラグインのAPIバージョンが不正です。")
-    if not allow_incompatible_api and api_version != PLUGIN_API_VERSION:
+    api_compatible = api_version in SUPPORTED_PLUGIN_API_VERSIONS
+    if not allow_incompatible_api and not api_compatible:
         raise PluginError(f"このSparkleはプラグインAPI {PLUGIN_API_VERSION} に対応しています。")
 
     permissions = manifest.get("permissions", [])
-    if not isinstance(permissions, list) or any(
-        not isinstance(permission, str) or permission not in ALLOWED_PERMISSIONS
-        for permission in permissions
-    ):
-        raise PluginError("未対応のプラグイン権限が指定されています。")
-    if len(set(permissions)) != len(permissions):
-        raise PluginError("プラグイン権限が重複しています。")
+    if not isinstance(permissions, list) or any(not isinstance(permission, str) for permission in permissions):
+        raise PluginError("プラグイン権限の形式が不正です。")
+    if api_compatible:
+        if any(permission not in ALLOWED_PERMISSIONS for permission in permissions):
+            raise PluginError("未対応のプラグイン権限が指定されています。")
+        if len(set(permissions)) != len(permissions):
+            raise PluginError("プラグイン権限が重複しています。")
+        if api_version < 2 and ("ui.customize" in permissions or "contributes" in manifest):
+            raise PluginError("UI寄与はプラグインAPI 2以降で使用できます。")
 
     result = {
         "id": plugin_id,
@@ -212,6 +387,10 @@ def _validate_package_dir(
         "api_version": api_version,
         "permissions": sorted(permissions),
     }
+    if not api_compatible:
+        result["permissions"] = []
+        result["entry"] = "panel.html" if plugin_type == "feature" else None
+        return result
     if plugin_type == "theme":
         result["theme"] = _validate_theme_file(package_dir)
     else:
@@ -219,6 +398,16 @@ def _validate_package_dir(
         if panel.is_symlink() or not panel.is_file() or panel.stat().st_size > MAX_PANEL_BYTES:
             raise PluginError("機能プラグインには2MB以内のpanel.htmlが必要です。")
         result["entry"] = "panel.html"
+    if api_version >= 2:
+        contributions = _validate_ui_contributions(manifest, plugin_type)
+        if contributions:
+            priority = manifest.get("priority", 0)
+            if type(priority) is not int or not 0 <= priority <= 1000:
+                raise PluginError("priorityは0〜1000の整数で指定してください。")
+            result["priority"] = priority
+            result["contributes"] = contributions
+        elif "priority" in manifest:
+            raise PluginError("priorityはcontributesと一緒に指定してください。")
     return result
 
 
@@ -352,7 +541,7 @@ def list_plugins(directory: Path | None = None) -> dict[str, Any]:
                 }
                 | {
                     "enabled": enabled,
-                    "compatible": manifest["api_version"] == PLUGIN_API_VERSION,
+                    "compatible": manifest["api_version"] in SUPPORTED_PLUGIN_API_VERSIONS,
                     "active_theme": state.get("active_theme") == manifest["id"],
                 }
             )
@@ -367,6 +556,63 @@ def list_plugins(directory: Path | None = None) -> dict[str, Any]:
                 }
             )
     return {"api_version": PLUGIN_API_VERSION, "plugins": entries}
+
+
+@_serialized
+def get_plugin_ui_state(directory: Path | None = None) -> dict[str, Any]:
+    """Return the merged, reversible UI contributions from enabled plugins."""
+    entries = list_plugins(directory)["plugins"]
+    contributors = [
+        plugin
+        for plugin in entries
+        if plugin.get("enabled")
+        and plugin.get("compatible")
+        and plugin.get("type") == "feature"
+        and "ui.customize" in plugin.get("permissions", [])
+        and isinstance(plugin.get("contributes"), dict)
+    ]
+    contributors.sort(key=lambda plugin: (plugin.get("priority", 0), plugin["id"]))
+
+    hidden: set[str] = set()
+    order: dict[str, list[str]] = {}
+    styles: dict[str, dict[str, str]] = {}
+    sidebar_items: list[dict[str, str]] = []
+    project_actions: list[dict[str, str]] = []
+    for plugin in contributors:
+        contributes = plugin["contributes"]
+        sidebar = contributes.get("sidebar")
+        if isinstance(sidebar, dict):
+            sidebar_items.append(
+                {
+                    "plugin_id": plugin["id"],
+                    "label": sidebar["label"],
+                    "icon": sidebar["icon"],
+                }
+            )
+        project_action = contributes.get("project_action")
+        if isinstance(project_action, dict):
+            project_actions.append(
+                {
+                    "plugin_id": plugin["id"],
+                    "label": project_action["label"],
+                    "icon": project_action["icon"],
+                }
+            )
+        ui = contributes.get("ui", {})
+        hidden.update(ui.get("hide", []))
+        for group, values in ui.get("order", {}).items():
+            order[group] = list(values)
+        for target, properties in ui.get("styles", {}).items():
+            styles.setdefault(target, {}).update(properties)
+
+    return {
+        "api_version": PLUGIN_API_VERSION,
+        "hidden": sorted(hidden),
+        "order": order,
+        "styles": styles,
+        "sidebar_items": sidebar_items,
+        "project_actions": project_actions,
+    }
 
 
 @_serialized
@@ -633,6 +879,43 @@ def get_agent_skill_targets(
     }
 
 
+def get_authoring_skill_status(
+    *,
+    home: Path | None = None,
+    environ: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Read the three managed skill locations without creating or changing files."""
+    _skill_source_dir()
+    results: list[dict[str, str]] = []
+    for agent, target in get_agent_skill_targets(home=home, environ=environ).items():
+        status = "missing"
+        if target.is_symlink():
+            status = "conflict"
+        elif target.exists():
+            marker = target / SKILL_MARKER
+            skill_file = target / "SKILL.md"
+            try:
+                marker_value = json.loads(marker.read_text(encoding="utf-8"))
+                if (
+                    target.is_dir()
+                    and skill_file.is_file()
+                    and marker_value.get("owner") == "Sparkle"
+                    and marker_value.get("skill") == SKILL_ID
+                ):
+                    status = "installed" if marker_value.get("version") == SKILL_VERSION else "outdated"
+                else:
+                    status = "conflict"
+            except (OSError, ValueError, AttributeError):
+                status = "conflict"
+        results.append({"agent": agent, "status": status})
+    return {
+        "skill": SKILL_ID,
+        "version": SKILL_VERSION,
+        "all_installed": bool(results) and all(item["status"] == "installed" for item in results),
+        "results": results,
+    }
+
+
 def _install_skill_for_target(source: Path, target: Path) -> str:
     if target.is_symlink():
         return "conflict"
@@ -654,7 +937,7 @@ def _install_skill_for_target(source: Path, target: Path) -> str:
     try:
         shutil.copytree(source, stage)
         (stage / SKILL_MARKER).write_text(
-            json.dumps({"owner": "Sparkle", "skill": SKILL_ID, "version": "1.0.0"}),
+            json.dumps({"owner": "Sparkle", "skill": SKILL_ID, "version": SKILL_VERSION}),
             encoding="utf-8",
         )
         if managed:

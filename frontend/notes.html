@@ -12,18 +12,43 @@
         }
       } catch (e) {}
     </script>
+    <script data-appearance-theme-bootstrap>
+      (() => {
+        try {
+          const html = document.documentElement;
+          const parse = (key) => { try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; } };
+          const clamp = (value, fallback, min, max) => {
+            const number = Number(value);
+            return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : fallback;
+          };
+          const settings = parse("sparkle.appearance.wallpaper") || {};
+          const theme = settings.theme === "custom" ? "custom" : "catppuccin";
+          const blur = clamp(settings.blur, 8, 0, 24);
+          const transparency = clamp(settings.transparency, 15, 0, 100);
+          html.dataset.appearanceTheme = theme;
+          html.classList.toggle("scrollbars-hidden", localStorage.getItem("sparkle.scrollbarsEnabled") === "false");
+          html.style.setProperty("--sparkle-wallpaper-blur", `${blur}px`);
+          html.style.setProperty("--sparkle-wallpaper-opacity", String((100 - transparency) / 100));
+          const preview = theme === "custom" ? localStorage.getItem("sparkle.appearance.wallpaperPreview") || "" : "";
+          if (/^data:image\/(?:webp|png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(preview)) {
+            html.style.setProperty("--sparkle-wallpaper-image", `url("${preview}")`);
+            html.dataset.customWallpaper = "active";
+          } else {
+            html.removeAttribute("data-custom-wallpaper");
+            html.style.removeProperty("--sparkle-wallpaper-image");
+          }
+        } catch {}
+      })();
+    </script>
     <link rel="stylesheet" href="style.css?v=editor-tall-20260803-v1-black-background-v1-bg24273a-sidebar202231-v2" />
     <link rel="stylesheet" href="notes-figma.css?v=notes-ui-20260803-no-memo-hover-v1-black-background-v1-bg24273a-sidebar202231-v2-memo-rename-v1" />
-    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-no-memo-hover-v1-black-background-v1-bg24273a-sidebar202231-v2-surface-raised-202231-v2-custom-titlebar-history-v4-fixed-sidebar-icons-left-v5-compact-sidebar-v1-main-corner-v1-unified-controls-v1-flat-notes-v1-static-ui-v1-sidebar-gap-v1-no-card-lift-v1-project-borderless-v1-memo-outline-inset-v1-scrollbars-visible-v1-note-editor-corner-v1-shell-scroll-v1-sidebar-nav-icons-v1-page-transition-fade-v1-native-backdrop-v12" />
+    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-no-memo-hover-v1-black-background-v1-bg24273a-sidebar202231-v2-surface-raised-202231-v2-custom-titlebar-history-v4-fixed-sidebar-icons-left-v5-compact-sidebar-v1-main-corner-v1-unified-controls-v1-flat-notes-v1-static-ui-v1-sidebar-gap-v1-no-card-lift-v1-project-borderless-v1-memo-outline-inset-v1-scrollbars-visible-v1-note-editor-corner-v1-shell-scroll-v1-sidebar-nav-icons-v1-page-transition-fade-v1-native-backdrop-v12-custom-wallpaper-round-v1" />
+    <link rel="stylesheet" href="plugin-ui.css?v=plugin-ui-api-v2" />
     <script>document.documentElement.setAttribute("data-theme", "dark");
-      try {
-        document.documentElement.classList.toggle(
-          "native-titlebar",
-          localStorage.getItem("sparkle.titlebarMode") === "native",
-        );
-      } catch (e) {}
+      try { localStorage.removeItem("sparkle.titlebarMode"); } catch (e) {}
     </script>
     <link rel="stylesheet" href="native-backdrop.css?v=native-backdrop-c7" />
+    <link rel="stylesheet" href="appearance-theme.css?v=appearance-theme-20261103-v12" />
   </head>
   <body class="notes-page">
     <header class="app-titlebar window-drag-region" aria-label="ウィンドウタイトルバー">
@@ -50,12 +75,12 @@
     </header>
     <div class="layout">
       <nav class="sidebar" aria-label="メインナビゲーション">
-        <a class="side-btn" title="ホーム" data-nav="home" href="/Home"><img class="icon icon-nav sidebar-page-icon" src="icons/instagram-home-feed-icon.svg" alt="" aria-hidden="true" /><span class="side-label">ホーム</span></a>
-        <a class="side-btn active" title="タスク・メモ" data-nav="memo" href="/Notes"><img class="icon icon-nav sidebar-page-icon" src="icons/check-mark-icon.svg" alt="" aria-hidden="true" /><span class="side-label">タスク・メモ</span></a>
-        <a class="side-btn" title="プロジェクト" data-nav="projects" href="/Projects"><img class="icon icon-nav sidebar-page-icon" src="icons/list-round-bullet-icon.svg" alt="" aria-hidden="true" /><span class="side-label">プロジェクト</span></a>
+        <a class="side-btn" title="ホーム" data-nav="home" data-sparkle-ui-id="sidebar.home" href="/Home"><img class="icon icon-nav sidebar-page-icon" src="icons/instagram-home-feed-icon.svg" alt="" aria-hidden="true" /><span class="side-label">ホーム</span></a>
+        <a class="side-btn active" title="タスク・メモ" data-nav="memo" data-sparkle-ui-id="sidebar.memo" href="/Notes"><img class="icon icon-nav sidebar-page-icon" src="icons/check-mark-icon.svg" alt="" aria-hidden="true" /><span class="side-label">タスク・メモ</span></a>
+        <a class="side-btn" title="プロジェクト" data-nav="projects" data-sparkle-ui-id="sidebar.projects" href="/Projects"><img class="icon icon-nav sidebar-page-icon" src="icons/list-round-bullet-icon.svg" alt="" aria-hidden="true" /><span class="side-label">プロジェクト</span></a>
         <div class="side-spacer"></div>
         <div class="sidebar-tools" aria-label="サイドバー操作">
-          <a class="side-btn side-btn-profile" title="プロフィール" aria-label="プロフィール" data-nav="profile" href="/Profile"><img class="profile-avatar" id="profileAvatar" src="/icon.png" alt="" /><span class="side-username" id="sidebarUsername"></span></a>
+          <a class="side-btn side-btn-profile" title="プロフィール" aria-label="プロフィール" data-nav="profile" data-sparkle-ui-id="sidebar.profile" href="/Profile"><img class="profile-avatar" id="profileAvatar" src="/icon.png" alt="" /><span class="side-username" id="sidebarUsername"></span></a>
           <a class="side-btn" title="設定" aria-label="設定" data-nav="settings" href="/Settings"><img class="icon icon-nav" src="icons/settings.svg" alt="" /></a>
         </div>
       </nav>
@@ -63,17 +88,17 @@
       <main id="mainContent" class="main notes-main" data-page-swipe-surface>
         <h1 class="sr-only">タスク・メモ</h1>
         <div class="topbar">
-          <div id="statusTabs" class="categories status-tabs">
+          <div id="statusTabs" class="categories status-tabs" data-sparkle-ui-id="notes.status-tabs">
             <button class="cat-btn" data-status="all" type="button">すべて</button>
             <button class="cat-btn active" data-status="active" type="button">進行中</button>
             <button class="cat-btn" data-status="done" type="button">完了済み</button>
           </div>
-          <button id="newNote" class="fav-only active">＋ 新規メモ</button>
+          <button id="newNote" class="fav-only active" data-sparkle-ui-id="notes.new-note">＋ 新規メモ</button>
         </div>
 
         <div class="two-col">
           <!-- 蟾ｦ: 繧ｿ繧ｹ繧ｯ -->
-          <section class="task-panel">
+          <section class="task-panel" data-sparkle-ui-id="notes.task-list">
             <h2 class="panel-title">タスクリスト</h2>
             <ul id="taskList" class="task-list"></ul>
             <div id="taskEmpty" class="task-empty" hidden>タスクはまだありません</div>
@@ -83,7 +108,7 @@
           </section>
 
           <!-- 蜿ｳ: 繝｡繝｢ -->
-          <section class="memo-col">
+          <section class="memo-col" data-sparkle-ui-id="notes.memo-list">
             <div id="memoGrid" class="memo-grid"></div>
             <div id="memoEmpty" class="empty" hidden>
               <div class="empty-ill"><img class="icon icon-empty" src="icons/memo.svg" alt="" /></div>
@@ -117,9 +142,40 @@
               </select>
               <span id="fileSaveMethodDesc" class="file-save-desc">リンク切れの心配はありませんが、その分データ容量が増えます。</span>
             </label>
-            <div class="setting-row">
-              <span>検索履歴</span>
-              <button id="clearSearchHistory" class="modal-btn ghost" type="button">すべて削除</button>
+          </div>
+          <div class="settings-col appearance-settings-col">
+            <h3 class="modal-sub">テーマ</h3>
+            <div class="appearance-theme-switch" role="radiogroup" aria-label="テーマ" data-appearance-theme-group>
+              <button class="appearance-theme-option" type="button" role="radio" aria-checked="true" tabindex="0" data-appearance-theme-option="catppuccin">Catppuccin</button>
+              <button class="appearance-theme-option" type="button" role="radio" aria-checked="false" tabindex="-1" data-appearance-theme-option="custom">カスタム</button>
+            </div>
+            <p class="file-save-desc">カスタムを選ぶと、好きな画像を背景に設定できます。</p>
+            <div class="appearance-theme-fields">
+              <label class="setting-row column" for="appearanceBackgroundFile">
+                <span>背景画像</span>
+                <input id="appearanceBackgroundFile" class="appearance-theme-file" type="file" name="appearanceBackgroundFile" accept=".png,.jpg,.jpeg,.webp,.avif,.gif,.bmp,image/png,image/jpeg,image/webp,image/avif,image/gif,image/bmp" disabled />
+                <span id="appearanceBackgroundName" class="file-save-desc">画像は選択されていません</span>
+              </label>
+              <div class="setting-row column">
+                <label for="appearanceBackgroundBlur">背景画像のぼかし</label>
+                <div class="appearance-theme-range-row">
+                  <input id="appearanceBackgroundBlur" class="appearance-theme-range" type="range" name="appearanceBackgroundBlur" min="0" max="24" step="1" value="8" aria-describedby="appearanceBackgroundBlurValue" disabled />
+                  <output id="appearanceBackgroundBlurValue" class="appearance-theme-range-value" for="appearanceBackgroundBlur">8 px</output>
+                </div>
+              </div>
+              <div class="setting-row column">
+                <label for="appearanceBackgroundTransparency">背景画像の透明度</label>
+                <div class="appearance-theme-range-row">
+                  <input id="appearanceBackgroundTransparency" class="appearance-theme-range" type="range" name="appearanceBackgroundTransparency" min="0" max="100" step="1" value="15" aria-describedby="appearanceBackgroundTransparencyValue" disabled />
+                  <output id="appearanceBackgroundTransparencyValue" class="appearance-theme-range-value" for="appearanceBackgroundTransparency">15%</output>
+                </div>
+                <span class="file-save-desc">0%は不透明、100%で見えなくなります。</span>
+              </div>
+              <div class="appearance-theme-actions">
+                <button id="appearanceBackgroundClear" class="modal-btn ghost" type="button" disabled>背景画像を解除</button>
+              </div>
+              <div id="appearanceBackgroundStatus" class="appearance-theme-status" role="status" aria-live="polite">カスタムテーマを選ぶと設定できます。</div>
+              <span class="file-save-desc">背景画像と設定はこの端末のSparkleに保存されます（画像は25 MBまで）。</span>
             </div>
           </div>
           <div class="settings-col">
@@ -197,11 +253,12 @@
       </div>
     </div>
 
-    <script src="pins.js?v=pins-ui-20260821-remote-latency-v1"></script>
+    <script src="pins.js?v=pins-ui-20261103-titlebar-custom-v1"></script>
     <script src="vendor/marked.min.js?v=12.0.0"></script>
     <script src="notes.js?v=notes-ui-20260803-remote-latency-v1-memo-rename-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v2-sidebar-shift-click-v1-native-backdrop-v7"></script>
     <script src="page-transition.js?v=page-swipe-20260821-focus-safe-v1"></script>
-      <script src="plugin-theme.js?v=plugin-theme-v1"></script>
-</body>
+      <script src="appearance-theme.js?v=appearance-theme-plugins-v1"></script>
+      <script src="plugin-ui.js?v=plugin-ui-api-v2"></script>
+  </body>
 </html>

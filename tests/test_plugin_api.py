@@ -30,6 +30,28 @@ def make_feature_archive():
     return output.getvalue()
 
 
+def make_ui_feature_archive():
+    output = io.BytesIO()
+    manifest = {
+        "id": "api-ui-panel",
+        "name": "API UI Panel",
+        "version": "1.0.0",
+        "api_version": 2,
+        "type": "feature",
+        "description": "UI contribution API test",
+        "permissions": ["ui.customize"],
+        "contributes": {
+            "sidebar": {"label": "Game", "icon": "game"},
+            "project_action": {"label": "分析", "icon": "sparkles"},
+            "ui": {"hide": ["home.search"]},
+        },
+    }
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+        archive.writestr("panel.html", "<main>UI panel</main>")
+    return output.getvalue()
+
+
 class PluginApiTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -93,6 +115,46 @@ class PluginApiTests(unittest.TestCase):
         self.assertEqual(saved.status_code, 200)
         read = self.client.get("/plugins/api-panel/storage/settings")
         self.assertEqual(read.json()["value"], {"density": "compact"})
+
+    def test_ui_contributions_are_absent_until_enabled_and_removed_when_disabled(self):
+        response = self.client.post(
+            "/plugins/import",
+            files={"file": ("ui-panel.zip", make_ui_feature_archive(), "application/zip")},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(response.json()["enabled"])
+        self.assertEqual(self.client.get("/plugins/ui").json()["sidebar_items"], [])
+
+        enabled = self.client.post("/plugins/api-ui-panel/enabled", json={"enabled": True})
+        self.assertEqual(enabled.status_code, 200)
+        ui = self.client.get("/plugins/ui")
+        self.assertEqual(ui.status_code, 200)
+        self.assertEqual(ui.json()["hidden"], ["home.search"])
+        self.assertEqual(ui.json()["sidebar_items"][0]["label"], "Game")
+        self.assertEqual(ui.json()["project_actions"][0]["label"], "分析")
+
+        disabled = self.client.post("/plugins/api-ui-panel/enabled", json={"enabled": False})
+        self.assertEqual(disabled.status_code, 200)
+        restored = self.client.get("/plugins/ui").json()
+        self.assertEqual(restored["hidden"], [])
+        self.assertEqual(restored["sidebar_items"], [])
+        self.assertEqual(restored["project_actions"], [])
+
+    def test_authoring_skill_status_endpoint_reports_all_targets(self):
+        expected = {
+            "skill": "sparkle-plugin-author",
+            "version": "2.0.0",
+            "all_installed": False,
+            "results": [
+                {"agent": "OpenCode", "status": "installed"},
+                {"agent": "Codex", "status": "missing"},
+                {"agent": "Claude Code", "status": "installed"},
+            ],
+        }
+        with patch("plugin_api.get_authoring_skill_status", return_value=expected):
+            response = self.client.get("/plugins/authoring-skill/status")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), expected)
 
     def test_import_requires_a_zip_and_rejects_invalid_packages(self):
         wrong_file = self.client.post(

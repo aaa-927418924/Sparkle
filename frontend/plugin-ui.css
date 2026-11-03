@@ -1,0 +1,115 @@
+.plugin-ui-hidden {
+  display: none !important;
+}
+
+.plugin-sidebar-item {
+  width: 100%;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.plugin-sidebar-item .plugin-sidebar-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.plugin-project-action-slot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.plugin-project-action-slot[hidden] {
+  display: none !important;
+}
+
+.plugin-project-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plugin-project-action .plugin-sidebar-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.plugin-sidebar-dialog {
+  width: min(1120px, calc(100vw - 32px));
+  height: min(820px, calc(100vh - 40px));
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.plugin-sidebar-dialog::backdrop {
+  background: rgb(0 0 0 / 58%);
+}
+
+.plugin-sidebar-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.plugin-sidebar-dialog .plugin-panel-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-block-end: 1px solid var(--border);
+}
+
+.plugin-sidebar-dialog .plugin-panel-dialog-header .modal-title {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.plugin-sidebar-dialog .plugin-panel-frame {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--bg);
+}
+
+.plugin-sidebar-dialog .plugin-panel-status {
+  min-height: 0;
+  margin: 0;
+  padding-inline: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.plugin-sidebar-dialog .plugin-panel-status:empty {
+  display: none;
+}
+
+@media (max-width: 520px) {
+  .plugin-sidebar-dialog {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+    border-radius: 12px;
+  }
+}

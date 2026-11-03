@@ -3,10 +3,13 @@
 
   const apiRoot = "/plugins";
   const elements = {
+    skillCard: document.getElementById("pluginSkillCard"),
     skillButton: document.getElementById("pluginSkillInstall"),
     skillStatus: document.getElementById("pluginSkillStatus"),
     skillAgents: document.getElementById("pluginSkillAgents"),
+    zipLabel: document.getElementById("pluginZipLabel"),
     zipInput: document.getElementById("pluginZipInput"),
+    zipFileName: document.getElementById("pluginZipFileName"),
     importStatus: document.getElementById("pluginImportStatus"),
     list: document.getElementById("pluginList"),
     empty: document.getElementById("pluginEmpty"),
@@ -15,11 +18,6 @@
     dialogClose: document.getElementById("pluginPanelClose"),
     frame: document.getElementById("pluginPanelFrame"),
     panelStatus: document.getElementById("pluginPanelStatus"),
-    categoryButtons: Array.from(document.querySelectorAll("[data-plugin-category-button]")),
-    categoryPanels: {
-      general: document.getElementById("generalSettingsPanel"),
-      plugins: document.getElementById("pluginSettingsPanel"),
-    },
   };
   if (!elements.list || !elements.skillButton || !elements.dialog) return;
 
@@ -64,14 +62,34 @@
     return button;
   }
 
-  function selectCategory(category) {
-    for (const button of elements.categoryButtons) {
-      const selected = button.dataset.pluginCategoryButton === category;
-      button.setAttribute("aria-pressed", selected ? "true" : "false");
-    }
-    for (const [name, panel] of Object.entries(elements.categoryPanels)) {
-      if (panel) panel.hidden = name !== category;
-    }
+  function updateToggleLabel(input, checked) {
+    const label = input?.parentElement?.querySelector(".plugin-toggle-label");
+    setText(label, checked ? "有効" : "無効");
+    input?.setAttribute(
+      "aria-label",
+      (input.parentElement?.closest(".plugin-card")?.querySelector(".plugin-card-title")?.textContent || "プラグイン") +
+        "を" + (checked ? "無効" : "有効") + "にする",
+    );
+  }
+
+  function makeToggle(plugin) {
+    const wrapper = node("label", "plugin-toggle");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.className = "plugin-toggle-input";
+    input.setAttribute("role", "switch");
+    input.checked = Boolean(plugin.enabled);
+    input.disabled = Boolean(plugin.error) || !plugin.compatible;
+    input.setAttribute("aria-label", (plugin.name || plugin.id) + "を" + (plugin.enabled ? "無効" : "有効") + "にする");
+    const track = node("span", "plugin-toggle-track");
+    track.setAttribute("aria-hidden", "true");
+    const label = node("span", "plugin-toggle-label", plugin.enabled ? "有効" : "無効");
+    input.addEventListener("change", () => {
+      updateToggleLabel(input, input.checked);
+      void togglePlugin(plugin, input);
+    });
+    wrapper.append(input, track, label);
+    return wrapper;
   }
 
   function statusForPlugin(plugin) {
@@ -99,6 +117,27 @@
     if (plugin.description) {
       card.append(node("p", "plugin-card-description", plugin.description));
     }
+    if (plugin.contributes) {
+      const capabilities = [];
+      if (plugin.contributes.sidebar?.label) {
+        capabilities.push("サイドバーに「" + plugin.contributes.sidebar.label + "」を追加");
+      }
+      if (plugin.contributes.project_action?.label) {
+        capabilities.push("プロジェクト画面に「" + plugin.contributes.project_action.label + "」を追加");
+      }
+      if (plugin.contributes.ui?.hide?.length) {
+        capabilities.push("指定したUIを非表示");
+      }
+      if (plugin.contributes.ui?.order && Object.keys(plugin.contributes.ui.order).length) {
+        capabilities.push("UIを並び替え");
+      }
+      if (plugin.contributes.ui?.styles && Object.keys(plugin.contributes.ui.styles).length) {
+        capabilities.push("指定UIのスタイルを変更");
+      }
+      if (capabilities.length) {
+        card.append(node("p", "plugin-card-capabilities", "UI寄与: " + capabilities.join("・")));
+      }
+    }
     if (plugin.error) {
       card.append(node("p", "plugin-card-error", plugin.error));
     }
@@ -106,10 +145,7 @@
     const actions = node("div", "plugin-actions");
     if (!plugin.error && plugin.compatible) {
       actions.append(
-        makeButton(
-          plugin.enabled ? "無効にする" : "有効にする",
-          () => void togglePlugin(plugin),
-        ),
+        makeToggle(plugin),
       );
       if (plugin.type === "theme") {
         actions.append(
@@ -154,6 +190,8 @@
       const body = await request("", { cache: "no-store" });
       plugins = Array.isArray(body.plugins) ? body.plugins : [];
       render();
+      await refreshAuthoringSkillStatus();
+      await window.SparklePluginUI?.refreshUI?.();
       return true;
     } catch (error) {
       setText(elements.importStatus, error.message);
@@ -164,22 +202,29 @@
   async function syncTheme() {
     try {
       const body = await request("/active-theme", { cache: "no-store" });
-      window.SparklePluginTheme?.setPluginTheme(body.theme || null);
+      window.SparkleAppearanceTheme?.setPluginTheme(body.theme || null);
     } catch {
-      window.SparklePluginTheme?.syncPluginTheme();
+      window.SparkleAppearanceTheme?.syncPluginTheme();
     }
   }
 
-  async function togglePlugin(plugin) {
+  async function togglePlugin(plugin, input) {
+    const enabled = input ? input.checked : !plugin.enabled;
+    if (input) input.disabled = true;
     try {
       await request("/" + encodeURIComponent(plugin.id) + "/enabled", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: !plugin.enabled }),
+        body: JSON.stringify({ enabled }),
       });
       await syncTheme();
       await refresh();
     } catch (error) {
+      if (input) {
+        input.checked = Boolean(plugin.enabled);
+        input.disabled = false;
+        updateToggleLabel(input, input.checked);
+      }
       setText(elements.importStatus, error.message);
     }
   }
@@ -191,7 +236,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plugin_id: pluginId }),
       });
-      window.SparklePluginTheme?.setPluginTheme(body.theme || null);
+      window.SparkleAppearanceTheme?.setPluginTheme(body.theme || null);
       setText(elements.importStatus, "テーマを適用しました。");
       await refresh();
     } catch (error) {
@@ -345,6 +390,18 @@
     }[status] || "状態不明";
   }
 
+  async function refreshAuthoringSkillStatus() {
+    if (!elements.skillCard) return;
+    try {
+      const result = await request("/authoring-skill/status", { cache: "no-store" });
+      elements.skillCard.hidden = result.all_installed !== true;
+    } catch {
+      // Older Sparkle builds do not expose the status endpoint. Keep the
+      // installation control visible so the user can still install the skill.
+      elements.skillCard.hidden = false;
+    }
+  }
+
   async function installAuthoringSkill() {
     elements.skillButton.disabled = true;
     setText(elements.skillStatus, "3つのAI向けスキルを導入しています…");
@@ -366,6 +423,7 @@
         elements.skillStatus,
         failures ? "一部のAIに導入できませんでした。" : "作成スキルを導入しました。必要に応じて各AIを再起動してください。",
       );
+      await refreshAuthoringSkillStatus();
     } catch (error) {
       setText(elements.skillStatus, error.message);
     } finally {
@@ -376,9 +434,11 @@
   async function importPlugin() {
     const file = elements.zipInput?.files?.[0];
     if (!file) return;
+    setText(elements.zipFileName, file.name);
     if (file.size > 20 * 1024 * 1024) {
       setText(elements.importStatus, "ZIPファイルは20MB以下にしてください。");
       elements.zipInput.value = "";
+      setText(elements.zipFileName, "ファイルが選択されていません");
       return;
     }
     setText(elements.importStatus, "ZIPを検査してインポートしています…");
@@ -392,13 +452,16 @@
       setText(elements.importStatus, error.message);
     } finally {
       elements.zipInput.value = "";
+      setText(elements.zipFileName, "ファイルが選択されていません");
     }
   }
 
   elements.skillButton.addEventListener("click", () => void installAuthoringSkill());
-  for (const button of elements.categoryButtons) {
-    button.addEventListener("click", () => selectCategory(button.dataset.pluginCategoryButton));
-  }
+  elements.zipLabel?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    elements.zipInput?.click();
+  });
   elements.zipInput?.addEventListener("change", () => void importPlugin());
   elements.dialogClose?.addEventListener("click", closeFeaturePanel);
   elements.dialog.addEventListener("close", () => {
@@ -412,5 +475,9 @@
     if (event.target === elements.dialog) closeFeaturePanel();
   });
   window.addEventListener("message", (event) => void handlePanelMessage(event));
+  window.SparklePluginUI = Object.assign(window.SparklePluginUI || {}, {
+    refresh,
+    refreshAuthoringSkillStatus,
+  });
   void refresh();
 })();

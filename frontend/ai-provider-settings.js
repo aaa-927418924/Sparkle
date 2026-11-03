@@ -113,7 +113,7 @@
       state = { available: false, availability_message: "AIプロバイダーの状態を確認できません。", providers: [] };
     }
     render();
-    loadActionPermissions();
+    void loadActionPermissions();
   }
 
   async function saveProvider(providerId) {
@@ -156,7 +156,8 @@
 
   async function deleteProvider(providerId) {
     const name = providerNames[providerId] || "このプロバイダー";
-    if (!window.confirm(`${name}の設定を削除します。続けますか？`)) return;
+    const action = "設定を削除";
+    if (!window.confirm(`${name}の${action}を実行します。続けますか？`)) return;
     setCardBusy(providerId, true);
     setMessage(providerId, "削除しています…");
     try {

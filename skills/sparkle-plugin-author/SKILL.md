@@ -13,10 +13,11 @@ Create Sparkle plugins without editing or replacing Sparkle's core application f
 1. Ask what the plugin should do and whether it is a theme or a feature panel.
 2. Use the versioned package format in references/plugin-format.md. Choose API v2
    when the plugin needs declarative UI contributions, API v3 for clip/project
-   data, and API v4 for notes/tasks, configured AI, or public HTTPS requests.
+   data, API v4 for notes/tasks, configured AI, or public HTTPS requests, and
+   API v5 for host-mediated OAuth connections.
 3. Make changes only inside a new plugin package directory. Do not edit Sparkle's source, app database, or another plugin.
 4. Use paths relative to the plugin package. Never put a user name, drive letter, machine-specific folder, credential, API key, or absolute local path in a plugin, script, test, or README.
-5. For API v2/v3/v4 UI contributions, use only the allowlisted `contributes` fields
+5. For API v2/v3/v4/v5 UI contributions, use only the allowlisted `contributes` fields
    and stable UI IDs in references/plugin-format.md. Do not inject CSS or JS,
    query the host DOM, or depend on a page's private markup.
 6. If a request needs an integration point that the documented plugin API does not provide, explain the missing extension point and propose adding it to Sparkle's public plugin API. Do not work around the limit by patching the app.

@@ -17,6 +17,7 @@ MAX_HEADER_COUNT = 32
 MAX_HEADER_BYTES = 16 * 1024
 MAX_HEADER_VALUE_BYTES = 8 * 1024
 NETWORK_TIMEOUT_SECONDS = 20
+OAUTH_REQUEST_TIMEOUT_SECONDS = 120
 ALLOWED_METHODS = {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 HEADER_NAME_PATTERN = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 BLOCKED_HEADERS = {
@@ -45,8 +46,8 @@ class PluginNetworkError(ValueError):
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     """Connect to an already checked IP while retaining hostname TLS checks."""
 
-    def __init__(self, host: str, address: str, port: int):
-        super().__init__(host, port=port, timeout=NETWORK_TIMEOUT_SECONDS, context=ssl.create_default_context())
+    def __init__(self, host: str, address: str, port: int, timeout: float = NETWORK_TIMEOUT_SECONDS):
+        super().__init__(host, port=port, timeout=timeout, context=ssl.create_default_context())
         self._pinned_address = address
 
     def connect(self) -> None:
@@ -122,11 +123,18 @@ def perform_plugin_network_request(
     method: str = "GET",
     headers: Any = None,
     body: str | None = None,
+    timeout_seconds: float = NETWORK_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     """Make one bounded HTTPS request without redirects or access to private IPs."""
 
     if not isinstance(url, str) or len(url) > 2_048:
         raise PluginNetworkError("The request URL is invalid or exceeds the limit.")
+    if (
+        isinstance(timeout_seconds, bool)
+        or not isinstance(timeout_seconds, (int, float))
+        or not 1 <= timeout_seconds <= OAUTH_REQUEST_TIMEOUT_SECONDS
+    ):
+        raise PluginNetworkError("The request timeout is outside the allowed range.")
     if any(ord(char) < 32 for char in url):
         raise PluginNetworkError("The request URL contains invalid characters.")
     try:
@@ -166,7 +174,10 @@ def perform_plugin_network_request(
         path += "?" + urllib.parse.quote(parsed.query, safe="/?%:@!$&'()*+,;=-._~")
     request_headers["Accept-Encoding"] = "identity"
 
-    connection = _PinnedHTTPSConnection(host, pinned_address, port)
+    if float(timeout_seconds) == NETWORK_TIMEOUT_SECONDS:
+        connection = _PinnedHTTPSConnection(host, pinned_address, port)
+    else:
+        connection = _PinnedHTTPSConnection(host, pinned_address, port, timeout=float(timeout_seconds))
     try:
         connection.request(request_method, path, body=request_body, headers=request_headers)
         response = connection.getresponse()

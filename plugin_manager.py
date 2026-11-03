@@ -21,8 +21,8 @@ from typing import Any, Iterator
 from paths import get_plugin_data_dir, get_plugins_dir, get_resource_dir
 
 
-PLUGIN_API_VERSION = 4
-SUPPORTED_PLUGIN_API_VERSIONS = {1, 2, 3, 4}
+PLUGIN_API_VERSION = 5
+SUPPORTED_PLUGIN_API_VERSIONS = {1, 2, 3, 4, 5}
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 MAX_UNPACKED_BYTES = 40 * 1024 * 1024
 MAX_FILE_BYTES = 12 * 1024 * 1024
@@ -74,6 +74,7 @@ API_V4_PERMISSIONS = {
     "ai.request",
     "network.request",
 }
+API_V5_PERMISSIONS = {"auth.oauth"}
 DATA_PERMISSIONS = CLIP_PROJECT_DATA_PERMISSIONS | NOTES_TASK_DATA_PERMISSIONS
 ALLOWED_PERMISSIONS = {
     "storage",
@@ -81,6 +82,7 @@ ALLOWED_PERMISSIONS = {
     "ui.customize",
     "ai.request",
     "network.request",
+    *API_V5_PERMISSIONS,
     *DATA_PERMISSIONS,
 }
 ALLOWED_SIDEBAR_ICONS = {
@@ -141,7 +143,7 @@ UI_NUMBER_PATTERN = re.compile(r"^(?:0|1|0?\.\d+)$")
 RESERVED_PLUGIN_IDS = {"manager-state", "manager-state-json"}
 STATE_FILENAME = "manager-state.json"
 SKILL_ID = "sparkle-plugin-author"
-SKILL_VERSION = "2.1.0"
+SKILL_VERSION = "2.3.0"
 SKILL_MARKER = ".sparkle-managed.json"
 PLUGIN_LOCK = RLock()
 ENVIRONMENT_PATH_PATTERN = re.compile(r"%([^%]+)%|\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
@@ -415,6 +417,8 @@ def _validate_package_dir(
             raise PluginError("プラグイン権限が重複しています。")
         if api_version < 2 and ("ui.customize" in permissions or "contributes" in manifest):
             raise PluginError("UI寄与はプラグインAPI 2以降で使用できます。")
+        if api_version < 5 and set(permissions) & API_V5_PERMISSIONS:
+            raise PluginError("OAuth認証プラグインにはplugin API 5が必要です。")
         if api_version < 4 and set(permissions) & API_V4_PERMISSIONS:
             raise PluginError("Notes, tasks, AI, and network permissions require plugin API 4.")
         if api_version < 3 and set(permissions) & CLIP_PROJECT_DATA_PERMISSIONS:
@@ -696,6 +700,15 @@ def _effective_granted_permissions(
     return []
 
 
+def _clear_plugin_oauth_credentials(plugin_id: str, directory: Path | None = None) -> None:
+    try:
+        from plugin_oauth import clear_plugin_connections
+
+        clear_plugin_connections(plugin_id, directory)
+    except Exception as exc:
+        raise PluginError(str(exc)) from exc
+
+
 @_serialized
 def set_plugin_permission_grant(
     plugin_id: str,
@@ -715,6 +728,8 @@ def set_plugin_permission_grant(
     if granted:
         permissions.add(permission)
     else:
+        if permission == "auth.oauth":
+            _clear_plugin_oauth_credentials(plugin_id, root)
         permissions.discard(permission)
     current["granted_permissions"] = sorted(permissions)
     state["plugins"][plugin_id] = current
@@ -739,6 +754,7 @@ def revoke_plugin_permissions(plugin_id: str, directory: Path | None = None) -> 
         previous = []
     if not previous and isinstance(current.get("granted_permissions"), list):
         previous = [item for item in current.get("granted_permissions", []) if isinstance(item, str)]
+    _clear_plugin_oauth_credentials(plugin_id, root)
     current["granted_permissions"] = []
     state["plugins"][plugin_id] = current
     _write_state(state, root)
@@ -826,6 +842,7 @@ def remove_plugin(
 ) -> dict[str, Any]:
     root = _resolve_plugins_dir(directory)
     target = _plugin_dir(plugin_id, root)
+    _clear_plugin_oauth_credentials(plugin_id, root)
     if not target.exists():
         raise PluginError("プラグインが見つかりません。")
     state = _read_state(root)

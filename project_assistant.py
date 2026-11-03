@@ -420,7 +420,28 @@ def _configuration_message(spec: ProviderSpec) -> str:
     return f"先に{spec.label}のAPIキーを保存してください。"
 
 
+def _cleanup_removed_chatgpt_provider(db: Connection, store: _KeyringSecretStore) -> None:
+    """Remove credentials and settings from the retired built-in provider."""
+    migration_key = "migration_builtin_chatgpt_provider_removed_v1"
+    if _setting_value(db, migration_key).strip() == "1":
+        return
+    for key in (
+        "chatgpt_oauth_access_token",
+        "chatgpt_oauth_refresh_token",
+        "chatgpt_oauth_expires_at",
+    ):
+        store.delete(key)
+    db.execute(
+        "DELETE FROM settings WHERE key LIKE 'chatgpt_oauth_%' OR key = 'ai_model_chatgpt'"
+    )
+    if _setting_value(db, "ai_active_provider").strip().lower() == "chatgpt":
+        _write_setting(db, "ai_active_provider", "")
+    _write_setting(db, migration_key, "1")
+    db.commit()
+
+
 def _provider_statuses(db: Connection, store: _KeyringSecretStore) -> list[AIProviderStatus]:
+    _cleanup_removed_chatgpt_provider(db, store)
     configured: dict[str, bool] = {}
     for spec in PROVIDERS:
         configured[spec.id] = _provider_configured(db, spec, store)

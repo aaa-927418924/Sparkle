@@ -6,3 +6,4 @@ Pillow
 pystray
 pywebview
 keyring>=25.6
+PyJWT[crypto]>=2.10,<3

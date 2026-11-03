@@ -108,6 +108,23 @@ def make_v4_feature_archive(plugin_id="api-v4-panel", permissions=None):
     return output.getvalue()
 
 
+def make_v5_oauth_archive():
+    output = io.BytesIO()
+    manifest = {
+        "id": "api-oauth-panel",
+        "name": "API OAuth Panel",
+        "version": "1.0.0",
+        "api_version": 5,
+        "type": "feature",
+        "description": "Plugin-owned OAuth API test",
+        "permissions": ["auth.oauth"],
+    }
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+        archive.writestr("panel.html", "<main>OAuth panel</main>")
+    return output.getvalue()
+
+
 class PluginApiTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -551,10 +568,69 @@ class PluginApiTests(unittest.TestCase):
             self.assertEqual(fetched.json()["body"], "ok")
             network.assert_called_once()
 
+    def test_api_v5_oauth_methods_require_permission_and_never_return_tokens(self):
+        self.client.post(
+            "/plugins/import",
+            files={"file": ("oauth.zip", make_v5_oauth_archive(), "application/zip")},
+        )
+        self.client.post("/plugins/api-oauth-panel/enabled", json={"enabled": True})
+        connection = {
+            "connection_id": "codex-plan",
+            "name": "Codex plan",
+            "authorization_url": "https://auth.example.test/authorize",
+            "token_url": "https://auth.example.test/token",
+            "client_id": "public-client-id",
+            "scopes": ["openid", "offline_access"],
+            "resource": "https://api.example.test/v1",
+            "api_origin": "https://api.example.test",
+            "issuer": "https://auth.example.test",
+            "jwks_url": "https://auth.example.test/jwks",
+        }
+        denied = self.client.post(
+            "/plugins/api-oauth-panel/oauth/connect",
+            json=connection,
+        )
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied.json()["detail"]["permission_required"], "auth.oauth")
+        granted = self.client.put(
+            "/plugins/api-oauth-panel/permissions/auth.oauth",
+            json={"granted": True},
+        )
+        self.assertEqual(granted.status_code, 200)
+
+        with patch(
+            "plugin_api.start_plugin_oauth",
+            return_value={"connection_id": "codex-plan", "pending": True, "connected": False},
+        ) as start, patch(
+            "plugin_api.get_plugin_oauth_status",
+            return_value={"connection_id": "codex-plan", "pending": False, "connected": True},
+        ), patch(
+            "plugin_api.plugin_oauth_request",
+            return_value={"status": 200, "headers": {}, "body": "{}"},
+        ) as oauth_request:
+            connected = self.client.post("/plugins/api-oauth-panel/oauth/connect", json=connection)
+            self.assertEqual(connected.status_code, 200)
+            self.assertNotIn("access_token", connected.json())
+            self.assertNotIn("refresh_token", connected.json())
+            start.assert_called_once()
+
+            status = self.client.get("/plugins/api-oauth-panel/oauth/codex-plan")
+            self.assertEqual(status.json()["connected"], True)
+
+            response = self.client.post(
+                "/plugins/api-oauth-panel/oauth/codex-plan/request",
+                json={"url": "https://api.example.test/v1/responses", "method": "POST", "body": "{}"},
+            )
+            self.assertEqual(response.status_code, 200)
+            oauth_request.assert_called_once()
+
+            disconnected = self.client.delete("/plugins/api-oauth-panel/oauth/codex-plan")
+            self.assertEqual(disconnected.status_code, 200)
+
     def test_authoring_skill_status_endpoint_reports_all_targets(self):
         expected = {
             "skill": "sparkle-plugin-author",
-            "version": "2.1.0",
+            "version": "2.3.0",
             "all_installed": False,
             "results": [
                 {"agent": "OpenCode", "status": "installed"},

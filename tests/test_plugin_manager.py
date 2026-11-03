@@ -4,6 +4,9 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
+
+import plugin_oauth
 
 from plugin_manager import (
     PluginError,
@@ -113,7 +116,7 @@ class PluginManagerTests(unittest.TestCase):
         settings = (root / "frontend" / "settings.html").read_text(encoding="utf-8")
         self.assertIn('data-plugin-category-button="plugins"', settings)
         self.assertIn('id="pluginSettingsPanel"', settings)
-        self.assertIn('plugin-manager.js?v=plugin-manager-v3-permissions-v1', settings)
+        self.assertIn('plugin-manager.js?v=plugin-manager-v5-permissions-v1-skill-status', settings)
         self.assertIn('plugin-theme.js?v=plugin-theme-v1', settings)
         html_pages = tuple((root / "frontend").rglob("*.html"))
         self.assertTrue(html_pages)
@@ -208,7 +211,7 @@ class PluginManagerTests(unittest.TestCase):
         plugin_dir = self.plugins / "future-theme"
         plugin_dir.mkdir()
         (plugin_dir / "manifest.json").write_text(
-            json.dumps(theme_manifest("future-theme", api_version=5)),
+            json.dumps(theme_manifest("future-theme", api_version=6)),
             encoding="utf-8",
         )
         (plugin_dir / "theme.json").write_text(
@@ -222,7 +225,7 @@ class PluginManagerTests(unittest.TestCase):
         exported = export_plugin_archive("future-theme", self.plugins)
         with zipfile.ZipFile(io.BytesIO(exported)) as archive:
             manifest = json.loads(archive.read("manifest.json"))
-        self.assertEqual(manifest["api_version"], 5)
+        self.assertEqual(manifest["api_version"], 6)
         self.assertTrue(plugin_dir.is_dir())
 
     def test_zip_traversal_and_incompatible_api_are_rejected(self):
@@ -236,7 +239,7 @@ class PluginManagerTests(unittest.TestCase):
         self.assertFalse((self.base.parent / "outside.txt").exists())
 
         incompatible = make_archive(
-            theme_manifest("future-theme", api_version=5),
+            theme_manifest("future-theme", api_version=6),
             theme={"colors": {"background": "#102030"}},
         )
         with self.assertRaises(PluginError):
@@ -365,7 +368,7 @@ class PluginManagerTests(unittest.TestCase):
             set_plugin_enabled(manifest["id"], True, self.plugins)
 
         listed = list_plugins(self.plugins)
-        self.assertEqual(listed["api_version"], 4)
+        self.assertEqual(listed["api_version"], 5)
         self.assertTrue(all(plugin["compatible"] for plugin in listed["plugins"]))
         state = get_plugin_ui_state(self.plugins)
         self.assertEqual(state["hidden"], ["home.sort", "sidebar.profile"])
@@ -417,7 +420,7 @@ class PluginManagerTests(unittest.TestCase):
         )
         install_plugin_archive(make_archive(manifest, panel="<main>notes</main>"), self.plugins)
         listed = list_plugins(self.plugins)
-        self.assertEqual(listed["api_version"], 4)
+        self.assertEqual(listed["api_version"], 5)
         self.assertTrue(listed["plugins"][0]["compatible"])
         self.assertEqual(listed["plugins"][0]["granted_permissions"], [])
         set_plugin_enabled("notes-api-v4", True, self.plugins)
@@ -427,6 +430,51 @@ class PluginManagerTests(unittest.TestCase):
             ["notes.read"],
         )
         self.assertEqual(revoke_plugin_permissions("notes-api-v4", self.plugins)["revoked"], 1)
+
+    def test_api_v5_oauth_permission_requires_v5_and_revoke_clears_tokens(self):
+        too_old = data_feature_manifest(
+            "oauth-api-v4",
+            api_version=4,
+            permissions=["auth.oauth"],
+        )
+        with self.assertRaises(PluginError):
+            install_plugin_archive(make_archive(too_old, panel="<main>oauth</main>"), self.plugins)
+
+        manifest = data_feature_manifest(
+            "oauth-api-v5",
+            api_version=5,
+            permissions=["auth.oauth"],
+        )
+        install_plugin_archive(make_archive(manifest, panel="<main>oauth</main>"), self.plugins)
+        set_plugin_enabled("oauth-api-v5", True, self.plugins)
+        self.assertEqual(list_plugins(self.plugins)["api_version"], 5)
+        self.assertEqual(list_plugins(self.plugins)["plugins"][0]["granted_permissions"], [])
+
+        class FakeStore:
+            def __init__(self):
+                self.values = {}
+
+            def delete(self, key):
+                self.values.pop(key, None)
+
+            def get(self, key):
+                return self.values.get(key)
+
+            def set(self, key, value):
+                self.values[key] = value
+
+        store = FakeStore()
+        plugin_oauth._write_profiles(
+            "oauth-api-v5",
+            {"codex-plan": {"name": "Codex", "api_origin": "https://api.example.test"}},
+            self.plugins,
+        )
+        store.values[plugin_oauth._key("oauth-api-v5", "codex-plan", "access")] = "access-token"
+        store.values[plugin_oauth._key("oauth-api-v5", "codex-plan", "refresh")] = "refresh-token"
+        with patch("plugin_oauth._secret_store", return_value=store):
+            revoked = revoke_plugin_permissions("oauth-api-v5", self.plugins)
+        self.assertEqual(revoked["granted_permissions"], [])
+        self.assertFalse(store.values)
 
     def test_api_v2_legacy_permission_is_available_until_explicit_revoke(self):
         manifest = data_feature_manifest(

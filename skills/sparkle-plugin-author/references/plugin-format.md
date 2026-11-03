@@ -3,7 +3,7 @@
 Sparkle accepts a ZIP whose root contains `manifest.json`. The ZIP is imported
 disabled. Users must enable it in Sparkle Settings.
 
-The current contracts are API v1, API v2, API v3, and API v4:
+The current contracts are API v1, API v2, API v3, API v4, and API v5:
 
 - API v1 supports theme tokens and isolated feature panels.
 - API v2 supports everything in v1 and adds the declarative UI contributions
@@ -14,14 +14,19 @@ The current contracts are API v1, API v2, API v3, and API v4:
 - API v4 supports everything in v3 and adds permissioned note/task CRUD, calls
   to the AI provider configured in Sparkle, and host-mediated public HTTPS
   requests. An API v4 host treats API v1, v2, and v3 plugins as compatible.
+- API v5 supports everything in v4 and adds per-plugin OAuth connections. Sparkle
+  runs the PKCE browser flow, stores credentials in the Windows Credential
+  Manager, and makes authenticated requests only to the connection's declared
+  API origin. OAuth access and refresh tokens are never returned to plugin code.
+- An API v5 host treats API v1, v2, v3, and v4 plugins as compatible.
 - An API v1 or v2 host treats a newer API plugin as incompatible. It keeps the package
   and private data, leaves the plugin disabled, and allows the package to be
   exported for use with a compatible Sparkle release.
 
 Set `api_version` to the lowest API version the plugin needs. Use API v2 for a
 feature plugin that declares `contributes`, API v3 for clip/project data, and
-API v4 for notes/tasks, configured AI, or public HTTPS requests. API v4 also
-supports the earlier UI and data APIs.
+API v4 for notes/tasks, configured AI, or public HTTPS requests, and API v5 for
+OAuth connections. API v4 and v5 support the earlier UI and data APIs.
 
 ## Update compatibility
 
@@ -56,7 +61,7 @@ manifest.json:
 ~~~~
 
 The id uses lowercase letters, numbers, and single hyphens. The version uses
-major.minor.patch. `api_version` is an integer, currently 1, 2, 3, or 4.
+major.minor.patch. `api_version` is an integer, currently 1, 2, 3, 4, or 5.
 
 theme.json:
 
@@ -116,8 +121,9 @@ independent:
 | `tasks.delete` | Delete tasks through Sparkle's normal task lifecycle. |
 | `ai.request` | Send plugin-supplied prompts to the active AI provider configured in Sparkle and receive a response. Provider credentials stay in Sparkle. |
 | `network.request` | Make bounded HTTPS requests to public hosts through Sparkle. Private/local addresses and redirects are not followed. |
+| `auth.oauth` | Start PKCE OAuth connections, check/disconnect a plugin-owned connection, and make authenticated HTTPS requests to its fixed API origin. Tokens remain in Sparkle's credential store. |
 
-API v3 and v4 start with no permissions granted. Sparkle asks separately the first
+API v3, v4, and v5 start with no permissions granted. Sparkle asks separately the first
 time an operation needs each permission and stores the decision for that
 plugin on that installation. `ui.customize` is requested when the user enables
 the plugin. In Settings > Plugins, `権限を削除` revokes all grants for that
@@ -128,7 +134,8 @@ action. Importing a plugin starts disabled.
 The panel is loaded only after the user clicks its Open button. It runs in a
 sandboxed frame with no direct Sparkle DOM access or direct network access.
 Local assets can be referenced relative to panel.html. API v4 network requests
-go through Sparkle's parent bridge and require `network.request`.
+go through Sparkle's parent bridge and require `network.request`. API v5 OAuth
+requests use a separate `auth.oauth` permission and never expose bearer tokens.
 
 ### Host message bridge
 
@@ -211,6 +218,64 @@ Supported methods:
 - tasks.delete: delete a task by numeric `id`.
 - ai.generate: send `{ system_prompt?, prompt }` to the active configured AI provider. The result contains `response`, `provider`, and `model`.
 - network.request: send `{ url, requestMethod?, headers?, body? }` to a public HTTPS URL on port 443. The result contains `status`, a small response header set, and text `body`.
+- oauth.connect: send `{ connection: OAuthConnection }` to start a browser-based authorization code + PKCE connection. It returns status only; tokens are not returned.
+- oauth.status: send `{ connection_id }` to read whether the plugin-owned connection is pending or connected.
+- oauth.disconnect: send `{ connection_id }` to delete the connection's locally stored tokens.
+- oauth.request: send `{ connection_id, url, requestMethod?, headers?, body? }` to make an authenticated HTTPS request. `url` must use the connection's declared `api_origin`; Sparkle injects the bearer token and refreshes it when supported.
+
+An OAuth connection config contains `connection_id`, `name`, `authorization_url`,
+`token_url`, `client_id`, `scopes`, and `api_origin`. Optional fields include
+`resource`, `issuer`, `jwks_url`, `agent_name_hint`, `authorization_params`, and
+`token_params`. Set `reauthorize: true` on `oauth.connect` after refresh fails to
+start a new browser flow while retaining the issued OAuth client ID. The
+`agent_name_hint` defaults to `Sparkle`; dynamic client
+registration sends it only with the initial registration request. Sparkle keeps
+a stable host ID for that plugin across disconnects and permission re-grants.
+OAuth endpoints and API origins must be public HTTPS hosts on port 443. Redirects,
+loopback/private destinations, client secrets, and token access from plugin code
+are not supported. If the provider returns an ID token, it is validated when
+`issuer` and `jwks_url` are provided; requesting the `openid` scope requires both.
+Authenticated requests return the complete response body, up to 1 MB. For SSE,
+the bridge waits for the response to finish and returns the event stream text; it
+does not forward events to the plugin incrementally.
+
+For the open-source Sign in with ChatGPT flow that can authorize eligible
+ChatGPT-plan Responses API usage, use the plugin-owned connection below. This is
+separate from Sparkle's AI provider selector and from the user's local Codex CLI
+or Codex app session:
+
+~~~~js
+const connection = {
+  connection_id: "codex-plan",
+  name: "Codex subscription",
+  authorization_url: "https://auth.openai.com/api/accounts/authorize",
+  token_url: "https://auth.openai.com/api/accounts/oauth/token",
+  client_id: "dynamic_agent_client",
+  dynamic_registration: true,
+  agent_name_hint: "Sparkle",
+  scopes: ["openid", "profile", "email", "offline_access", "resource.invoke", "chatgpt.tokens.use.direct"],
+  resource: "https://api.openai.com/v1",
+  api_origin: "https://api.openai.com",
+  issuer: "https://auth.openai.com",
+  jwks_url: "https://auth.openai.com/.well-known/jwks.json",
+};
+
+await sparkleRequest("oauth.connect", { connection });
+const result = await sparkleRequest("oauth.request", {
+  connection_id: "codex-plan",
+  url: "https://api.openai.com/v1/responses",
+  requestMethod: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ model: "gpt-6.1-sol", input: "Hello", store: false, stream: true }),
+});
+~~~~
+
+The plugin supplies the UI, prompt, model choice, and response parsing. Check
+`oauth.status.scopes` for `chatgpt.tokens.use.direct` before offering plan-based
+inference. For streamed Responses API output, parse the returned SSE text after
+the request completes. Sparkle owns the browser callback, PKCE/state/nonce
+checks, secure token storage, refresh, and API-origin restriction. The plugin
+must explain what data its request sends to the external provider.
 
 The data methods use the same request/response envelope as the storage bridge:
 include a unique `requestId`, then read `ok`, `value`, and (on failure)
@@ -263,8 +328,11 @@ Clip and project access is intentionally narrower than the host's own routes:
   changes to Sparkle data remain after the plugin is removed.
 - `ai.request` uses the active provider selected in Sparkle Settings and does
   not give the plugin its API key. The plugin controls the prompt, so any
-  Sparkle data it includes is sent to that provider. Sparkle does not expose a
-  Codex ChatGPT OAuth session through this API.
+  Sparkle data it includes is sent to that provider. Sparkle has no built-in
+  Sign in with ChatGPT provider and does not expose the local Codex CLI or app
+  session. A plugin that implements an external OAuth
+  integration uses its own `auth.oauth` connection; Sparkle retains the tokens
+  and the plugin chooses how to use the authenticated response.
 - `network.request` supports public HTTPS on port 443 only, limits request and
   response sizes, blocks private/local addresses, and does not follow redirects.
   It is not a general-purpose proxy for Sparkle's local server or local network.
@@ -401,10 +469,11 @@ plugins provide the same style or order value, the later contribution wins.
 API v1 supports theme tokens and isolated feature panels. API v2 adds the
 declarative UI contributions above. API v3 additionally adds the explicitly
 permissioned clip/project JSON bridge. API v4 adds note/task CRUD, configured
-AI calls, and permissioned HTTPS requests through Sparkle. No version permits replacing or
+AI calls, and permissioned HTTPS requests through Sparkle. API v5 adds OAuth
+connections and authenticated requests bound to a single API origin. No version permits replacing or
 monkey-patching existing Sparkle behavior. UI contributions can hide controls,
 reorder the documented lists, and add the plugin's own sidebar or project
 action buttons, but they cannot disable the underlying feature, access the
 host DOM, database, or filesystem, or change another plugin's package. Plugins
-have no direct network access; API v4's network bridge is limited to public
-HTTPS destinations and is permission-gated.
+have no direct network access; API v4's network bridge and API v5's authenticated
+request bridge are limited to public HTTPS destinations and are permission-gated.

@@ -48,6 +48,13 @@ from schemas import (
 )
 from plugin_ai import generate_plugin_ai_response
 from plugin_network import PluginNetworkError, perform_plugin_network_request
+from plugin_oauth import (
+    PluginOAuthError,
+    authenticated_request as plugin_oauth_request,
+    disconnect_connection as disconnect_plugin_oauth,
+    get_connection_status as get_plugin_oauth_status,
+    start_connection as start_plugin_oauth,
+)
 from project_assistant import ProjectAssistantError
 
 from plugin_manager import (
@@ -118,6 +125,31 @@ class PluginNetworkRequest(BaseModel):
     body: str | None = Field(default=None, max_length=512 * 1024)
 
 
+class PluginOAuthConnectionRequest(BaseModel):
+    connection_id: str = Field(..., min_length=1, max_length=64)
+    name: str = Field(..., min_length=1, max_length=100)
+    agent_name_hint: str = Field(default="Sparkle", min_length=1, max_length=100)
+    authorization_url: str = Field(..., min_length=1, max_length=2048)
+    token_url: str = Field(..., min_length=1, max_length=2048)
+    client_id: str = Field(..., min_length=1, max_length=256)
+    dynamic_registration: bool = False
+    scopes: list[str] = Field(..., min_length=1, max_length=32)
+    resource: str | None = Field(default=None, max_length=2048)
+    api_origin: str = Field(..., min_length=1, max_length=2048)
+    issuer: str | None = Field(default=None, max_length=2048)
+    jwks_url: str | None = Field(default=None, max_length=2048)
+    authorization_params: dict[str, str] = Field(default_factory=dict)
+    token_params: dict[str, str] = Field(default_factory=dict)
+    reauthorize: bool = False
+
+
+class PluginOAuthRequest(BaseModel):
+    url: str = Field(..., min_length=1, max_length=2048)
+    method: Literal["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] = "GET"
+    headers: dict[str, str] = Field(default_factory=dict)
+    body: str | None = Field(default=None, max_length=512 * 1024)
+
+
 def _plugin_http_error(exc: PluginError) -> HTTPException:
     if isinstance(exc, PluginPermissionRequired):
         return HTTPException(
@@ -129,6 +161,10 @@ def _plugin_http_error(exc: PluginError) -> HTTPException:
     if "見つかりません" in text:
         status = 404
     return HTTPException(status_code=status, detail=text)
+
+
+def _plugin_oauth_http_error(exc: PluginOAuthError) -> HTTPException:
+    return HTTPException(status_code=exc.status_code, detail=exc.message)
 
 
 @contextmanager
@@ -485,6 +521,49 @@ def plugin_network_request(plugin_id: str, payload: PluginNetworkRequest):
             )
         except PluginNetworkError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{plugin_id}/oauth/connect")
+def plugin_oauth_connect(plugin_id: str, payload: PluginOAuthConnectionRequest):
+    with _require_data_permission(plugin_id, "auth.oauth"):
+        try:
+            return start_plugin_oauth(plugin_id, payload.model_dump())
+        except PluginOAuthError as exc:
+            raise _plugin_oauth_http_error(exc) from exc
+
+
+@router.get("/{plugin_id}/oauth/{connection_id}")
+def plugin_oauth_status(plugin_id: str, connection_id: str):
+    with _require_data_permission(plugin_id, "auth.oauth"):
+        try:
+            return get_plugin_oauth_status(plugin_id, connection_id)
+        except PluginOAuthError as exc:
+            raise _plugin_oauth_http_error(exc) from exc
+
+
+@router.delete("/{plugin_id}/oauth/{connection_id}")
+def plugin_oauth_disconnect(plugin_id: str, connection_id: str):
+    with _require_data_permission(plugin_id, "auth.oauth"):
+        try:
+            return disconnect_plugin_oauth(plugin_id, connection_id)
+        except PluginOAuthError as exc:
+            raise _plugin_oauth_http_error(exc) from exc
+
+
+@router.post("/{plugin_id}/oauth/{connection_id}/request")
+def plugin_oauth_authenticated_request(plugin_id: str, connection_id: str, payload: PluginOAuthRequest):
+    with _require_data_permission(plugin_id, "auth.oauth"):
+        try:
+            return plugin_oauth_request(
+                plugin_id,
+                connection_id,
+                url=payload.url,
+                method=payload.method,
+                headers=payload.headers,
+                body=payload.body,
+            )
+        except PluginOAuthError as exc:
+            raise _plugin_oauth_http_error(exc) from exc
 
 
 @router.delete("/{plugin_id}")

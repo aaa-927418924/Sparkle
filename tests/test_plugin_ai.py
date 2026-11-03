@@ -13,6 +13,9 @@ class FakeSecretStore:
     def get(self, provider):
         return self.values.get(provider)
 
+    def delete(self, provider):
+        self.values.pop(provider, None)
+
 
 def make_connection():
     connection = sqlite3.connect(":memory:")
@@ -72,7 +75,6 @@ class PluginAITests(unittest.TestCase):
                     self.assertEqual(raised.exception.status_code, 422)
         finally:
             connection.close()
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -99,6 +99,35 @@ class ProjectAssistantTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_removed_builtin_chatgpt_provider_is_migrated_out_of_settings_and_keyring(self):
+        connection = make_connection()
+        try:
+            for key, value in {
+                "ai_active_provider": "chatgpt",
+                "ai_model_chatgpt": "old-model",
+                "chatgpt_oauth_client_id": "old-client",
+                "chatgpt_oauth_scopes": "offline_access",
+            }.items():
+                connection.execute("INSERT INTO settings(key, value) VALUES (?, ?)", (key, value))
+            connection.commit()
+            store = FakeSecretStore({
+                "chatgpt_oauth_access_token": "old-access",
+                "chatgpt_oauth_refresh_token": "old-refresh",
+                "chatgpt_oauth_expires_at": "123",
+            })
+            with patch.object(assistant, "_secret_store", store):
+                result = assistant.get_ai_provider_settings(connection)
+            self.assertNotIn("chatgpt", [item.id for item in result.providers])
+            self.assertNotEqual(result.active_provider, "chatgpt")
+            self.assertFalse(store.values)
+            remaining_keys = {
+                row["key"] for row in connection.execute("SELECT key FROM settings").fetchall()
+            }
+            self.assertFalse(any(key.startswith("chatgpt_oauth_") for key in remaining_keys))
+            self.assertNotIn("ai_model_chatgpt", remaining_keys)
+        finally:
+            connection.close()
+
     def test_context_is_project_scoped_and_redacts_local_path(self):
         connection = make_connection()
         try:

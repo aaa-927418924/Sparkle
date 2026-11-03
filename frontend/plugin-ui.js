@@ -107,6 +107,10 @@
       title: "外部ネットワークアクセス",
       detail: "プラグインから公開HTTPSサイトへリクエストを送信できます。localhostやプライベートネットワークには接続できません。プラグインが送信したデータは接続先へ渡ります。",
     },
+    "auth.oauth": {
+      title: "外部アカウント認証",
+      detail: "プラグインはOAuthのブラウザー認証を開始し、接続先APIへ認証付きリクエストを送れます。PKCEとコールバック検証はSparkleが行い、資格情報はWindows資格情報マネージャーに保存します。アクセストークンはプラグインに渡しません。送信先と権限はプラグインが指定します。",
+    },
   };
   const hostUiSelectors = {
     "sidebar.home": ".sidebar a[data-nav='home']",
@@ -165,7 +169,7 @@
       const stylesheet = make("link");
       stylesheet.id = "pluginUiStylesheet";
       stylesheet.rel = "stylesheet";
-      stylesheet.href = "plugin-ui.css?v=plugin-ui-api-v4-permissions-v1";
+      stylesheet.href = "plugin-ui.css?v=plugin-ui-api-v5-oauth-v1";
       document.head.append(stylesheet);
     }
     for (const [target, selector] of Object.entries(hostUiSelectors)) {
@@ -654,6 +658,25 @@
         body: JSON.stringify({ system_prompt: data.system_prompt, prompt: data.prompt }),
       }),
       "network.request": () => request("/" + encodeURIComponent(plugin.id) + "/network/request", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: data.url,
+          method: data.requestMethod || "GET",
+          headers: objectValue(data.headers) || {},
+          body: data.body,
+        }),
+      }),
+      "oauth.connect": () => request("/" + encodeURIComponent(plugin.id) + "/oauth/connect", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(objectValue(data.connection) || {}),
+      }),
+      "oauth.status": () => request("/" + encodeURIComponent(plugin.id) + "/oauth/" + encodeURIComponent(String(data.connection_id || "")), {
+        cache: "no-store",
+      }),
+      "oauth.disconnect": () => request("/" + encodeURIComponent(plugin.id) + "/oauth/" + encodeURIComponent(String(data.connection_id || "")), {
+        method: "DELETE",
+      }),
+      "oauth.request": () => request("/" + encodeURIComponent(plugin.id) + "/oauth/" + encodeURIComponent(String(data.connection_id || "")) + "/request", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: data.url,

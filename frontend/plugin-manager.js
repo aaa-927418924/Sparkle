@@ -124,6 +124,7 @@
     "tasks.delete": "タスクの削除",
     "ai.request": "設定済みAIの利用",
     "network.request": "外部ネットワークアクセス",
+    "auth.oauth": "外部アカウント認証",
   };
 
   function renderPlugin(plugin) {

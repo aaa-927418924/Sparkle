@@ -18,14 +18,7 @@
     <script>
       document.documentElement.setAttribute("data-theme", "dark");
     </script>
-    <script>
-      try {
-        document.documentElement.classList.toggle(
-          "native-titlebar",
-          localStorage.getItem("sparkle.titlebarMode") === "native",
-        );
-      } catch (e) {}
-    </script>
+    <script>try { localStorage.removeItem("sparkle.titlebarMode"); } catch (e) {}</script>
     <link rel="stylesheet" href="native-backdrop.css?v=native-backdrop-c7" />
   </head>
   <body class="home-page">
@@ -298,19 +291,6 @@
               </select>
               <span id="fileSaveMethodDesc" class="file-save-desc">リンク切れの心配はありませんが、その分データ容量が増えます。</span>
             </label>
-            <div class="setting-row">
-              <span>検索履歴</span>
-              <button id="clearSearchHistory" class="modal-btn ghost" type="button">すべて削除</button>
-            </div>
-          </div>
-
-          <div class="settings-col">
-            <h3 class="modal-sub">ウィンドウの設定</h3>
-            <label class="setting-row">
-              <span>Windows標準のタイトルバーを使う</span>
-              <input type="checkbox" id="nativeTitlebar" />
-            </label>
-            <span class="file-save-desc">オフ: アプリ独自のタイトルバー（最小化・最大化・閉じる）を使います。</span>
           </div>
 
           <div class="settings-col">
@@ -372,7 +352,7 @@
       </defs>
     </svg>
 
-    <script src="pins.js?v=pins-ui-20260821-remote-latency-v1-legacy-sort-v1"></script>
+    <script src="pins.js?v=pins-ui-20261104-custom-titlebar-v1-legacy-sort-v1"></script>
     <script src="search-history.js"></script>
     <script src="app.js?v=home-project-attach-20260821-remote-latency-v1-tag-filter-v1-favorite-category-v1-legacy-sort-v3"></script>
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v2-sidebar-shift-click-v1-native-backdrop-v7"></script>

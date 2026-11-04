@@ -16,12 +16,7 @@
     <link rel="stylesheet" href="notes-figma.css?v=notes-ui-20260803-no-memo-hover-v1-black-background-v1-bg24273a-sidebar202231-v2-memo-rename-v1" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-no-memo-hover-v1-black-background-v1-bg24273a-sidebar202231-v2-surface-raised-202231-v2-custom-titlebar-history-v4-fixed-sidebar-icons-left-v5-compact-sidebar-v1-main-corner-v1-unified-controls-v1-flat-notes-v1-static-ui-v1-sidebar-gap-v1-no-card-lift-v1-project-borderless-v1-memo-outline-inset-v1-scrollbars-visible-v1-note-editor-corner-v1-shell-scroll-v1-sidebar-nav-icons-v1-page-transition-fade-v1-native-backdrop-v12" />
     <script>document.documentElement.setAttribute("data-theme", "dark");
-      try {
-        document.documentElement.classList.toggle(
-          "native-titlebar",
-          localStorage.getItem("sparkle.titlebarMode") === "native",
-        );
-      } catch (e) {}
+      try { localStorage.removeItem("sparkle.titlebarMode"); } catch (e) {}
     </script>
     <link rel="stylesheet" href="native-backdrop.css?v=native-backdrop-c7" />
   </head>
@@ -117,10 +112,6 @@
               </select>
               <span id="fileSaveMethodDesc" class="file-save-desc">リンク切れの心配はありませんが、その分データ容量が増えます。</span>
             </label>
-            <div class="setting-row">
-              <span>検索履歴</span>
-              <button id="clearSearchHistory" class="modal-btn ghost" type="button">すべて削除</button>
-            </div>
           </div>
           <div class="settings-col">
             <h3 class="modal-sub">タスクの設定</h3>
@@ -197,7 +188,7 @@
       </div>
     </div>
 
-    <script src="pins.js?v=pins-ui-20260821-remote-latency-v1"></script>
+    <script src="pins.js?v=pins-ui-20261104-custom-titlebar-v1"></script>
     <script src="vendor/marked.min.js?v=12.0.0"></script>
     <script src="notes.js?v=notes-ui-20260803-remote-latency-v1-memo-rename-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v2-sidebar-shift-click-v1-native-backdrop-v7"></script>

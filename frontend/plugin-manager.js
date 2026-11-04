@@ -13,11 +13,11 @@
     importStatus: document.getElementById("pluginImportStatus"),
     list: document.getElementById("pluginList"),
     empty: document.getElementById("pluginEmpty"),
-    categoryButtons: Array.from(document.querySelectorAll("[data-plugin-category-button]")),
-    categoryPanels: {
-      general: document.getElementById("generalSettingsPanel"),
-      plugins: document.getElementById("pluginSettingsPanel"),
-    },
+    categoryButtons: Array.from(document.querySelectorAll("[data-settings-category-button]")),
+    categoryPanels: Array.from(document.querySelectorAll("[data-settings-category-panel]")),
+    generalPanel: document.getElementById("generalSettingsPanel"),
+    pluginThemeSelect: document.getElementById("pluginThemeSelect"),
+    pluginThemeStatus: document.getElementById("pluginThemeStatus"),
   };
   if (!elements.list || !elements.skillButton) return;
 
@@ -61,12 +61,53 @@
   }
 
   function selectCategory(category) {
+    const selectedButton = elements.categoryButtons.find(
+      (button) => button.dataset.settingsCategoryButton === category,
+    );
+    if (!selectedButton) return;
+
     for (const button of elements.categoryButtons) {
-      const selected = button.dataset.pluginCategoryButton === category;
+      const selected = button === selectedButton;
       button.setAttribute("aria-pressed", selected ? "true" : "false");
     }
-    for (const [name, panel] of Object.entries(elements.categoryPanels)) {
-      if (panel) panel.hidden = name !== category;
+    if (elements.generalPanel) elements.generalPanel.hidden = category === "plugins";
+    for (const panel of elements.categoryPanels) {
+      panel.hidden = panel.dataset.settingsCategoryPanel !== category;
+    }
+    document.querySelector(".settings-main")?.scrollTo({ top: 0, behavior: "auto" });
+  }
+
+  function populateThemeSelect(activeTheme) {
+    const select = elements.pluginThemeSelect;
+    if (!select) return;
+
+    const options = [new Option("Sparkle標準テーマ", "")];
+    const enabledThemes = plugins.filter((plugin) => plugin.type === "theme" && plugin.enabled);
+    for (const plugin of enabledThemes) {
+      options.push(new Option(plugin.name || plugin.id, plugin.id));
+    }
+    select.replaceChildren(...options);
+
+    const activeId = typeof activeTheme?.id === "string" && enabledThemes.some((plugin) => plugin.id === activeTheme.id)
+      ? activeTheme.id
+      : "";
+    select.value = activeId;
+    setText(
+      elements.pluginThemeStatus,
+      activeId
+        ? (enabledThemes.find((plugin) => plugin.id === activeId)?.name || activeId) + "を適用中です。"
+        : "Sparkle標準テーマを使用中です。",
+    );
+  }
+
+  async function refreshThemeSettings() {
+    if (!elements.pluginThemeSelect) return;
+    try {
+      const body = await request("/active-theme", { cache: "no-store" });
+      populateThemeSelect(body.theme || null);
+      window.SparklePluginTheme?.setPluginTheme(body.theme || null);
+    } catch {
+      setText(elements.pluginThemeStatus, "テーマの状態を読み込めませんでした。");
     }
   }
 
@@ -230,6 +271,7 @@
       const body = await request("", { cache: "no-store" });
       plugins = Array.isArray(body.plugins) ? body.plugins : [];
       render();
+      await refreshThemeSettings();
       await refreshAuthoringSkillStatus();
       await window.SparklePluginUI?.refreshUI?.();
       return true;
@@ -242,9 +284,9 @@
   async function syncTheme() {
     try {
       const body = await request("/active-theme", { cache: "no-store" });
-      window.SparkleAppearanceTheme?.setPluginTheme(body.theme || null);
+      window.SparklePluginTheme?.setPluginTheme(body.theme || null);
     } catch {
-      window.SparkleAppearanceTheme?.syncPluginTheme();
+      window.SparklePluginTheme?.syncPluginTheme();
     }
   }
 
@@ -296,7 +338,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plugin_id: pluginId }),
       });
-      window.SparkleAppearanceTheme?.setPluginTheme(body.theme || null);
+      window.SparklePluginTheme?.setPluginTheme(body.theme || null);
       setText(elements.importStatus, "テーマを適用しました。");
       await refresh();
     } catch (error) {
@@ -425,9 +467,15 @@
   }
 
   for (const button of elements.categoryButtons) {
-    button.addEventListener("click", () => selectCategory(button.dataset.pluginCategoryButton));
+    button.addEventListener("click", () => selectCategory(button.dataset.settingsCategoryButton));
   }
   selectCategory("general");
+  elements.pluginThemeSelect?.addEventListener("change", () => {
+    void activateTheme(elements.pluginThemeSelect.value || null);
+  });
+  document.querySelectorAll("[data-open-settings-category]").forEach((button) => {
+    button.addEventListener("click", () => selectCategory(button.dataset.openSettingsCategory));
+  });
   elements.skillButton.addEventListener("click", () => void installAuthoringSkill());
   elements.zipLabel?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;

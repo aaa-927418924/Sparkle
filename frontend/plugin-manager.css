@@ -70,6 +70,10 @@
   display: none;
 }
 
+.settings-page [data-settings-category-panel][hidden] {
+  display: none !important;
+}
+
 .plugin-settings-content {
   width: 100%;
 }

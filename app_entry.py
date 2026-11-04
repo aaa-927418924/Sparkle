@@ -80,7 +80,7 @@ ONBOARDING_PAGES = {"Migration", "Setup", "Tutorial", "ExtensionGuide"}
 WINDOW_SCREEN_MARGIN = 24
 # Force a fresh top-level document after frontend changes. WebView2 keeps a
 # persistent profile, so the route itself also needs a versioned URL.
-FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1-native-backdrop-v15-plugins-v1-plugin-api-v5-plugin-oauth-v1"
+FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1-native-backdrop-v15-plugins-v1-plugin-api-v5-plugin-oauth-v1-settings-categories-v2-custom-titlebar-v1"
 
 # DWM system backdrop values used by Windows 11.  The native material is only
 # enabled when Windows' own transparency preference is enabled; the disabled
@@ -1182,7 +1182,7 @@ def _reassert_native_material(window, *, mode_override=None) -> bool:
         return True
     else:
         _apply_native_system_backdrop(handle, False)
-        _apply_dwm_frame_margin(handle, _get_window_titlebar_setting())
+        _apply_dwm_frame_margin(handle, False)
         return _native_backdrop_readback_matches(handle, DWMSBT_NONE)
 
 
@@ -1238,15 +1238,13 @@ def _apply_native_backdrop(
                     mode = "acrylic"
                 else:
                     mode = "off"
-                    _apply_dwm_frame_margin(
-                        handle, _get_window_titlebar_setting()
-                    )
+                    _apply_dwm_frame_margin(handle, False)
         else:
             # Clear both native implementations on the OFF transition so a
             # previous process version cannot leave a stale material active.
             _apply_native_acrylic_backdrop(handle, False, background_color)
             _apply_native_system_backdrop(handle, False)
-            _apply_dwm_frame_margin(handle, _get_window_titlebar_setting())
+            _apply_dwm_frame_margin(handle, False)
             system_backdrop_applied = False
             acrylic_backdrop_applied = False
             mode = "off"
@@ -1697,10 +1695,10 @@ def _refresh_native_frame_after_layout(sender=None, event_args=None) -> None:
     # Re-running _apply_window_caption would first clear the DWM frame margin
     # and briefly restore the WinForms background, which is the source of the
     # white surface seen after a move.  Caption style changes are handled by
-    # the explicit titlebar setting path instead.
+    # the custom titlebar layout.
     handle = _get_native_window_handle(window)
     if handle is not None:
-        _apply_corner_preference(handle, _get_window_titlebar_setting())
+        _apply_corner_preference(handle, False)
     _sync_native_backdrop(reassert=True, diagnostic_phase="move-resize")
 
 
@@ -2117,19 +2115,6 @@ class NativeWindowApi:
         return _resize_window_for_profile(str(profile or ""))
 
     @staticmethod
-    def set_titlebar_mode(mode: str) -> bool:
-        """Switch between the custom in-app title bar and the native caption bar.
-
-        Returns True when the native Windows titlebar is now active.
-        """
-        native = str(mode).strip().lower() == "native"
-        window = window_ref.get("window")
-        if window is not None:
-            _apply_window_caption(window, native)
-            _sync_native_backdrop(reassert=True, diagnostic_phase="titlebar")
-        return native
-
-    @staticmethod
     def close_window() -> None:
         window = window_ref.get("window")
         if window is not None:
@@ -2162,25 +2147,6 @@ def _on_window_closing(window) -> bool:
     return False
 
 
-def _get_window_titlebar_setting() -> bool:
-    """Return True when the saved titlebar_mode is 'native'."""
-    try:
-        data_dir = Path(os.environ.get("APPDATA", "")) / "Sparkle"
-        db_path = data_dir / "clips.db"
-        if not db_path.exists():
-            return False
-        import sqlite3
-
-        conn = sqlite3.connect(str(db_path))
-        try:
-            row = conn.execute("SELECT value FROM settings WHERE key = 'titlebar_mode'").fetchone()
-        finally:
-            conn.close()
-        return bool(row and row[0] == "native")
-    except Exception:
-        return False
-
-
 def _configure_native_window() -> None:
     _apply_native_chrome()
     _attach_native_drop_listener()
@@ -2192,9 +2158,8 @@ def _apply_native_chrome() -> None:
     ``webview.start(func)`` runs ``func`` on a background thread before the
     WinForms window is created, so the native handle is still missing there.
     The same call is therefore repeated from the ``loaded`` event, by which
-    point the handle is available. Once the style is applied, page navigation
-    does not touch the Win32 frame again; changing the setting explicitly is
-    the only operation that reapplies it.
+    point the handle is available. The custom titlebar remains fixed for every
+    page.
     """
     window = window_ref.get("window")
     if window is None:
@@ -2202,7 +2167,7 @@ def _apply_native_chrome() -> None:
     # pywebview re-shows a transparent WinForms window at navigation start.
     # Reapply the frame margin and corner preference after that show cycle so
     # page changes cannot leave a stale titlebar or square client corner.
-    _apply_window_caption(window, _get_window_titlebar_setting(), force=False)
+    _apply_window_caption(window, False, force=False)
     _register_native_navigation_listener(window)
     _register_native_layout_listener(window)
     _register_windows_transparency_listener()

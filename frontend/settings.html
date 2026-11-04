@@ -14,14 +14,10 @@
     </script>
     <link rel="stylesheet" href="style.css?v=settings-remote-mcp-disabled-20260921-v1" />
     <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1-black-background-v1-bg24273a-sidebar202231-v2-surface-raised-202231-v2-custom-titlebar-history-v4-fixed-sidebar-icons-left-v5-compact-sidebar-v1-main-corner-v1-unified-controls-v1-flat-notes-v1-static-ui-v1-sidebar-gap-v1-notes-outline-v1-task-panel-frameless-v1-no-card-lift-v1-project-borderless-v1-memo-outline-inset-v1-note-editor-corner-v1-shell-scroll-v1-sidebar-nav-icons-v1-page-transition-fade-v1-native-backdrop-v12" />
-    <link rel="stylesheet" href="plugin-manager.css?v=plugin-manager-v1" />
+    <link rel="stylesheet" href="plugin-manager.css?v=plugin-manager-v2-six-settings-categories" />
     <script>document.documentElement.setAttribute("data-theme", "dark");
-      try {
-        document.documentElement.classList.toggle(
-          "native-titlebar",
-          localStorage.getItem("sparkle.titlebarMode") === "native",
-        );
-      } catch (e) {}
+      document.documentElement.classList.remove("native-titlebar");
+      try { localStorage.removeItem("sparkle.titlebarMode"); } catch (e) {}
     </script>
     <link rel="stylesheet" href="native-backdrop.css?v=native-backdrop-c7" />
   </head>
@@ -66,7 +62,7 @@
         <section id="generalSettingsPanel" class="settings-page-card" aria-labelledby="settingsPageTitle">
           <h2 id="settingsPageTitle" class="sr-only">Sparkleの設定項目</h2>
           <div class="settings-columns">
-            <div class="settings-col">
+            <div class="settings-col" data-settings-category-panel="general">
               <h3 class="modal-sub">ホームの設定</h3>
               <label class="setting-row column">
                 <span>ファイル保存方式</span>
@@ -76,22 +72,22 @@
                 </select>
                 <span id="fileSaveMethodDesc" class="file-save-desc">リンク切れの心配はありませんが、その分データ容量が増えます。</span>
               </label>
-            <div class="setting-row">
-              <span>検索履歴</span>
-              <button id="clearSearchHistory" class="modal-btn ghost" type="button">すべて削除</button>
-            </div>
             </div>
 
-            <div class="settings-col">
-              <h3 class="modal-sub">ウィンドウの設定</h3>
-              <label class="setting-row">
-                <span>Windows標準のタイトルバーを使う</span>
-                <input type="checkbox" id="nativeTitlebar" />
+            <div class="settings-col" data-settings-category-panel="theme" hidden>
+              <h3 class="modal-sub">テーマ</h3>
+              <label class="setting-row column" for="pluginThemeSelect">
+                <span>適用するテーマ</span>
+                <select id="pluginThemeSelect" class="setting-select">
+                  <option value="">Sparkle標準テーマ</option>
+                </select>
               </label>
-              <span class="file-save-desc">オフ: アプリ独自のタイトルバー（最小化・最大化・閉じる）を使います。</span>
+              <div id="pluginThemeStatus" class="ai-export-status" role="status" aria-live="polite">テーマを読み込んでいます…</div>
+              <p class="file-save-desc">追加したテーマプラグインを有効にすると、ここから適用できます。</p>
+              <button class="modal-btn ghost" type="button" data-open-settings-category="plugins">プラグインを管理</button>
             </div>
 
-            <div class="settings-col">
+            <div class="settings-col" data-settings-category-panel="general">
               <h3 class="modal-sub">タスクの設定</h3>
               <label class="setting-row column">
                 <span>完了したタスクを自動削除</span>
@@ -104,7 +100,7 @@
               </label>
             </div>
 
-            <div class="settings-col">
+            <div class="settings-col" data-settings-category-panel="general">
               <h3 class="modal-sub">プロジェクトの設定</h3>
               <label class="setting-row">
                 <span>プロジェクト作成時に同名の空メモを自動作成する</span>
@@ -112,7 +108,7 @@
               </label>
             </div>
 
-            <div class="settings-col settings-remote-col">
+            <div class="settings-col settings-remote-col" data-settings-category-panel="connections" hidden>
               <h3 class="modal-sub">外部Webアクセス</h3>
               <p class="file-save-desc">
                 AndroidなどTailscaleに接続できる端末にはServe、Tailscaleアプリを入れられない端末にはFunnelを使えます。
@@ -209,7 +205,7 @@
 
             </div>
 
-            <div class="settings-col settings-data-col">
+            <div class="settings-col settings-data-col" data-settings-category-panel="advanced" hidden>
               <h3 class="modal-sub">データ移行</h3>
               <div class="setting-row column">
                 <span>データベース</span>
@@ -223,7 +219,7 @@
             </div>
           </div>
 
-          <div class="settings-col settings-ai-col">
+          <div class="settings-col settings-ai-col" data-settings-category-panel="ai" hidden>
             <h3 class="modal-sub">AI向けエクスポート</h3>
             <label class="setting-row">
               <span>AI向けエクスポートを有効にする</span>
@@ -242,7 +238,7 @@
             <div id="aiEditStatus" class="ai-export-status" role="status" aria-live="polite">状態を確認中…</div>
           </div>
 
-          <section class="settings-col settings-ai-provider-col" aria-labelledby="projectAssistantSettingsTitle">
+          <section class="settings-col settings-ai-provider-col" data-settings-category-panel="ai" hidden aria-labelledby="projectAssistantSettingsTitle">
             <h3 id="projectAssistantSettingsTitle" class="modal-sub">プロジェクト専属AI</h3>
             <p class="file-save-desc">プロジェクトのクリップ・メモ・タスクを参照して、プロジェクト内の質問に回答します。参照範囲は専属AI画面で「プロジェクト内」または「全て」から選べます。</p>
             <p class="file-save-desc">APIキーはWindows資格情報マネージャーに保存し、データベース・バックアップ・AI向けエクスポートには含めません。</p>
@@ -313,7 +309,7 @@
             </div>
           </section>
 
-          <div class="settings-col">
+          <div class="settings-col" data-settings-category-panel="advanced" hidden>
             <h3 class="modal-sub">セットアップ</h3>
             <p class="file-save-desc">PC・Tailscale・Androidの接続手順を確認できます。</p>
             <div class="settings-data-actions">
@@ -321,7 +317,7 @@
             </div>
           </div>
 
-          <div class="settings-col">
+          <div class="settings-col" data-settings-category-panel="general">
             <h3 class="modal-sub">アプリの更新</h3>
             <p class="file-save-desc">
               現在のバージョン: <strong id="updateCurrentVersion">…</strong>
@@ -334,7 +330,7 @@
             </div>
           </div>
 
-          <details class="settings-col settings-legacy-col">
+          <details class="settings-col settings-legacy-col" data-settings-category-panel="advanced" hidden>
             <summary class="modal-sub settings-legacy-summary">
               <span>レガシー設定</span>
               <span class="settings-legacy-summary-icon" aria-hidden="true"></span>
@@ -358,11 +354,11 @@
             </div>
           </details>
 
-          <div class="settings-page-actions">
+          <div class="settings-page-actions" data-settings-category-panel="general">
             <button id="settingsReset" class="modal-btn ghost" type="button">設定をすべてデフォルトに戻す</button>
           </div>
         </section>
-        <section id="pluginSettingsPanel" class="settings-page-card plugin-settings-panel" aria-labelledby="pluginSettingsTitle" hidden>
+        <section id="pluginSettingsPanel" class="settings-page-card plugin-settings-panel" data-settings-category-panel="plugins" aria-labelledby="pluginSettingsTitle" hidden>
           <h2 id="pluginSettingsTitle" class="sr-only">プラグイン設定</h2>
           <div class="settings-col plugin-settings-content">
             <h3 class="modal-sub">プラグイン</h3>
@@ -390,12 +386,28 @@
           </div>
         </section>
           </div>
-          <nav class="plugin-settings-category-nav" aria-label="設定カテゴリ">
-            <button class="plugin-settings-category-button" type="button" data-plugin-category-button="general" aria-pressed="true" aria-controls="generalSettingsPanel" title="設定">
+          <nav class="plugin-settings-category-nav settings-category-nav" aria-label="設定カテゴリ" data-settings-category-nav>
+            <button class="plugin-settings-category-button" type="button" data-settings-category-button="general" data-plugin-category-button="general" aria-pressed="true" aria-controls="generalSettingsPanel" title="一般">
               <svg class="settings-category-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16" /><circle cx="9" cy="6" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="7" cy="18" r="2" /></svg>
-              <span class="settings-category-label">設定</span>
+              <span class="settings-category-label">一般</span>
             </button>
-            <button class="plugin-settings-category-button" type="button" data-plugin-category-button="plugins" aria-pressed="false" aria-controls="pluginSettingsPanel" title="プラグイン">
+            <button class="plugin-settings-category-button" type="button" data-settings-category-button="theme" data-plugin-category-button="theme" aria-pressed="false" aria-controls="generalSettingsPanel" title="テーマ">
+              <svg class="settings-category-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></svg>
+              <span class="settings-category-label">テーマ</span>
+            </button>
+            <button class="plugin-settings-category-button" type="button" data-settings-category-button="connections" data-plugin-category-button="connections" aria-pressed="false" aria-controls="generalSettingsPanel" title="接続">
+              <svg class="settings-category-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="m8.2 10.9 7.5-3.8M8.2 13.1l7.5 3.8" /></svg>
+              <span class="settings-category-label">接続</span>
+            </button>
+            <button class="plugin-settings-category-button" type="button" data-settings-category-button="ai" data-plugin-category-button="ai" aria-pressed="false" aria-controls="generalSettingsPanel" title="AI">
+              <svg class="settings-category-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 3 1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2L12 3Z" /><path d="m19 14 .9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14Z" /></svg>
+              <span class="settings-category-label">AI</span>
+            </button>
+            <button class="plugin-settings-category-button" type="button" data-settings-category-button="advanced" data-plugin-category-button="advanced" aria-pressed="false" aria-controls="generalSettingsPanel" title="高度な機能">
+              <svg class="settings-category-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.7 6.3a5 5 0 0 0-6.4 6.4L3 18l3 3 5.3-5.3a5 5 0 0 0 6.4-6.4L14 13l-3-3 3.7-3.7Z" /></svg>
+              <span class="settings-category-label">高度な機能</span>
+            </button>
+            <button class="plugin-settings-category-button" type="button" data-settings-category-button="plugins" data-plugin-category-button="plugins" aria-pressed="false" aria-controls="pluginSettingsPanel" title="プラグイン">
               <svg class="settings-category-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 4a2 2 0 1 1 4 0v2h3a2 2 0 0 1 2 2v3h2a2 2 0 1 1 0 4h-2v3a2 2 0 0 1-2 2h-3v-2a2 2 0 1 0-4 0v2H6a2 2 0 0 1-2-2v-3H2a2 2 0 1 1 0-4h2V8a2 2 0 0 1 2-2h3V4Z" /></svg>
               <span class="settings-category-label">プラグイン</span>
             </button>
@@ -418,13 +430,13 @@
       </div>
     </div>
 
-    <script src="pins.js?v=pins-ui-20260821-remote-latency-v1-legacy-sort-v1"></script>
+    <script src="pins.js?v=pins-ui-20261104-custom-titlebar-v1-legacy-sort-v1"></script>
     <script src="ai-provider-settings.js?v=ai-provider-settings-plugin-oauth-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v2-sidebar-shift-click-v1-native-backdrop-v7"></script>
     <script src="remote-access.js?v=remote-access-20260921-disabled-v1"></script>
     <script src="remote-client-settings.js?v=remote-client-settings-20260821-v1"></script>
     <script src="plugin-theme.js?v=plugin-theme-v1"></script>
-    <script src="plugin-manager.js?v=plugin-manager-v5-permissions-v1-skill-status"></script>
+    <script src="plugin-manager.js?v=plugin-manager-v6-six-settings-categories"></script>
     <script src="plugin-ui.js?v=plugin-ui-api-v5-oauth-v1"></script>
   </body>
 </html>

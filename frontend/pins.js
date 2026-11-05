@@ -598,6 +598,37 @@ const SHARED_BOOLEAN_SETTINGS = Object.freeze({
 });
 
 const LEGACY_SORT_SETTING_KEY = "sparkle.legacySortEnabled";
+const PROJECT_ASSISTANT_ENABLED_KEY = "sparkle.projectAssistantEnabled";
+const LEGACY_CONNECTIONS_SETTING = Object.freeze({
+  key: "legacy_connections_enabled",
+  storageKey: "sparkle.legacyConnectionsEnabled",
+  checkbox: "legacyConnectionsEnabled",
+  status: "legacyConnectionsStatus",
+  sections: [".remote-client-server-settings", ".remote-client-data-settings"],
+});
+
+function setProjectAssistantSettingsVisibility(enabled) {
+  const providerSettings = document.querySelector(".settings-ai-provider-col");
+  const actionPermissions = providerSettings?.querySelector(".ai-action-permissions");
+  if (providerSettings) {
+    providerSettings.dataset.legacyFeatureEnabled = enabled ? "true" : "false";
+    const selectedCategory = document.querySelector("[data-settings-category-button][aria-pressed='true']")?.dataset.settingsCategoryButton;
+    providerSettings.hidden = !enabled || Boolean(selectedCategory && selectedCategory !== "ai");
+  }
+  if (actionPermissions) actionPermissions.hidden = !enabled;
+}
+
+function setLegacyConnectionsVisibility(enabled, broadcast = true) {
+  for (const selector of LEGACY_CONNECTIONS_SETTING.sections) {
+    const section = document.querySelector(selector);
+    if (section) section.hidden = !enabled;
+  }
+  if (broadcast) {
+    window.dispatchEvent(new CustomEvent("sparkle-legacy-connection-settings-changed", {
+      detail: { key: LEGACY_CONNECTIONS_SETTING.key, enabled },
+    }));
+  }
+}
 
 function setLegacySortEnabled(enabled) {
   const value = enabled ? "true" : "false";
@@ -654,6 +685,73 @@ async function setSharedBooleanSetting(apiKey, storageKey, value) {
   }
 }
 
+async function getProjectAssistantEnabled() {
+  try {
+    const response = await fetch(`${API_ROOT}/settings/project_assistant_enabled`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const enabled = String(data.value).toLowerCase() === "true";
+    localStorage.setItem(PROJECT_ASSISTANT_ENABLED_KEY, enabled ? "true" : "false");
+    return enabled;
+  } catch {
+    return false;
+  }
+}
+
+async function setProjectAssistantEnabled(enabled) {
+  const value = enabled ? "true" : "false";
+  try {
+    const response = await fetch(`${API_ROOT}/settings/project_assistant_enabled`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ value }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    localStorage.setItem(PROJECT_ASSISTANT_ENABLED_KEY, value);
+    setProjectAssistantSettingsVisibility(enabled);
+    window.dispatchEvent(new CustomEvent("sparkle-project-assistant-enabled-changed", {
+      detail: { enabled },
+    }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function getLegacyConnectionsEnabled() {
+  try {
+    const response = await fetch(`${API_ROOT}/settings/${LEGACY_CONNECTIONS_SETTING.key}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const enabled = String(data.value).toLowerCase() === "true";
+    localStorage.setItem(LEGACY_CONNECTIONS_SETTING.storageKey, enabled ? "true" : "false");
+    return enabled;
+  } catch {
+    return false;
+  }
+}
+
+async function setLegacyConnectionsEnabled(enabled) {
+  const value = enabled ? "true" : "false";
+  try {
+    const response = await fetch(`${API_ROOT}/settings/${LEGACY_CONNECTIONS_SETTING.key}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ value }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    localStorage.setItem(LEGACY_CONNECTIONS_SETTING.storageKey, value);
+    setLegacyConnectionsVisibility(enabled);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 window.sparkleSettings = Object.freeze({
   getBoolean: getSharedBooleanSetting,
   setBoolean: setSharedBooleanSetting,
@@ -686,6 +784,24 @@ async function loadSettingsValues(force = false) {
   if (legacySort && !legacySort.dataset.loaded) {
     legacySort.dataset.loaded = "1";
     legacySort.checked = localStorage.getItem(LEGACY_SORT_SETTING_KEY) === "true";
+  }
+  const legacyProjectAssistant = document.getElementById("legacyProjectAssistantEnabled");
+  if (legacyProjectAssistant && (!legacyProjectAssistant.dataset.loaded || force)) {
+    legacyProjectAssistant.dataset.loaded = "1";
+    const enabled = await getProjectAssistantEnabled();
+    legacyProjectAssistant.checked = enabled;
+    setProjectAssistantSettingsVisibility(enabled);
+    const status = document.getElementById("legacyProjectAssistantStatus");
+    if (status) status.textContent = enabled ? "プロジェクト専属AIは有効です。" : "プロジェクト専属AIは無効です。";
+  }
+  const legacyConnections = document.getElementById(LEGACY_CONNECTIONS_SETTING.checkbox);
+  if (legacyConnections && (!legacyConnections.dataset.loaded || force)) {
+    legacyConnections.dataset.loaded = "1";
+    const enabled = await getLegacyConnectionsEnabled();
+    legacyConnections.checked = enabled;
+    setLegacyConnectionsVisibility(enabled, false);
+    const status = document.getElementById(LEGACY_CONNECTIONS_SETTING.status);
+    if (status) status.textContent = enabled ? "接続機能は有効です。" : "接続機能は無効です。";
   }
   loadAIExportSettings();
   loadAIEditSettings();
@@ -1006,6 +1122,38 @@ function initSettings() {
   if (legacySort) legacySort.addEventListener("change", () => {
     setLegacySortEnabled(legacySort.checked);
   });
+  const legacyProjectAssistant = document.getElementById("legacyProjectAssistantEnabled");
+  const legacyProjectAssistantStatus = document.getElementById("legacyProjectAssistantStatus");
+  if (legacyProjectAssistant) legacyProjectAssistant.addEventListener("change", async () => {
+    const enabled = legacyProjectAssistant.checked;
+    legacyProjectAssistant.disabled = true;
+    if (legacyProjectAssistantStatus) legacyProjectAssistantStatus.textContent = "設定を保存しています…";
+    const saved = await setProjectAssistantEnabled(enabled);
+    if (!saved) {
+      legacyProjectAssistant.checked = !enabled;
+      setProjectAssistantSettingsVisibility(!enabled);
+      if (legacyProjectAssistantStatus) legacyProjectAssistantStatus.textContent = "設定を保存できませんでした。接続を確認してください。";
+    } else if (legacyProjectAssistantStatus) {
+      legacyProjectAssistantStatus.textContent = enabled ? "プロジェクト専属AIを有効にしました。" : "プロジェクト専属AIを無効にしました。";
+    }
+    legacyProjectAssistant.disabled = false;
+  });
+  const legacyConnections = document.getElementById(LEGACY_CONNECTIONS_SETTING.checkbox);
+  const legacyConnectionsStatus = document.getElementById(LEGACY_CONNECTIONS_SETTING.status);
+  if (legacyConnections) legacyConnections.addEventListener("change", async () => {
+    const enabled = legacyConnections.checked;
+    legacyConnections.disabled = true;
+    if (legacyConnectionsStatus) legacyConnectionsStatus.textContent = "設定を保存しています…";
+    const saved = await setLegacyConnectionsEnabled(enabled);
+    if (!saved) {
+      legacyConnections.checked = !enabled;
+      setLegacyConnectionsVisibility(!enabled, false);
+      if (legacyConnectionsStatus) legacyConnectionsStatus.textContent = "設定を保存できませんでした。接続を確認してください。";
+    } else if (legacyConnectionsStatus) {
+      legacyConnectionsStatus.textContent = enabled ? "接続機能を有効にしました。" : "接続機能を無効にしました。";
+    }
+    legacyConnections.disabled = false;
+  });
   // app update
   const setupTutorialBtn = document.getElementById("setupTutorialBtn");
   if (setupTutorialBtn) setupTutorialBtn.addEventListener("click", () => {
@@ -1165,6 +1313,14 @@ function initSettings() {
     if (acnp) acnp.checked = false;
     const legacySort = document.getElementById("legacySortEnabled");
     if (legacySort) legacySort.checked = false;
+    const legacyProjectAssistant = document.getElementById("legacyProjectAssistantEnabled");
+    if (legacyProjectAssistant) legacyProjectAssistant.checked = false;
+    setProjectAssistantSettingsVisibility(false);
+    void setProjectAssistantEnabled(false);
+    const legacyConnections = document.getElementById(LEGACY_CONNECTIONS_SETTING.checkbox);
+    if (legacyConnections) legacyConnections.checked = false;
+    setLegacyConnectionsVisibility(false);
+    void setLegacyConnectionsEnabled(false);
     const aiEnabled = document.getElementById("aiExportEnabled");
     if (aiEnabled) {
       aiEnabled.checked = true;

@@ -2,37 +2,37 @@
 .home-page {
   min-height: 100vh;
   overflow-x: hidden;
-  background: #24273a;
+  background: var(--theme-home-background, #24273a);
 }
 
 .home-page .layout {
-  --home-bg: #24273a;
-  --home-sidebar: #202231;
-  --home-surface: rgba(244, 243, 238, 0.2);
-  --home-text: #3f3f3f;
-  --home-muted: #6b6a64;
-  --home-border: #b1ada1;
-  --home-accent: #cc6d48;
-  --home-card: #d9d9d9;
-  --home-active: rgba(255, 255, 255, 0.25);
+  --home-bg: var(--theme-home-background, #24273a);
+  --home-sidebar: var(--theme-home-sidebar, #202231);
+  --home-surface: var(--theme-home-surface, rgba(244, 243, 238, 0.2));
+  --home-text: var(--theme-home-text, #3f3f3f);
+  --home-muted: var(--theme-home-muted, #6b6a64);
+  --home-border: var(--theme-home-border, #b1ada1);
+  --home-accent: var(--theme-home-accent, #cc6d48);
+  --home-card: var(--theme-home-card, #d9d9d9);
+  --home-active: var(--theme-home-active, rgba(255, 255, 255, 0.25));
   min-height: 100vh;
   background: var(--home-bg);
 }
 
 html[data-theme="dark"] .home-page {
-  background: #24273a;
+  background: var(--theme-home-background, #24273a);
 }
 
 html[data-theme="dark"] .home-page .layout {
-  --home-bg: #24273a;
-  --home-sidebar: #202231;
-  --home-surface: rgba(244, 243, 238, 0.2);
-  --home-text: #f4f3ee;
-  --home-muted: #b1ada1;
-  --home-border: #8f8a80;
-  --home-accent: #d77a50;
-  --home-card: #d9d9d9;
-  --home-active: #d9d9d9;
+  --home-bg: var(--theme-home-background, #24273a);
+  --home-sidebar: var(--theme-home-sidebar, #202231);
+  --home-surface: var(--theme-home-surface, rgba(244, 243, 238, 0.2));
+  --home-text: var(--theme-home-text, #f4f3ee);
+  --home-muted: var(--theme-home-muted, #b1ada1);
+  --home-border: var(--theme-home-border, #8f8a80);
+  --home-accent: var(--theme-home-accent, #d77a50);
+  --home-card: var(--theme-home-card, #d9d9d9);
+  --home-active: var(--theme-home-active, #d9d9d9);
 }
 
 .home-page .sidebar {
@@ -288,7 +288,7 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
 
 .home-page .card-ph {
   min-height: 220px;
-  color: #77736d;
+  color: var(--home-muted);
 }
 
 .home-page .card::after {
@@ -318,24 +318,24 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
 }
 
 .home-page .tag-chip {
-  border-color: #9c9c9c;
-  color: #9c9c9c;
+  border-color: var(--theme-home-tag-border, var(--border-strong, #9c9c9c));
+  color: var(--theme-home-tag-text, var(--theme-control-text, #9c9c9c));
   background: transparent;
 }
 
 .home-page .tag-chip:hover,
 .home-page .tag-chip:focus-visible {
-  border-color: #9c9c9c;
-  background: rgba(255, 255, 255, 0.06);
-  color: #9c9c9c;
+  border-color: var(--theme-home-tag-border, var(--border-strong, #9c9c9c));
+  background: var(--theme-control-hover-background, rgba(255, 255, 255, 0.06));
+  color: var(--theme-control-hover-text, var(--theme-home-tag-text, var(--theme-control-text, #9c9c9c)));
 }
 
 .home-page .tag-chip.active,
 .home-page .tag-chip.active:hover,
 .home-page .tag-chip.active:focus-visible {
-  border-color: #ffffff;
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  border-color: var(--theme-home-tag-active-text, var(--theme-control-active-text, #ffffff));
+  background: var(--theme-home-tag-active, var(--theme-control-active-background, rgba(255, 255, 255, 0.12)));
+  color: var(--theme-home-tag-active-text, var(--theme-control-active-text, #ffffff));
 }
 
 .home-page .card-actions {
@@ -352,8 +352,8 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
 .home-page .fav-btn {
   width: 36px;
   height: 36px;
-  background: rgba(244, 243, 238, 0.84);
-  color: #3f3f3f;
+  background: var(--theme-home-action-surface, rgba(244, 243, 238, 0.84));
+  color: var(--theme-home-action-text, #3f3f3f);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -361,7 +361,7 @@ html[data-theme="dark"] .home-page .theme-toggle-thumb {
 
 .home-page .act-btn:hover,
 .home-page .fav-btn:hover {
-  background: #fff;
+  background: var(--theme-home-action-surface, #fff);
 }
 
 .home-page .fav-btn.on {

@@ -5,6 +5,8 @@
   const serverStatus = $("remoteClientServerStatus");
   const clientStatus = $("remoteDataStatus");
   if (!serverStatus && !clientStatus) return;
+  const serverSettings = document.querySelector(".remote-client-server-settings");
+  const dataSettings = document.querySelector(".remote-client-data-settings");
 
   const serverButtons = {
     enable: $("remoteClientEnable"),
@@ -24,6 +26,9 @@
   const dataConnect = $("remoteDataConnect");
   const dataTest = $("remoteDataTest");
   const dataDisconnect = $("remoteDataDisconnect");
+  const featureFlagKey = "legacy_connections_enabled";
+  let featuresEnabled = false;
+  let featureFlagGeneration = 0;
   let busy = false;
 
   function setMessage(element, message, tone = "") {
@@ -42,6 +47,33 @@
     try { data = await response.json(); } catch {}
     if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
     return data;
+  }
+
+  async function readFeatureFlag() {
+    try {
+      const data = await request(`/settings/${featureFlagKey}`);
+      return String(data.value).toLowerCase() === "true";
+    } catch {
+      return false;
+    }
+  }
+
+  function applyFeatureVisibility(enabled) {
+    featuresEnabled = enabled;
+    if (serverSettings) serverSettings.hidden = !enabled;
+    if (dataSettings) dataSettings.hidden = !enabled;
+    if (!enabled && dataConfig) dataConfig.hidden = true;
+    if (enabled) {
+      void refreshServer();
+      void refreshDataConnection();
+    }
+  }
+
+  async function loadFeatureFlags() {
+    const generation = ++featureFlagGeneration;
+    const enabled = await readFeatureFlag();
+    if (generation !== featureFlagGeneration) return;
+    applyFeatureVisibility(enabled);
   }
 
   function renderServerStatus(data) {
@@ -78,6 +110,7 @@
   }
 
   async function refreshServer() {
+    if (!featuresEnabled) return;
     try {
       const data = await request("/settings/remote-access");
       renderServerStatus(data);
@@ -87,7 +120,7 @@
   }
 
   async function runServerOperation(button, path, confirmation, showReturnedKey = false) {
-    if (busy || !button) return;
+    if (!featuresEnabled || busy || !button) return;
     if (confirmation && !window.confirm(confirmation)) return;
     busy = true;
     button.disabled = true;
@@ -107,6 +140,7 @@
   }
 
   async function refreshDataConnection() {
+    if (!featuresEnabled) return;
     try {
       const data = await request("/settings/remote-client");
       const enabled = Boolean(data?.enabled);
@@ -129,7 +163,7 @@
   }
 
   async function connectData() {
-    if (busy || !dataConnect) return;
+    if (!featuresEnabled || busy || !dataConnect) return;
     const serverUrl = dataUrl?.value.trim() || "";
     const accessKey = dataKey?.value.trim() || "";
     if (!serverUrl || !accessKey) {
@@ -158,7 +192,7 @@
   }
 
   async function testData() {
-    if (busy || !dataTest) return;
+    if (!featuresEnabled || busy || !dataTest) return;
     busy = true;
     dataTest.disabled = true;
     setMessage(clientStatus, "接続を確認しています…", "warning");
@@ -174,7 +208,7 @@
   }
 
   async function disconnectData() {
-    if (busy || !dataDisconnect) return;
+    if (!featuresEnabled || busy || !dataDisconnect) return;
     if (!window.confirm("ローカルDBへ戻します。サーバー側のデータは削除されません。続行しますか？")) {
       if (dataEnabled) dataEnabled.checked = true;
       if (dataConfig) dataConfig.hidden = false;
@@ -232,6 +266,15 @@
   dataTest?.addEventListener("click", testData);
   dataDisconnect?.addEventListener("click", disconnectData);
 
-  void refreshServer();
-  void refreshDataConnection();
+  window.addEventListener("sparkle-legacy-connection-settings-changed", (event) => {
+    if (event.detail?.key !== featureFlagKey) return;
+    featureFlagGeneration += 1;
+    applyFeatureVisibility(event.detail?.enabled === true);
+  });
+  window.addEventListener("storage", (event) => {
+    if (event.key !== "sparkle.legacyConnectionsEnabled") return;
+    featureFlagGeneration += 1;
+    applyFeatureVisibility(event.newValue === "true");
+  });
+  void loadFeatureFlags();
 })();

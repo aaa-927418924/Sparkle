@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <base href="/" />
+    <title>Sparkle — プラグイン</title>
+    <script>
+      try {
+        if (new URLSearchParams(window.location.search).get("nativeBackdrop") === "1") {
+          document.documentElement.classList.add("native-backdrop-enabled");
+          document.documentElement.dataset.nativeBackdrop = "on";
+        }
+      } catch (e) {}
+    </script>
+    <script src="/appearance-theme.js?v=appearance-theme-v9-stable-preview"></script>
+    <script src="/plugin-theme.js?v=plugin-theme-v5-component-tokens"></script>
+    <link rel="stylesheet" href="/style.css?v=editor-tall-20260803-v1-black-background-v1-bg24273a-sidebar202231-v2" />
+    <link rel="stylesheet" href="/codex-shell.css?v=plugin-light-theme-shell-v1-codex-shell-plugin-page-wallpaper-overlay-v2-plugin-theme-components-cascade-v3" />
+    <link rel="stylesheet" href="/native-backdrop.css?v=native-backdrop-c8-wallpaper-overlay" />
+    <link id="pluginUiStylesheet" rel="stylesheet" href="/plugin-ui.css?v=plugin-ui-v7-ai-chat-fixed-viewport" />
+    <link rel="stylesheet" href="/appearance-theme.css?v=appearance-theme-v9-stable-preview" />
+    <script>
+      document.documentElement.setAttribute("data-theme", "dark");
+      try { localStorage.removeItem("sparkle.titlebarMode"); } catch (e) {}
+    </script>
+  </head>
+  <body class="plugin-page-shell">
+    <header class="app-titlebar window-drag-region" aria-label="ウィンドウタイトルバー">
+      <div class="app-titlebar-history" aria-label="ページ履歴">
+        <button class="app-titlebar-history-btn" type="button" title="戻る" aria-label="戻る" data-history-action="back">
+          <svg class="app-titlebar-history-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5" /></svg>
+        </button>
+        <button class="app-titlebar-history-btn" type="button" title="進む" aria-label="進む" data-history-action="forward">
+          <svg class="app-titlebar-history-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="m7.5 4.5 5.5 5.5-5.5 5.5" /></svg>
+        </button>
+      </div>
+      <div class="app-titlebar-drag-space" aria-hidden="true"></div>
+      <div class="window-controls" aria-label="ウィンドウ操作">
+        <button class="window-control" type="button" title="最小化" aria-label="最小化" data-window-action="minimize_window">
+          <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
+        </button>
+        <button class="window-control" type="button" title="最大化" aria-label="最大化" data-window-action="toggle_maximize_window">
+          <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z" /></svg>
+        </button>
+        <button class="window-control window-control-close" type="button" title="閉じる" aria-label="閉じる" data-window-action="close_window">
+          <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <nav class="sidebar" aria-label="メインナビゲーション">
+        <a class="side-btn" title="ホーム" data-nav="home" href="/Home">
+          <img class="icon icon-nav sidebar-page-icon" src="/icons/instagram-home-feed-icon.svg" alt="" aria-hidden="true" />
+          <span class="side-label">ホーム</span>
+        </a>
+        <a class="side-btn" title="タスク・メモ" data-nav="memo" href="/Notes">
+          <img class="icon icon-nav sidebar-page-icon" src="/icons/check-mark-icon.svg" alt="" aria-hidden="true" />
+          <span class="side-label">タスク・メモ</span>
+        </a>
+        <a class="side-btn" title="プロジェクト" data-nav="projects" href="/Projects">
+          <img class="icon icon-nav sidebar-page-icon" src="/icons/list-round-bullet-icon.svg" alt="" aria-hidden="true" />
+          <span class="side-label">プロジェクト</span>
+        </a>
+        <div class="side-spacer"></div>
+        <div class="sidebar-tools" aria-label="サイドバー操作">
+          <a class="side-btn side-btn-profile" title="プロフィール" aria-label="プロフィール" data-nav="profile" href="/Profile">
+            <img class="profile-avatar" id="profileAvatar" src="/icon.png" alt="" />
+            <span class="side-username" id="sidebarUsername"></span>
+          </a>
+          <a class="side-btn" title="設定" aria-label="設定" data-nav="settings" href="/Settings">
+            <img class="icon icon-nav" src="/icons/settings.svg" alt="" aria-hidden="true" />
+          </a>
+        </div>
+      </nav>
+
+      <main id="pluginFeaturePage" class="main plugin-feature-page" aria-label="プラグインページ">
+        <iframe class="plugin-panel-frame plugin-feature-page-frame" title="プラグイン画面" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+        <p class="plugin-panel-status plugin-feature-page-status" role="status" aria-live="polite">プラグインを読み込んでいます…</p>
+      </main>
+    </div>
+
+    <script src="/pins.js?v=pins-ui-20261104-legacy-feature-gates-v1"></script>
+    <script src="/codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v2-sidebar-shift-click-v1-native-backdrop-v7"></script>
+    <script src="/plugin-ui.js?v=plugin-ui-api-v6-standalone-route-v5-session-storage-plugin-theme-context-v1-ai-chat-popup-v2-external-link-bridge"></script>
+  </body>
+</html>

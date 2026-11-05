@@ -12,14 +12,17 @@
         }
       } catch (e) {}
     </script>
+    <script src="appearance-theme.js?v=appearance-theme-v9-stable-preview"></script>
+    <script src="plugin-theme.js?v=plugin-theme-v5-component-tokens"></script>
     <link rel="stylesheet" href="style.css?v=settings-remote-mcp-disabled-20260921-v1" />
-    <link rel="stylesheet" href="codex-shell.css?v=codex-shell-20260803-notes-edge-v1-black-background-v1-bg24273a-sidebar202231-v2-surface-raised-202231-v2-custom-titlebar-history-v4-fixed-sidebar-icons-left-v5-compact-sidebar-v1-main-corner-v1-unified-controls-v1-flat-notes-v1-static-ui-v1-sidebar-gap-v1-notes-outline-v1-task-panel-frameless-v1-no-card-lift-v1-project-borderless-v1-memo-outline-inset-v1-note-editor-corner-v1-shell-scroll-v1-sidebar-nav-icons-v1-page-transition-fade-v1-native-backdrop-v12" />
+    <link rel="stylesheet" href="codex-shell.css?v=plugin-light-theme-shell-v1-codex-shell-20260803-notes-edge-v1-black-background-v1-bg24273a-sidebar202231-v2-surface-raised-202231-v2-custom-titlebar-history-v4-fixed-sidebar-icons-left-v5-compact-sidebar-v1-main-corner-v1-unified-controls-v1-flat-notes-v1-static-ui-v1-sidebar-gap-v1-notes-outline-v1-task-panel-frameless-v1-no-card-lift-v1-project-borderless-v1-memo-outline-inset-v1-note-editor-corner-v1-shell-scroll-v1-sidebar-nav-icons-v1-page-transition-fade-v1-native-backdrop-v13-wallpaper-overlay-plugin-theme-components-cascade-v3" />
     <link rel="stylesheet" href="plugin-manager.css?v=plugin-manager-v2-six-settings-categories" />
+    <link rel="stylesheet" href="appearance-theme.css?v=appearance-theme-v9-stable-preview" />
     <script>document.documentElement.setAttribute("data-theme", "dark");
       document.documentElement.classList.remove("native-titlebar");
       try { localStorage.removeItem("sparkle.titlebarMode"); } catch (e) {}
     </script>
-    <link rel="stylesheet" href="native-backdrop.css?v=native-backdrop-c7" />
+    <link rel="stylesheet" href="native-backdrop.css?v=native-backdrop-c8-wallpaper-overlay" />
   </head>
   <body class="settings-page">
     <header class="app-titlebar window-drag-region" aria-label="ウィンドウタイトルバー">
@@ -74,17 +77,42 @@
               </label>
             </div>
 
-            <div class="settings-col" data-settings-category-panel="theme" hidden>
+            <div class="settings-col appearance-settings-col" data-settings-category-panel="theme" hidden>
               <h3 class="modal-sub">テーマ</h3>
               <label class="setting-row column" for="pluginThemeSelect">
                 <span>適用するテーマ</span>
                 <select id="pluginThemeSelect" class="setting-select">
-                  <option value="">Sparkle標準テーマ</option>
+                  <option value="catppuccin">Catppuccin - Macchiato</option>
+                  <option value="custom">カスタムテーマ</option>
                 </select>
               </label>
-              <div id="pluginThemeStatus" class="ai-export-status" role="status" aria-live="polite">テーマを読み込んでいます…</div>
-              <p class="file-save-desc">追加したテーマプラグインを有効にすると、ここから適用できます。</p>
-              <button class="modal-btn ghost" type="button" data-open-settings-category="plugins">プラグインを管理</button>
+              <div class="appearance-theme-fields" data-appearance-theme-fields hidden>
+                <div class="setting-row column">
+                  <span>背景画像</span>
+                  <label class="modal-btn ghost appearance-theme-file-control">
+                    <input id="appearanceBackgroundFile" class="appearance-theme-file" type="file" name="appearanceBackgroundFile" accept=".png,.jpg,.jpeg,.webp,.avif,.gif,.bmp,image/png,image/jpeg,image/webp,image/avif,image/gif,image/bmp" />
+                    <span>背景画像を選択</span>
+                  </label>
+                  <span id="appearanceBackgroundName" class="file-save-desc">画像は選択されていません</span>
+                </div>
+                <div class="setting-row column">
+                  <label for="appearanceBackgroundBlur">背景画像のぼかし</label>
+                  <div class="appearance-theme-range-row">
+                    <input id="appearanceBackgroundBlur" class="appearance-theme-range" type="range" name="appearanceBackgroundBlur" min="0" max="24" step="1" value="8" aria-describedby="appearanceBackgroundBlurValue" />
+                    <output id="appearanceBackgroundBlurValue" class="appearance-theme-range-value" for="appearanceBackgroundBlur">8 px</output>
+                  </div>
+                </div>
+                <div class="setting-row column">
+                  <label for="appearanceBackgroundTransparency">背景画像の透明度</label>
+                  <div class="appearance-theme-range-row">
+                    <input id="appearanceBackgroundTransparency" class="appearance-theme-range" type="range" name="appearanceBackgroundTransparency" min="0" max="100" step="1" value="15" aria-describedby="appearanceBackgroundTransparencyValue" />
+                    <output id="appearanceBackgroundTransparencyValue" class="appearance-theme-range-value" for="appearanceBackgroundTransparency">15%</output>
+                  </div>
+                  <span class="file-save-desc">0%は不透明、100%で見えなくなります。</span>
+                </div>
+                <div id="appearanceBackgroundStatus" class="appearance-theme-status" role="status" aria-live="polite">画像を選ぶとカスタム背景が表示されます。</div>
+                <span class="file-save-desc">背景画像と設定はこの端末のSparkleに保存されます（画像は25 MBまで）。</span>
+              </div>
             </div>
 
             <div class="settings-col" data-settings-category-panel="general">
@@ -152,7 +180,7 @@
                 「この端末を信頼する」を選んだブラウザだけが、以後キーなしで利用できます。ブラウザのCookieを削除した場合やログアウトした場合は再入力が必要です。
               </p>
 
-              <div class="remote-client-server-settings">
+              <div class="remote-client-server-settings" hidden>
                 <h3 class="modal-sub">デスクトップクライアント接続</h3>
                 <p class="file-save-desc">
                   別のSparkleデスクトップクライアントから、このPCのクリップ・メモ・タスク・プロジェクト・Ask AIを利用できるようにします。Web公開とは別のキーを使います。Serve方式ではクライアント専用のHTTPS 8444番を使用します。
@@ -180,7 +208,7 @@
                 </div>
               </div>
 
-              <div class="remote-client-data-settings">
+              <div class="remote-client-data-settings" hidden>
                 <h3 class="modal-sub">データ接続先</h3>
                 <p class="file-save-desc">
                   デフォルトはこのPCのローカルDBを使用します。オンにすると、このデスクトップクライアントの操作対象をサーバー側DBへ切り替えます。接続に失敗してもローカルDBへ自動切替しません。
@@ -238,7 +266,7 @@
             <div id="aiEditStatus" class="ai-export-status" role="status" aria-live="polite">状態を確認中…</div>
           </div>
 
-          <section class="settings-col settings-ai-provider-col" data-settings-category-panel="ai" hidden aria-labelledby="projectAssistantSettingsTitle">
+          <section class="settings-col settings-ai-provider-col" data-settings-category-panel="ai" data-legacy-feature-enabled="false" hidden aria-labelledby="projectAssistantSettingsTitle">
             <h3 id="projectAssistantSettingsTitle" class="modal-sub">プロジェクト専属AI</h3>
             <p class="file-save-desc">プロジェクトのクリップ・メモ・タスクを参照して、プロジェクト内の質問に回答します。参照範囲は専属AI画面で「プロジェクト内」または「全て」から選べます。</p>
             <p class="file-save-desc">APIキーはWindows資格情報マネージャーに保存し、データベース・バックアップ・AI向けエクスポートには含めません。</p>
@@ -302,7 +330,7 @@
                 <p id="aiProviderMessage-ollama" class="ai-export-status" role="status" aria-live="polite"></p>
               </article>
             </div>
-            <div class="ai-action-permissions" aria-labelledby="aiActionPermissionsTitle">
+            <div class="ai-action-permissions" hidden aria-labelledby="aiActionPermissionsTitle">
               <h4 id="aiActionPermissionsTitle" class="modal-sub">AIによる変更操作の許可</h4>
               <p class="file-save-desc">「常に許可」はアプリ全体でその操作に適用されます。ここからいつでも解除できます。</p>
               <div id="aiActionPermissions" class="ai-action-permission-list" aria-live="polite">状態を確認中…</div>
@@ -342,6 +370,24 @@
                   <input type="checkbox" id="legacySortEnabled" />
                 </label>
                 <span class="file-save-desc">有効にすると、ホーム画面に並び替えメニューを表示します。</span>
+              </div>
+
+              <div class="settings-legacy-item">
+                <label class="setting-row">
+                  <span>デスクトップクライアント接続とデータ接続先を有効にする</span>
+                  <input type="checkbox" id="legacyConnectionsEnabled" />
+                </label>
+                <span class="file-save-desc">有効にすると「デスクトップクライアント接続」と「データ接続先」の設定が表示されます。初期状態ではどちらも無効で、ローカルDBを使用します。</span>
+                <div id="legacyConnectionsStatus" class="ai-export-status" role="status" aria-live="polite">設定を確認中…</div>
+              </div>
+
+              <div class="settings-legacy-item">
+                <label class="setting-row">
+                  <span>プロジェクト専属AIを有効にする</span>
+                  <input type="checkbox" id="legacyProjectAssistantEnabled" />
+                </label>
+                <span class="file-save-desc">有効にすると、AI設定の「プロジェクト専属AI」とプロジェクト画面の「Ask AI」ボタンが表示されます。</span>
+                <div id="legacyProjectAssistantStatus" class="ai-export-status" role="status" aria-live="polite">設定を確認中…</div>
               </div>
 
               <div class="remote-mcp-settings">
@@ -430,13 +476,12 @@
       </div>
     </div>
 
-    <script src="pins.js?v=pins-ui-20261104-custom-titlebar-v1-legacy-sort-v1"></script>
-    <script src="ai-provider-settings.js?v=ai-provider-settings-plugin-oauth-v1"></script>
+    <script src="pins.js?v=pins-ui-20261104-legacy-feature-gates-v1"></script>
+    <script src="ai-provider-settings.js?v=ai-provider-settings-plugin-oauth-v1-legacy-project-ai-v1"></script>
     <script src="codex-shell.js?v=codex-shell-20260821-clipboard-v2-custom-titlebar-history-v2-sidebar-shift-click-v1-native-backdrop-v7"></script>
     <script src="remote-access.js?v=remote-access-20260921-disabled-v1"></script>
-    <script src="remote-client-settings.js?v=remote-client-settings-20260821-v1"></script>
-    <script src="plugin-theme.js?v=plugin-theme-v1"></script>
-    <script src="plugin-manager.js?v=plugin-manager-v6-six-settings-categories"></script>
-    <script src="plugin-ui.js?v=plugin-ui-api-v5-oauth-v1"></script>
+    <script src="remote-client-settings.js?v=remote-client-settings-20260821-v2-legacy-connections-v1"></script>
+    <script src="plugin-manager.js?v=plugin-manager-v10-skill-fingerprint-updates"></script>
+    <script src="plugin-ui.js?v=plugin-ui-api-v6-standalone-route-v5-session-storage-plugin-theme-context-v1"></script>
   </body>
 </html>

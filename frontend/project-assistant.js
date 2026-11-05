@@ -4,6 +4,7 @@
   const API = window.location.origin;
   const state = {
     projectId: null,
+    enabled: false,
     providers: null,
     open: false,
     returnFocus: null,
@@ -17,6 +18,7 @@
     editingEditor: null,
     backgroundResult: null,
   };
+  let providerLoadGeneration = 0;
 
   const $ = (id) => document.getElementById(id);
   const els = {
@@ -64,6 +66,8 @@
 
   function updateTrigger() {
     if (!els.button) return;
+    els.button.hidden = !state.enabled;
+    if (!state.enabled) return;
     const configured = configuredProviders();
     els.button.disabled = state.projectId == null;
     if (!state.providers) {
@@ -82,12 +86,32 @@
   }
 
   async function loadProviders() {
+    const generation = ++providerLoadGeneration;
+    try {
+      const response = await fetch(`${API}/settings/project_assistant_enabled`, {
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const setting = await response.json();
+      if (generation !== providerLoadGeneration) return state.providers;
+      state.enabled = String(setting.value).toLowerCase() === "true";
+    } catch {
+      if (generation !== providerLoadGeneration) return state.providers;
+      state.enabled = false;
+    }
+    if (!state.enabled) {
+      state.providers = null;
+      updateTrigger();
+      return null;
+    }
     try {
       const response = await fetch(`${API}/ai/providers`, { headers: { Accept: "application/json" } });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+      if (generation !== providerLoadGeneration) return state.providers;
       state.providers = data;
     } catch {
+      if (generation !== providerLoadGeneration) return state.providers;
       state.providers = {
         available: false,
         availability_message: "AIプロバイダーの状態を確認できません。",
@@ -100,7 +124,7 @@
   }
 
   async function loadHistory() {
-    if (state.projectId == null || !els.messages) return;
+    if (!state.enabled || state.projectId == null || !els.messages) return;
     try {
       const response = await fetch(`${API}/projects/${state.projectId}/assistant/history?limit=100`, {
         headers: { Accept: "application/json" },
@@ -625,6 +649,8 @@
   }
 
   async function openAssistant() {
+    const providers = await loadProviders();
+    if (!state.enabled) return;
     if (state.projectId == null || !els.modal) return;
     state.returnFocus = document.activeElement;
     state.open = true;
@@ -639,7 +665,7 @@
     setStatus("設定と履歴を確認しています…");
     els.dialog?.focus({ preventScroll: true });
 
-    const [providers] = await Promise.all([loadProviders(), loadHistory()]);
+    await loadHistory();
     if (!state.open) return;
     showProviderSetup(providers);
     const pending = syncPendingRequestUi();
@@ -826,7 +852,7 @@
 
   async function askAssistant(event) {
     event?.preventDefault();
-    if (state.projectId == null || els.message.disabled || state.activeRequest || state.editingMessageId != null) return;
+    if (!state.enabled || state.projectId == null || els.message.disabled || state.activeRequest || state.editingMessageId != null) return;
     const message = els.message.value.trim();
     if (!message) {
       setStatus("質問・依頼を入力してください。", true);
@@ -880,6 +906,23 @@
   window.projectAssistant = Object.freeze({
     setProject,
     refresh: loadProviders,
+  });
+  window.addEventListener("sparkle-project-assistant-enabled-changed", (event) => {
+    providerLoadGeneration += 1;
+    state.enabled = event.detail?.enabled === true;
+    if (!state.enabled) {
+      state.providers = null;
+      if (state.open) closeAssistant();
+    }
+    updateTrigger();
+    if (state.enabled) void loadProviders();
+  });
+  window.addEventListener("storage", (event) => {
+    if (event.key === "sparkle.projectAssistantEnabled") void loadProviders();
+  });
+  window.addEventListener("focus", () => void loadProviders());
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) void loadProviders();
   });
   updateTrigger();
   loadProviders();

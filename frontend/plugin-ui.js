@@ -2,6 +2,8 @@
   "use strict";
 
   const apiRoot = "/plugins";
+  const SIDEBAR_CACHE_KEY = "sparkle.plugin-ui.sidebar-items.v1";
+  const PENDING_PAGE_CONTEXT_KEY = "sparkle.plugin-ui.pending-page-context.v1";
   const allowedHideTargets = new Set([
     "sidebar.home", "sidebar.memo", "sidebar.projects", "sidebar.profile",
     "home.search", "home.sort", "home.categories", "home.clips",
@@ -149,11 +151,48 @@
     settings: "M4 6h16M4 12h16M4 18h16M9 6a2 2 0 1 0 0 .01M15 12a2 2 0 1 0 0 .01M7 18a2 2 0 1 0 0 .01",
   };
 
+  function currentPluginRouteId() {
+    const match = window.location.pathname.match(/^\/Plugin\/([^/]+)\/?$/i);
+    if (!match) return "";
+    try {
+      const pluginId = decodeURIComponent(match[1]);
+      return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(pluginId) ? pluginId : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function pluginPageHref(pluginId) {
+    const query = new URLSearchParams();
+    if (new URLSearchParams(window.location.search).get("nativeBackdrop") === "1") {
+      query.set("nativeBackdrop", "1");
+    }
+    const suffix = query.toString();
+    return "/Plugin/" + encodeURIComponent(pluginId) + (suffix ? "?" + suffix : "");
+  }
+
+  function navigateBackFromPluginPage() {
+    try {
+      const referrer = document.referrer ? new URL(document.referrer) : null;
+      if (referrer?.origin === window.location.origin && window.history.length > 1) {
+        window.history.back();
+        return;
+      }
+    } catch {
+      // Fall through to the safe app entry point for direct or malformed referrers.
+    }
+    window.location.assign("/Home");
+  }
+
   let plugins = [];
   let activePanelId = null;
   let activePanelContext = {};
   let messageTimes = [];
   let dialogParts = null;
+  let pageParts = null;
+  let activePanelDisplay = null;
+  let panelReturnFocus = null;
+  let suspendedPagePanel = null;
   let permissionDialogParts = null;
   let permissionPromptQueue = Promise.resolve();
 
@@ -164,12 +203,53 @@
     return element;
   }
 
+  function normalizeSidebarItems(items) {
+    if (!Array.isArray(items)) return [];
+    const seen = new Set();
+    const normalized = [];
+    for (const item of items) {
+      if (
+        !item ||
+        typeof item.plugin_id !== "string" ||
+        !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.plugin_id) ||
+        item.plugin_id.length > 64 ||
+        typeof item.label !== "string" ||
+        !item.label.trim() ||
+        item.label.length > 100 ||
+        !allowedIcons.has(item.icon) ||
+        seen.has(item.plugin_id)
+      ) continue;
+      seen.add(item.plugin_id);
+      normalized.push({ plugin_id: item.plugin_id, label: item.label.trim(), icon: item.icon });
+      if (normalized.length >= 128) break;
+    }
+    return normalized;
+  }
+
+  function restoreCachedSidebarItems() {
+    try {
+      const cached = JSON.parse(sessionStorage.getItem(SIDEBAR_CACHE_KEY) || "null");
+      const items = normalizeSidebarItems(cached);
+      if (items.length) renderSidebarItems(items, { cached: true });
+    } catch {
+      // The plugin list remains available when session storage is blocked.
+    }
+  }
+
+  function cacheSidebarItems(items) {
+    try {
+      sessionStorage.setItem(SIDEBAR_CACHE_KEY, JSON.stringify(normalizeSidebarItems(items)));
+    } catch {
+      // Caching is an enhancement; it must not affect plugin UI rendering.
+    }
+  }
+
   function initializeHostUi() {
     if (!document.getElementById("pluginUiStylesheet")) {
       const stylesheet = make("link");
       stylesheet.id = "pluginUiStylesheet";
       stylesheet.rel = "stylesheet";
-      stylesheet.href = "plugin-ui.css?v=plugin-ui-api-v5-oauth-v1";
+      stylesheet.href = "plugin-ui.css?v=plugin-ui-api-v6-standalone-route-v3-no-page-header";
       document.head.append(stylesheet);
     }
     for (const [target, selector] of Object.entries(hostUiSelectors)) {
@@ -307,11 +387,12 @@
       header.append(title, close);
       dialog.append(header, frame, status);
       document.body.append(dialog);
-      close.addEventListener("click", closePanel);
+      close.addEventListener("click", () => closePanel());
       dialog.addEventListener("close", () => {
-        activePanelId = null;
+        if (dialog.open) return;
         frame.src = "about:blank";
         status.textContent = "";
+        if (activePanelDisplay === "dialog") closePanel(activePanelId);
       });
       dialog.addEventListener("click", (event) => {
         if (event.target === dialog) closePanel();
@@ -326,6 +407,33 @@
     return dialogParts;
   }
 
+  function ensurePage() {
+    if (!pageParts) {
+      const page = document.getElementById("pluginFeaturePage");
+      const frame = page?.querySelector(".plugin-feature-page-frame");
+      const status = page?.querySelector(".plugin-feature-page-status");
+      if (!page || !frame || !status) return null;
+      pageParts = { page, frame, status };
+    }
+    return pageParts;
+  }
+
+  function activePanelParts() {
+    if (activePanelDisplay === "page") return pageParts;
+    if (activePanelDisplay === "dialog") return dialogParts;
+    return null;
+  }
+
+  function postCurrentTheme(frame) {
+    const theme = window.SparklePluginTheme?.getPluginTheme?.() || null;
+    frame?.contentWindow?.postMessage({ type: "sparkle-plugin-theme", theme }, "*");
+  }
+
+  window.addEventListener("sparkle-plugin-theme-changed", () => {
+    if (!activePanelId) return;
+    postCurrentTheme(activePanelParts()?.frame);
+  });
+
   function openPanel(pluginId, context = {}) {
     const plugin = plugins.find((entry) => entry.id === pluginId);
     if (!plugin || !plugin.enabled || !plugin.compatible || plugin.type !== "feature") return;
@@ -334,9 +442,40 @@
     if (context?.project_id !== undefined) {
       try { safeContext.project_id = positiveId(context.project_id); } catch {}
     }
+    if (plugin.panel_display === "page") {
+      if (currentPluginRouteId() === plugin.id) {
+        showRoutedPlugin(plugin, safeContext);
+        return;
+      }
+      try {
+        sessionStorage.setItem(PENDING_PAGE_CONTEXT_KEY, JSON.stringify({
+          plugin_id: plugin.id,
+          context: safeContext,
+          saved_at: Date.now(),
+        }));
+      } catch {
+        // Navigation still works if optional context storage is unavailable.
+      }
+      window.location.assign(pluginPageHref(plugin.id));
+      return;
+    }
+    const returnFocus = document.activeElement;
+    if (activePanelId && activePanelDisplay === "page" && currentPluginRouteId()) {
+      suspendedPagePanel = { pluginId: activePanelId, context: activePanelContext };
+      activePanelId = null;
+      activePanelContext = {};
+      activePanelDisplay = null;
+      panelReturnFocus = null;
+    } else if (activePanelId) {
+      closePanel(undefined, false);
+    }
+    const display = "dialog";
     const parts = ensureDialog();
+    if (!parts) return;
     activePanelId = plugin.id;
     activePanelContext = safeContext;
+    activePanelDisplay = display;
+    panelReturnFocus = returnFocus instanceof HTMLElement ? returnFocus : null;
     messageTimes = [];
     parts.title.textContent = plugin.name || plugin.id;
     parts.status.textContent = "";
@@ -347,19 +486,99 @@
         type: "sparkle-plugin-context",
         context: activePanelContext,
       }, "*");
+      postCurrentTheme(parts.frame);
     };
     parts.frame.src = apiRoot + "/" + encodeURIComponent(plugin.id) + "/panel";
-    if (!parts.dialog.open) parts.dialog.showModal();
+    if (!parts.dialog.open) {
+      parts.dialog.showModal();
+    }
   }
 
-  function closePanel(pluginId) {
-    if (!dialogParts) return;
+  function showRoutedPlugin(plugin, context = {}) {
+    const parts = ensurePage();
+    if (!parts) return false;
+    if (activePanelId && activePanelId !== plugin.id) closePanel(undefined, false);
+    activePanelId = plugin.id;
+    activePanelContext = context;
+    activePanelDisplay = "page";
+    panelReturnFocus = null;
+    messageTimes = [];
+    parts.page.setAttribute("aria-label", (plugin.name || plugin.id) + " プラグインページ");
+    parts.status.textContent = "";
+    parts.frame.title = plugin.name || "プラグイン画面";
+    parts.frame.setAttribute("sandbox", plugin.id === "ai-chat"
+      ? "allow-scripts allow-popups allow-popups-to-escape-sandbox"
+      : "allow-scripts");
+    document.title = (plugin.name || plugin.id) + " — Sparkle";
+    parts.frame.onload = () => {
+      if (activePanelId !== plugin.id) return;
+      parts.frame.contentWindow?.postMessage({
+        type: "sparkle-plugin-context",
+        context: activePanelContext,
+      }, "*");
+      postCurrentTheme(parts.frame);
+    };
+    const panelUrl = apiRoot + "/" + encodeURIComponent(plugin.id) + "/panel";
+    if (parts.frame.getAttribute("src") !== panelUrl) {
+      parts.frame.src = panelUrl;
+    } else {
+      parts.frame.contentWindow?.postMessage({
+        type: "sparkle-plugin-context",
+        context: activePanelContext,
+      }, "*");
+      postCurrentTheme(parts.frame);
+    }
+    return true;
+  }
+
+  function takePendingPageContext(pluginId) {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(PENDING_PAGE_CONTEXT_KEY) || "null");
+      sessionStorage.removeItem(PENDING_PAGE_CONTEXT_KEY);
+      if (!saved || saved.plugin_id !== pluginId || Date.now() - Number(saved.saved_at) > 60_000) return {};
+      const context = {};
+      if (saved.context?.view === "list" || saved.context?.view === "detail") context.view = saved.context.view;
+      if (saved.context?.project_id !== undefined) {
+        try { context.project_id = positiveId(saved.context.project_id); } catch {}
+      }
+      return context;
+    } catch {
+      return {};
+    }
+  }
+
+  function closePanel(pluginId, restoreFocus = true) {
     if (pluginId && activePanelId !== pluginId) return;
+    const display = activePanelDisplay;
+    const returnFocus = panelReturnFocus;
     activePanelId = null;
     activePanelContext = {};
-    dialogParts.frame.src = "about:blank";
-    dialogParts.status.textContent = "";
-    if (dialogParts.dialog.open) dialogParts.dialog.close();
+    activePanelDisplay = null;
+    panelReturnFocus = null;
+    if (dialogParts) {
+      dialogParts.frame.src = "about:blank";
+      dialogParts.status.textContent = "";
+      if (display === "dialog" && dialogParts.dialog.open) dialogParts.dialog.close();
+    }
+    if (display === "page" && pageParts) {
+      pageParts.frame.src = "about:blank";
+      pageParts.status.textContent = "";
+      if (currentPluginRouteId()) {
+        navigateBackFromPluginPage();
+        return;
+      }
+    }
+    if (display === "dialog" && suspendedPagePanel && currentPluginRouteId()) {
+      const suspended = suspendedPagePanel;
+      suspendedPagePanel = null;
+      const plugin = plugins.find((entry) => entry.id === suspended.pluginId);
+      if (plugin?.enabled && plugin.compatible && plugin.type === "feature") {
+        showRoutedPlugin(plugin, suspended.context);
+      }
+    }
+    if (restoreFocus && returnFocus?.isConnected) {
+      returnFocus.focus({ preventScroll: true });
+    }
   }
 
   function makeIcon(iconName) {
@@ -374,27 +593,31 @@
     return svg;
   }
 
-  function renderSidebarItems(items) {
+  function renderSidebarItems(items, { cached = false } = {}) {
     const sidebar = document.querySelector(".sidebar");
     if (!sidebar) return;
     sidebar.querySelectorAll(".plugin-sidebar-item").forEach((item) => item.remove());
     const spacer = sidebar.querySelector(".side-spacer");
     if (!spacer) return;
-    const validItems = (Array.isArray(items) ? items : []).filter((item) =>
-      item && typeof item.plugin_id === "string" && typeof item.label === "string" && allowedIcons.has(item.icon),
-    );
+    const validItems = normalizeSidebarItems(items);
     const fragment = document.createDocumentFragment();
     for (const item of validItems) {
       const plugin = plugins.find((entry) => entry.id === item.plugin_id);
-      if (!plugin || !plugin.enabled || !plugin.compatible || plugin.type !== "feature") continue;
-      const button = make("button", "side-btn plugin-sidebar-item");
-      button.type = "button";
+      if (!cached && (!plugin || !plugin.enabled || !plugin.compatible || plugin.type !== "feature")) continue;
+      const isPage = plugin?.panel_display === "page";
+      const button = make(isPage ? "a" : "button", "side-btn plugin-sidebar-item");
+      if (isPage) button.href = pluginPageHref(item.plugin_id);
+      else button.type = "button";
       button.dataset.pluginSidebar = item.plugin_id;
       button.dataset.sidebarOrderId = "plugin:" + item.plugin_id;
       button.title = item.label;
       button.setAttribute("aria-label", item.label);
+      if (currentPluginRouteId() === item.plugin_id) {
+        button.classList.add("active");
+        button.setAttribute("aria-current", "page");
+      }
       button.append(makeIcon(item.icon), make("span", "side-label", item.label));
-      button.addEventListener("click", () => openPanel(item.plugin_id));
+      if (!isPage) button.addEventListener("click", () => openPanel(item.plugin_id));
       fragment.append(button);
     }
     const pinSection = sidebar.querySelector(".pins-section");
@@ -527,6 +750,7 @@
 
   function applyContributions(state) {
     renderSidebarItems(state.sidebar_items);
+    cacheSidebarItems(state.sidebar_items);
     renderProjectActions(state.project_actions);
     applyHidden(state.hidden);
     applyStyles(state.styles);
@@ -584,6 +808,25 @@
         body: JSON.stringify({ value: data.value }),
       });
       return result.value;
+    }
+    if (data.method === "session.get" || data.method === "session.set" || data.method === "session.remove") {
+      if (!plugin.permissions?.includes("storage")) throw new Error("このプラグインはストレージ権限を要求していません。");
+      if (typeof data.key !== "string" || data.key.length < 1 || data.key.length > 128) throw new Error("セッションストレージキーが不正です。");
+      const key = `sparkle.plugin-session.${encodeURIComponent(plugin.id)}.${data.key}`;
+      if (data.method === "session.get") {
+        const raw = window.sessionStorage.getItem(key);
+        if (raw === null) return null;
+        try { return JSON.parse(raw); } catch { return null; }
+      }
+      if (data.method === "session.remove") {
+        window.sessionStorage.removeItem(key);
+        return null;
+      }
+      let serialized;
+      try { serialized = JSON.stringify(data.value); } catch { throw new Error("セッションデータを保存できませんでした。"); }
+      if (typeof serialized !== "string" || serialized.length > 1_000_000) throw new Error("セッションデータが大きすぎます。");
+      window.sessionStorage.setItem(key, serialized);
+      return data.value;
     }
 
     const base = "/" + encodeURIComponent(plugin.id) + "/data/";
@@ -694,9 +937,21 @@
   }
 
   async function handlePanelMessage(event) {
-    const parts = dialogParts;
+    const parts = activePanelParts();
     if (!parts || !activePanelId || event.source !== parts.frame.contentWindow) return;
     const data = event.data;
+    if (data?.type === "sparkle-plugin-open-link") {
+      if (activePanelId !== "ai-chat" || activePanelDisplay !== "page" || !allowPanelMessage()) return;
+      if (typeof data.url !== "string" || data.url.length > 2048) return;
+      try {
+        const url = new URL(data.url);
+        if (url.protocol !== "http:" && url.protocol !== "https:") return;
+        window.open(url.href, "_blank", "noopener,noreferrer");
+      } catch {
+        // Ignore malformed or non-web URLs sent by a plugin frame.
+      }
+      return;
+    }
     if (!data || data.type !== "sparkle-plugin-request" || typeof data.requestId !== "string" || data.requestId.length > 100) return;
     if (!allowPanelMessage()) {
       respond(parts.frame, data.requestId, false, null, "要求が多すぎます。");
@@ -732,19 +987,47 @@
       ]);
       plugins = Array.isArray(pluginBody.plugins) ? pluginBody.plugins : [];
       applyContributions(uiState);
+      const routeId = currentPluginRouteId();
+      if (routeId) {
+        const active = plugins.find((plugin) => plugin.id === routeId);
+        if (!active?.enabled || !active.compatible || active.type !== "feature" || active.panel_display !== "page") {
+          const parts = ensurePage();
+          if (parts) {
+            parts.page.setAttribute("aria-label", (active?.name || "プラグイン") + " プラグインページ");
+            parts.status.textContent = "このプラグインは利用できないか、無効になっています。";
+            if (activePanelId === routeId) {
+              activePanelId = null;
+              activePanelContext = {};
+              activePanelDisplay = null;
+              parts.frame.src = "about:blank";
+            }
+          }
+        } else if (
+          activePanelDisplay === "dialog" && suspendedPagePanel?.pluginId === active.id
+        ) {
+          // Keep a dialog opened from this route active while refreshing plugin state.
+        } else if (activePanelId !== active.id || activePanelDisplay !== "page") {
+          showRoutedPlugin(active, takePendingPageContext(active.id));
+        } else {
+          const parts = ensurePage();
+          if (parts) parts.page.setAttribute("aria-label", (active.name || active.id) + " プラグインページ");
+        }
+      }
       if (activePanelId) {
         const active = plugins.find((plugin) => plugin.id === activePanelId);
-        if (!active?.enabled || !active.compatible) closePanel();
+        if ((!active?.enabled || !active.compatible) && !currentPluginRouteId()) closePanel();
       }
       return true;
     } catch {
-      applyContributions({ hidden: [], order: {}, styles: {}, sidebar_items: [], project_actions: [] });
+      const parts = currentPluginRouteId() ? ensurePage() : null;
+      if (parts) parts.status.textContent = "プラグイン情報を読み込めませんでした。接続を確認して再読み込みしてください。";
       return false;
     }
   }
 
   window.addEventListener("message", (event) => void handlePanelMessage(event));
   initializeHostUi();
+  restoreCachedSidebarItems();
   window.SparklePluginUI = Object.assign(window.SparklePluginUI || {}, {
     refreshUI: refresh,
     open: openPanel,

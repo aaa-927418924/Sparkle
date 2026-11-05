@@ -32,6 +32,38 @@ def make_feature_archive():
     return output.getvalue()
 
 
+def make_theme_archive():
+    output = io.BytesIO()
+    manifest = {
+        "id": "panel-light-theme",
+        "name": "Panel Light Theme",
+        "version": "1.0.0",
+        "api_version": 1,
+        "type": "theme",
+        "description": "Theme for isolated feature pages",
+        "permissions": [],
+    }
+    theme = {
+        "colors": {
+            "background": "#F7F5FA",
+            "surface": "#FFFFFF",
+            "text": "#211A28",
+            "accent": "#5D356F",
+            "controlBackground": "#F8F6FA",
+            "controlText": "#34283B",
+        },
+        "icons": {"action": "dark"},
+    }
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+        archive.writestr("theme.json", json.dumps(theme))
+        archive.writestr(
+            "plugin-pages.css",
+            "body { color: var(--sparkle-theme-text); } .plugin-card { background: var(--sparkle-theme-surface); }",
+        )
+    return output.getvalue()
+
+
 def make_ui_feature_archive():
     output = io.BytesIO()
     manifest = {
@@ -190,6 +222,37 @@ class PluginApiTests(unittest.TestCase):
         asset = self.client.get("/plugins/api-panel/assets/style.css")
         self.assertEqual(asset.status_code, 200, asset.text)
         self.assertIn("#fff", asset.text)
+
+    def test_feature_panel_automatically_receives_active_theme_tokens_and_stylesheet(self):
+        self.client.post(
+            "/plugins/import",
+            files={"file": ("panel.zip", make_feature_archive(), "application/zip")},
+        )
+        self.client.post("/plugins/api-panel/enabled", json={"enabled": True})
+        imported = self.client.post(
+            "/plugins/import",
+            files={"file": ("theme.zip", make_theme_archive(), "application/zip")},
+        )
+        self.assertEqual(imported.status_code, 200, imported.text)
+        self.client.post("/plugins/panel-light-theme/enabled", json={"enabled": True})
+        active = self.client.put(
+            "/plugins/active-theme",
+            json={"plugin_id": "panel-light-theme"},
+        )
+        self.assertEqual(active.status_code, 200, active.text)
+
+        panel = self.client.get("/plugins/api-panel/panel")
+        self.assertEqual(panel.status_code, 200, panel.text)
+        self.assertIn('id="sparkle-plugin-theme-base"', panel.text)
+        self.assertIn('"sparkle-plugin-theme-pages"', panel.text)
+        self.assertIn('window.__SPARKLE_PLUGIN_THEME_BOOTSTRAP__', panel.text)
+        self.assertIn('"id":"panel-light-theme"', panel.text)
+        self.assertIn("--sparkle-theme-text", panel.text)
+
+        stylesheet = self.client.get("/plugins/panel-light-theme/plugin-pages.css")
+        self.assertEqual(stylesheet.status_code, 200, stylesheet.text)
+        self.assertIn("var(--sparkle-theme-surface)", stylesheet.text)
+        self.assertEqual(stylesheet.headers["content-type"], "text/css; charset=utf-8")
 
     def test_storage_api_requires_plugin_permission_and_preserves_plugin_namespace(self):
         self.client.post(
@@ -630,7 +693,7 @@ class PluginApiTests(unittest.TestCase):
     def test_authoring_skill_status_endpoint_reports_all_targets(self):
         expected = {
             "skill": "sparkle-plugin-author",
-            "version": "2.3.0",
+            "version": "2.4.0",
             "all_installed": False,
             "results": [
                 {"agent": "OpenCode", "status": "installed"},

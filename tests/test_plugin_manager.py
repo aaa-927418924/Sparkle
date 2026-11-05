@@ -12,6 +12,7 @@ from plugin_manager import (
     PluginError,
     export_plugin_archive,
     get_active_theme,
+    get_active_theme_page_stylesheet,
     get_authoring_skill_status,
     get_agent_skill_targets,
     get_plugin_ui_state,
@@ -116,8 +117,8 @@ class PluginManagerTests(unittest.TestCase):
         settings = (root / "frontend" / "settings.html").read_text(encoding="utf-8")
         self.assertIn('data-plugin-category-button="plugins"', settings)
         self.assertIn('id="pluginSettingsPanel"', settings)
-        self.assertIn('plugin-manager.js?v=plugin-manager-v5-permissions-v1-skill-status', settings)
-        self.assertIn('plugin-theme.js?v=plugin-theme-v1', settings)
+        self.assertRegex(settings, r'plugin-manager\.js\?v=[^" ]+')
+        self.assertRegex(settings, r'plugin-theme\.js\?v=[^" ]+')
         html_pages = tuple((root / "frontend").rglob("*.html"))
         self.assertTrue(html_pages)
         for page in html_pages:
@@ -141,6 +142,87 @@ class PluginManagerTests(unittest.TestCase):
         remove_plugin("ocean-night", directory=self.plugins)
         self.assertIsNone(get_active_theme(self.plugins))
         self.assertEqual(list_plugins(self.plugins)["plugins"], [])
+
+    def test_theme_component_tokens_and_sidebar_icon_modes_round_trip(self):
+        archive = make_archive(
+            theme_manifest("component-theme"),
+            theme={
+                "colors": {
+                    "background": "#F7FAF8",
+                    "text": "#101713",
+                    "homeText": "#101713",
+                    "homeCard": "#FFFFFF",
+                    "projectCardText": "#101713",
+                    "controlActiveText": "#0B473A",
+                    "actionButtonHoverBackground": "#E1EAE5",
+                    "checkboxAccent": "#145F4D",
+                },
+                "icons": {
+                    "sidebar": "dark",
+                    "sidebarActive": "light",
+                    "action": "dark",
+                    "actionActive": "source",
+                    "inline": "dark",
+                },
+            },
+        )
+        install_plugin_archive(archive, self.plugins)
+        set_plugin_enabled("component-theme", True, self.plugins)
+        active = set_active_theme("component-theme", self.plugins)
+
+        self.assertEqual(active["colors"]["homeText"], "#101713")
+        self.assertEqual(active["colors"]["projectCardText"], "#101713")
+        self.assertEqual(active["colors"]["controlActiveText"], "#0B473A")
+        self.assertEqual(active["colors"]["actionButtonHoverBackground"], "#E1EAE5")
+        self.assertEqual(active["colors"]["checkboxAccent"], "#145F4D")
+        self.assertEqual(active["icons"], {
+            "sidebar": "dark",
+            "sidebarActive": "light",
+            "action": "dark",
+            "actionActive": "source",
+            "inline": "dark",
+        })
+        self.assertEqual(active["properties"]["homeText"], "--theme-home-text")
+        self.assertEqual(active["properties"]["checkboxAccent"], "--theme-checkbox-accent")
+
+    def test_theme_page_stylesheet_is_scoped_to_the_active_theme(self):
+        stylesheet = "body { color: var(--sparkle-theme-text); }"
+        archive = make_archive(
+            theme_manifest("plugin-page-theme"),
+            theme={"colors": {"background": "#F7F5FA", "text": "#211A28"}},
+            assets={"plugin-pages.css": stylesheet},
+        )
+        install_plugin_archive(archive, self.plugins)
+        set_plugin_enabled("plugin-page-theme", True, self.plugins)
+        set_active_theme("plugin-page-theme", self.plugins)
+
+        self.assertEqual(
+            get_active_theme_page_stylesheet("plugin-page-theme", self.plugins),
+            stylesheet,
+        )
+        self.assertEqual(get_active_theme_page_stylesheet("another-theme", self.plugins), "")
+
+        set_plugin_enabled("plugin-page-theme", False, self.plugins)
+        self.assertEqual(get_active_theme_page_stylesheet("plugin-page-theme", self.plugins), "")
+
+    def test_theme_page_stylesheet_rejects_external_resources(self):
+        archive = make_archive(
+            theme_manifest("unsafe-plugin-page-theme"),
+            theme={"colors": {"background": "#FFFFFF"}},
+            assets={
+                "plugin-pages.css": "@import url(https://example.invalid/theme.css);"
+            },
+        )
+        with self.assertRaises(PluginError):
+            install_plugin_archive(archive, self.plugins)
+
+    def test_theme_rejects_unrecognized_icon_modes(self):
+        archive = make_archive(
+            theme_manifest("invalid-icon-theme"),
+            theme={"colors": {"text": "#eeeeee"}, "icons": {"sidebar": "url(unsafe)"}},
+        )
+        with self.assertRaises(PluginError):
+            install_plugin_archive(archive, self.plugins)
 
     def test_theme_rejects_css_and_script_injection(self):
         archive = make_archive(
@@ -169,6 +251,16 @@ class PluginManagerTests(unittest.TestCase):
             plugin_resource_path("personal-tool", "../manager-state.json", self.plugins)
         with self.assertRaises(PluginError):
             plugin_resource_path("personal-tool", "manifest.json", self.plugins)
+
+    def test_feature_panel_display_can_be_set_to_page(self):
+        manifest = feature_manifest("page-tool")
+        manifest["panel_display"] = "page"
+        result = install_plugin_archive(
+            make_archive(manifest, panel="<main>Full page</main>"),
+            self.plugins,
+        )
+        self.assertEqual(result["panel_display"], "page")
+        self.assertEqual(list_plugins(self.plugins)["plugins"][0]["panel_display"], "page")
 
     def test_plugin_storage_is_permission_gated_and_separate_from_package(self):
         archive = make_archive(

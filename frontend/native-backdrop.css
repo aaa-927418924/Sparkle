@@ -11,33 +11,33 @@ html.native-backdrop-enabled .layout {
   background: transparent !important;
 }
 
-html.native-backdrop-enabled .app-titlebar {
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .app-titlebar {
   background: rgba(var(--native-shell-color-rgb), var(--native-titlebar-alpha)) !important;
 }
 
-html.native-backdrop-enabled .sidebar,
-html.native-backdrop-enabled .home-page .sidebar,
-html.native-backdrop-enabled .notes-page .sidebar,
-html.native-backdrop-enabled .sidebar.sidebar--index {
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .sidebar,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .home-page .sidebar,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .notes-page .sidebar,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .sidebar.sidebar--index {
   background: rgba(var(--native-shell-color-rgb), var(--native-sidebar-alpha)) !important;
 }
 
-html.native-backdrop-enabled .main,
-html.native-backdrop-enabled .home-page .main,
-html.native-backdrop-enabled .notes-page .main.notes-main,
-html.native-backdrop-enabled .editor-main {
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .main,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .home-page .main,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .notes-page .main.notes-main,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .editor-main {
   background: rgba(36, 39, 58, 0.35) !important;
 }
 
-html.native-backdrop-enabled body.home-page .main {
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) body.home-page .main {
   background: rgba(36, 39, 58, 0.35) !important;
 }
 
-html.native-backdrop-enabled body.home-page .sidebar {
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) body.home-page .sidebar {
   background: rgba(var(--native-shell-color-rgb), var(--native-sidebar-alpha)) !important;
 }
 
-html.native-backdrop-enabled body.home-page .app-titlebar {
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) body.home-page .app-titlebar {
   background: rgba(var(--native-shell-color-rgb), var(--native-titlebar-alpha)) !important;
 }
 

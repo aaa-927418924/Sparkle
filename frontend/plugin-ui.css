@@ -106,6 +106,94 @@
   display: none;
 }
 
+.plugin-feature-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+}
+
+html:not(.native-titlebar) .app-titlebar + .layout > .main.plugin-feature-page,
+html.native-titlebar .layout > .main.plugin-feature-page {
+  min-height: 0;
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+  scrollbar-color: transparent transparent !important;
+}
+
+html:not(.native-titlebar) .app-titlebar + .layout > .main.plugin-feature-page::-webkit-scrollbar,
+html.native-titlebar .layout > .main.plugin-feature-page::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+html:not(.native-titlebar):has(body.plugin-page-shell),
+html.native-titlebar:has(body.plugin-page-shell),
+body.plugin-page-shell {
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden !important;
+}
+
+html:not(.native-titlebar) body.plugin-page-shell > .app-titlebar + .layout {
+  min-height: 0;
+  max-height: calc(100dvh - var(--app-titlebar-height));
+  height: calc(100dvh - var(--app-titlebar-height));
+}
+
+html.native-titlebar body.plugin-page-shell > .layout {
+  min-height: 0;
+  max-height: 100dvh;
+  height: 100dvh;
+}
+
+.plugin-page-shell,
+.plugin-page-shell .layout {
+  background: transparent;
+}
+
+.plugin-page-shell .plugin-feature-page {
+  /* The host's rounded ::before surface sits over this backing layer. */
+  background: var(--sidebar-bg);
+}
+
+/* Native-backdrop mode normally removes the main surface radius. The routed
+   plugin page still needs a rounded host viewport in every theme. */
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .plugin-page-shell .plugin-feature-page {
+  border-top-left-radius: var(--shell-main-corner-radius);
+}
+
+.plugin-feature-page[hidden] {
+  display: none !important;
+}
+
+.plugin-feature-page-frame {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+}
+
+.plugin-feature-page-status {
+  flex: 0 0 auto;
+  min-height: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.plugin-feature-page-status:empty {
+  display: none;
+}
+
 .plugin-permission-dialog {
   width: min(480px, calc(100vw - 32px));
   max-width: none;

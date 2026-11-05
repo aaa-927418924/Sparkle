@@ -260,14 +260,14 @@ class _KeyringSecretStore:
         if os.name != "nt":
             raise ProjectAssistantError(
                 503,
-                "APIキー保存機能はWindows資格情報マネージャーでのみ利用できます。",
+                "秘密情報の保存機能はWindows資格情報マネージャーでのみ利用できます。",
             )
         try:
             import keyring
         except ImportError as exc:
             raise ProjectAssistantError(
                 503,
-                "APIキー保存機能の依存関係が不足しています。keyringをインストールしてください。",
+                "資格情報の保存依存関係が不足しています。keyringをインストールしてください。",
             ) from exc
 
         try:
@@ -297,7 +297,7 @@ class _KeyringSecretStore:
             value = self._keyring.get_password(KEYRING_SERVICE, provider)
         except Exception as exc:  # pragma: no cover - backend-specific failure
             LOGGER.warning("Credential Manager read failed: %s", type(exc).__name__)
-            raise ProjectAssistantError(503, "APIキーを読み出せませんでした。") from exc
+            raise ProjectAssistantError(503, "秘密情報を読み出せませんでした。") from exc
         return value.strip() if isinstance(value, str) and value.strip() else None
 
     def set(self, provider: str, value: str) -> None:
@@ -305,7 +305,7 @@ class _KeyringSecretStore:
             self._keyring.set_password(KEYRING_SERVICE, provider, value)
         except Exception as exc:  # pragma: no cover - backend-specific failure
             LOGGER.warning("Credential Manager write failed: %s", type(exc).__name__)
-            raise ProjectAssistantError(503, "APIキーを保存できませんでした。") from exc
+            raise ProjectAssistantError(503, "秘密情報を保存できませんでした。") from exc
 
     def delete(self, provider: str) -> None:
         try:
@@ -315,7 +315,7 @@ class _KeyringSecretStore:
             if "password" in error_name or "notfound" in error_name:
                 return
             LOGGER.warning("Credential Manager delete failed: %s", type(exc).__name__)
-            raise ProjectAssistantError(503, "APIキーを削除できませんでした。") from exc
+            raise ProjectAssistantError(503, "秘密情報を削除できませんでした。") from exc
 
 
 _secret_store: Optional[_KeyringSecretStore] = None

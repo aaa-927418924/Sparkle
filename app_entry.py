@@ -80,7 +80,7 @@ ONBOARDING_PAGES = {"Migration", "Setup", "Tutorial", "ExtensionGuide"}
 WINDOW_SCREEN_MARGIN = 24
 # Force a fresh top-level document after frontend changes. WebView2 keeps a
 # persistent profile, so the route itself also needs a versioned URL.
-FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1-native-backdrop-v15-plugins-v1-plugin-api-v5-plugin-oauth-v1-settings-categories-v2-custom-titlebar-v1"
+FRONTEND_CACHE_TOKEN = "sidebar-icons-left-v5-shell-scroll-v1-legacy-sort-v1-remote-mcp-disabled-v1-native-backdrop-v15-plugins-v1-plugin-api-v5-plugin-oauth-v1-settings-categories-v2-custom-titlebar-v1-appearance-theme-file-picker-v1-plugin-page-v3-standalone-route-v1-legacy-feature-gates-v1-plugin-corner-layer-v1-wallpaper-overlay-unified-v1-native-window-system-actions-v1-theme-early-bootstrap-v1-wallpaper-preview-stable-source-v1-authoring-skill-startup-check-v1-plugin-light-theme-shell-v1-theme-components-cascade-v3-authoring-skill-fingerprint-v1"
 
 # DWM system backdrop values used by Windows 11.  The native material is only
 # enabled when Windows' own transparency preference is enabled; the disabled
@@ -686,9 +686,21 @@ def _apply_window_caption(window, native_titlebar: bool, force: bool = False) ->
     _apply_window_style(
         handle,
         (
-            lambda style: (style | 0x00C00000 | 0x00080000 | 0x00020000 | 0x00010000 | 0x00040000)
+            lambda style: (
+                style
+                | 0x00C00000  # WS_CAPTION
+                | 0x00080000  # WS_SYSMENU
+                | 0x00020000  # WS_MINIMIZEBOX
+                | 0x00010000  # WS_MAXIMIZEBOX
+                | 0x00040000  # WS_THICKFRAME
+            )
             if native_titlebar
-            else (style & ~(0x00C00000 | 0x00040000))
+            else (
+                (style & ~(0x00C00000 | 0x00040000))
+                | 0x00080000  # WS_SYSMENU
+                | 0x00020000  # WS_MINIMIZEBOX
+                | 0x00010000  # WS_MAXIMIZEBOX
+            )
         ),
     )
     # The native backdrop owns the DWM frame extension while it is active.
@@ -755,6 +767,118 @@ def _apply_window_style(handle, mutate_style) -> None:
         )
     except Exception:
         pass
+
+
+def _configure_native_window_controls(window) -> None:
+    """Keep the custom titlebar while enabling Windows' native window states."""
+    if os.name != "nt" or window is None:
+        return
+
+    handle = _get_native_window_handle(window)
+    if handle is None:
+        return
+
+    # FormBorderStyle.None removes these styles. Restoring the system menu and
+    # min/max boxes lets Windows process the same system commands as its
+    # standard caption buttons, without drawing a second titlebar.
+    _apply_window_style(
+        handle,
+        lambda style: style | 0x00080000 | 0x00020000 | 0x00010000,
+    )
+
+
+def _set_native_maximized_bounds(window) -> bool:
+    """Tell WinForms to maximize inside the current monitor's work area."""
+    if os.name != "nt" or window is None:
+        return False
+
+    native = getattr(window, "native", None)
+    if native is None:
+        return False
+
+    try:
+        from System import Action
+        from System.Reflection import BindingFlags
+        from System.Windows.Forms import Screen
+
+        applied = [False]
+
+        def apply_bounds():
+            screen = Screen.FromControl(native)
+            bounds_property = native.GetType().GetProperty(
+                "MaximizedBounds",
+                BindingFlags.Instance | BindingFlags.NonPublic,
+            )
+            if screen is None or bounds_property is None:
+                return
+            bounds_property.SetValue(native, screen.WorkingArea, None)
+            applied[0] = True
+
+        if bool(native.InvokeRequired):
+            native.Invoke(Action(apply_bounds))
+        else:
+            apply_bounds()
+        return applied[0]
+    except Exception:
+        return False
+
+
+def _send_native_system_command(window, command: int) -> bool:
+    """Run a standard Windows minimize/maximize/restore command."""
+    if os.name != "nt" or window is None:
+        return False
+
+    handle = _get_native_window_handle(window)
+    if handle is None:
+        return False
+
+    try:
+        import ctypes
+
+        user32 = ctypes.WinDLL("user32")
+        send_message = ctypes.WINFUNCTYPE(
+            ctypes.c_ssize_t,
+            ctypes.c_void_p,
+            ctypes.c_uint,
+            ctypes.c_size_t,
+            ctypes.c_ssize_t,
+        )(("SendMessageW", user32))
+        send_message(ctypes.c_void_p(handle), 0x0112, command, 0)  # WM_SYSCOMMAND
+        return True
+    except Exception:
+        return False
+
+
+def _native_window_is_maximized(window) -> bool | None:
+    if os.name != "nt" or window is None:
+        return None
+
+    handle = _get_native_window_handle(window)
+    if handle is None:
+        return None
+
+    try:
+        import ctypes
+
+        user32 = ctypes.WinDLL("user32")
+        is_zoomed = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p)(
+            ("IsZoomed", user32)
+        )
+        return bool(is_zoomed(ctypes.c_void_p(handle)))
+    except Exception:
+        return None
+
+
+def _restore_native_window(window) -> bool:
+    if _send_native_system_command(window, 0xF120):  # SC_RESTORE
+        window_state["maximized"] = False
+        return True
+    try:
+        window.restore()
+        window_state["maximized"] = False
+        return True
+    except Exception:
+        return False
 
 
 def _native_exception_text(error) -> str:
@@ -1784,10 +1908,7 @@ def _resize_window_for_profile(profile: str):
     except Exception:
         pass
     if is_maximized:
-        try:
-            window.restore()
-            window_state["maximized"] = False
-        except Exception:
+        if not _restore_native_window(window):
             return _get_window_geometry(window)
 
     current = _get_window_geometry(window)
@@ -1820,10 +1941,7 @@ def _activate_window() -> None:
     window = window_ref.get("window")
     if window is None:
         return
-    try:
-        window.restore()
-    except Exception:
-        pass
+    _restore_native_window(window)
     try:
         window.show()
     except Exception:
@@ -1980,7 +2098,8 @@ class NativeWindowApi:
     def minimize_window() -> None:
         window = window_ref.get("window")
         if window is not None:
-            window.minimize()
+            if not _send_native_system_command(window, 0xF020):  # SC_MINIMIZE
+                window.minimize()
 
     @staticmethod
     def toggle_maximize_window() -> bool:
@@ -1988,15 +2107,29 @@ class NativeWindowApi:
         if window is None:
             return False
 
-        try:
-            if window_state["maximized"]:
-                window.restore()
-                window_state["maximized"] = False
-            else:
-                window.maximize()
-                window_state["maximized"] = True
-        except Exception:
-            pass
+        native_maximized = _native_window_is_maximized(window)
+        is_maximized = (
+            native_maximized
+            if native_maximized is not None
+            else bool(window_state["maximized"])
+        )
+        if is_maximized:
+            if not _restore_native_window(window):
+                return is_maximized
+        else:
+            _configure_native_window_controls(window)
+            _set_native_maximized_bounds(window)
+            if not _send_native_system_command(window, 0xF030):  # SC_MAXIMIZE
+                try:
+                    window.maximize()
+                except Exception:
+                    return False
+            maximized_after_command = _native_window_is_maximized(window)
+            window_state["maximized"] = (
+                maximized_after_command
+                if maximized_after_command is not None
+                else True
+            )
         return window_state["maximized"]
 
     @staticmethod
@@ -2005,7 +2138,12 @@ class NativeWindowApi:
         if window is None:
             return False
 
-        is_maximized = window_state["maximized"]
+        native_maximized = _native_window_is_maximized(window)
+        is_maximized = (
+            native_maximized
+            if native_maximized is not None
+            else bool(window_state["maximized"])
+        )
         try:
             is_maximized = is_maximized or "maximized" in str(window.state).lower()
         except Exception:
@@ -2013,11 +2151,8 @@ class NativeWindowApi:
         if not is_maximized:
             return False
 
-        try:
-            window.restore()
-        except Exception:
+        if not _restore_native_window(window):
             return False
-        window_state["maximized"] = False
         return True
 
     @staticmethod
@@ -2168,6 +2303,8 @@ def _apply_native_chrome() -> None:
     # Reapply the frame margin and corner preference after that show cycle so
     # page changes cannot leave a stale titlebar or square client corner.
     _apply_window_caption(window, False, force=False)
+    _configure_native_window_controls(window)
+    _set_native_maximized_bounds(window)
     _register_native_navigation_listener(window)
     _register_native_layout_listener(window)
     _register_windows_transparency_listener()

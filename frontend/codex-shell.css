@@ -1448,6 +1448,95 @@ body.native-titlebar .window-resize-handle {
   opacity: 1;
 }
 
+/* Theme packages can tune navigation and page-specific contrast through
+   optional semantic tokens. Missing tokens keep the regular palette defaults. */
+html[data-sparkle-plugin-theme] .side-btn {
+  color: var(--theme-sidebar-text, var(--text));
+}
+
+html[data-sparkle-plugin-theme] .side-btn:hover,
+html[data-sparkle-plugin-theme] .side-btn:focus-visible {
+  color: var(--theme-sidebar-text, var(--text));
+  background: var(--theme-sidebar-hover, var(--surface-hover));
+}
+
+html[data-sparkle-plugin-theme] .side-btn.active,
+html[data-sparkle-plugin-theme] .side-btn.active:hover {
+  color: var(--theme-sidebar-text-active, var(--theme-sidebar-text, var(--accent)));
+  background: var(--theme-sidebar-active, var(--surface-active));
+}
+
+html[data-sparkle-plugin-theme] .side-btn .icon-nav,
+html[data-sparkle-plugin-theme] .side-btn .sidebar-page-icon {
+  filter: var(--sidebar-icon-filter, brightness(0) invert(1)) !important;
+}
+
+html[data-sparkle-plugin-theme] .side-btn.active .icon-nav,
+html[data-sparkle-plugin-theme] .side-btn.active .sidebar-page-icon,
+html[data-sparkle-plugin-theme] .home-page .side-btn.active .sidebar-page-icon {
+  filter: var(--sidebar-active-icon-filter, var(--sidebar-icon-filter, brightness(0) invert(1))) !important;
+}
+
+html[data-sparkle-plugin-theme] .projects-page .project-card {
+  background: var(--theme-project-card, var(--surface-raised));
+  color: var(--theme-project-card-text, var(--text));
+}
+
+html[data-sparkle-plugin-theme] .projects-page .project-card-desc,
+html[data-sparkle-plugin-theme] .projects-page .project-card-counts {
+  color: var(--theme-project-card-muted, var(--muted));
+}
+
+html[data-sparkle-plugin-theme] .projects-page #detailView {
+  color: var(--theme-project-detail-text, var(--text));
+}
+
+html[data-sparkle-plugin-theme] .projects-page .project-detail-title,
+html[data-sparkle-plugin-theme] .projects-page .project-detail-desc {
+  color: var(--theme-project-detail-text, var(--text));
+}
+
+html[data-sparkle-plugin-theme] .notes-page .task-panel {
+  background: var(--theme-task-panel, var(--notes-panel));
+  color: var(--theme-task-text, var(--notes-text));
+}
+
+html[data-sparkle-plugin-theme] .notes-page .task-title,
+html[data-sparkle-plugin-theme] .notes-page .task-due,
+html[data-sparkle-plugin-theme] .notes-page .task-clip,
+html[data-sparkle-plugin-theme] .notes-page .task-project,
+html[data-sparkle-plugin-theme] .notes-page .panel-title,
+html[data-sparkle-plugin-theme] .notes-page .task-add input {
+  color: var(--theme-task-text, var(--notes-text));
+}
+
+html[data-sparkle-plugin-theme] .notes-page .task-empty,
+html[data-sparkle-plugin-theme] .notes-page .task-item.done .task-title,
+html[data-sparkle-plugin-theme] .notes-page .task-add input::placeholder {
+  color: var(--theme-task-muted, var(--notes-muted));
+}
+
+html[data-sparkle-plugin-theme] .notes-page .task-item.top-priority .task-title,
+html[data-sparkle-plugin-theme] .notes-page .task-item.selected .task-title {
+  color: var(--theme-task-accent, var(--notes-accent));
+}
+
+html[data-sparkle-plugin-theme] .notes-page .memo-card {
+  background: var(--theme-memo-card, var(--notes-card));
+  color: var(--theme-memo-text, var(--notes-text));
+}
+
+html[data-sparkle-plugin-theme] .notes-page .memo-title,
+html[data-sparkle-plugin-theme] .notes-page .memo-preview,
+html[data-sparkle-plugin-theme] .notes-page .memo-card .pin-btn {
+  color: var(--theme-memo-text, var(--notes-text));
+}
+
+html[data-sparkle-plugin-theme] .notes-page .memo-done,
+html[data-sparkle-plugin-theme] .notes-page .empty {
+  color: var(--theme-memo-muted, var(--notes-muted));
+}
+
 /* The home-specific icon rules are more specific than the shared size rule. */
 .home-page .side-btn.active .sidebar-page-icon,
 .home-page .side-btn:not(.active) .sidebar-page-icon {
@@ -2256,7 +2345,7 @@ body {
 .projects-page .project-card,
 .projects-page .project-card:hover {
   border: 0;
-  background: #202231;
+  background: var(--surface-raised);
 }
 
 /* Draw the memo outline inward so overflow clipping cannot cut off its edge;
@@ -2333,11 +2422,14 @@ html.native-backdrop-enabled body {
 }
 
 html.native-backdrop-enabled .app-titlebar {
-  /* One tint layer only; the document and layout below remain transparent. */
-  background: rgba(var(--native-shell-color-rgb), var(--native-titlebar-alpha)) !important;
   border-top-left-radius: var(--native-window-corner-radius);
   border-top-right-radius: var(--native-window-corner-radius);
   overflow: hidden;
+}
+
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .app-titlebar {
+  /* One tint layer only; custom wallpaper shares the sidebar glass token. */
+  background: rgba(var(--native-shell-color-rgb), var(--native-titlebar-alpha)) !important;
 }
 
 html.native-backdrop-enabled .layout {
@@ -2348,12 +2440,18 @@ html.native-backdrop-enabled .sidebar,
 html.native-backdrop-enabled .home-page .sidebar,
 html.native-backdrop-enabled .notes-page .sidebar,
 html.native-backdrop-enabled .sidebar.sidebar--index {
-  background: rgba(var(--native-shell-color-rgb), var(--native-sidebar-alpha)) !important;
   border-radius: 0;
   box-shadow: none;
   overflow: hidden;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .sidebar,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .home-page .sidebar,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .notes-page .sidebar,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .sidebar.sidebar--index {
+  background: rgba(var(--native-shell-color-rgb), var(--native-sidebar-alpha)) !important;
 }
 
 /* Keep every sidebar corner square in the transparency-only path. */
@@ -2365,15 +2463,21 @@ html.native-backdrop-enabled .main,
 html.native-backdrop-enabled .home-page .main,
 html.native-backdrop-enabled .notes-page .main.notes-main,
 html.native-backdrop-enabled .editor-main {
-  /* Keep exactly one main-surface tint over the native material. */
-  background: rgba(36, 39, 58, 0.35) !important;
   border-top-left-radius: 0;
 }
 
-html.native-backdrop-enabled .main::before,
-html.native-backdrop-enabled .home-page .main::before,
-html.native-backdrop-enabled .notes-page .main.notes-main::before,
-html.native-backdrop-enabled .editor-main::before {
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .main,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .home-page .main,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .notes-page .main.notes-main,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .editor-main {
+  /* Keep exactly one main-surface tint over the native material. */
+  background: rgba(36, 39, 58, 0.35) !important;
+}
+
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .main::before,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .home-page .main::before,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .notes-page .main.notes-main::before,
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) .editor-main::before {
   background: transparent;
 }
 
@@ -2386,14 +2490,166 @@ html.native-backdrop-enabled body.note-editor-page .editor-canvas {
 /* Home has an extra dark-theme selector in home-figma.css with higher
    specificity than the shared shell rule.  Override only the actual surfaces
    when the native backdrop class is active; the normal/off path is unchanged. */
-html.native-backdrop-enabled body.home-page .main {
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) body.home-page .main {
   background: rgba(36, 39, 58, 0.35) !important;
 }
 
-html.native-backdrop-enabled body.home-page .sidebar {
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) body.home-page .sidebar {
   background: rgba(var(--native-shell-color-rgb), var(--native-sidebar-alpha)) !important;
 }
 
-html.native-backdrop-enabled body.home-page .app-titlebar {
+html.native-backdrop-enabled:not([data-custom-wallpaper="active"]) body.home-page .app-titlebar {
   background: rgba(var(--native-shell-color-rgb), var(--native-titlebar-alpha)) !important;
+}
+
+/* Plugin themes may supply page-control tokens. Keep these overrides scoped
+   to an active plugin theme so the built-in palette remains unchanged. */
+html[data-sparkle-plugin-theme] body.projects-page,
+html[data-sparkle-plugin-theme] body.notes-page {
+  --shell-filter-pill-bg: var(--theme-control-background, var(--surface-raised));
+  --shell-filter-pill-active: var(--theme-control-active-background, var(--surface-active));
+  --shell-filter-pill-text: var(--theme-control-text, var(--text));
+  --shell-filter-pill-active-text: var(--theme-control-active-text, var(--text));
+  --shell-filter-pill-hover-bg: var(--theme-control-hover-background, var(--shell-filter-pill-bg));
+  --shell-filter-pill-hover-text: var(--theme-control-hover-text, var(--shell-filter-pill-text));
+}
+
+html[data-sparkle-plugin-theme] .projects-page .proj-filter-group .cat-btn:hover,
+html[data-sparkle-plugin-theme] .notes-page .status-tabs .cat-btn:hover {
+  color: var(--shell-filter-pill-hover-text);
+  background: var(--shell-filter-pill-hover-bg);
+}
+
+html[data-sparkle-plugin-theme] .act-btn,
+html[data-sparkle-plugin-theme] .fav-btn,
+html[data-sparkle-plugin-theme] .pin-btn,
+html[data-sparkle-plugin-theme] body.notes-page .memo-card-actions .act-btn {
+  color: var(--theme-action-button-text, var(--theme-home-action-text, var(--text)));
+  border-color: var(--theme-action-button-border, var(--border));
+  background: var(--theme-action-button-background, var(--theme-home-action-surface, var(--surface-raised)));
+}
+
+html[data-sparkle-plugin-theme] .act-btn:hover,
+html[data-sparkle-plugin-theme] .act-btn:focus-visible,
+html[data-sparkle-plugin-theme] .fav-btn:hover,
+html[data-sparkle-plugin-theme] .fav-btn:focus-visible,
+html[data-sparkle-plugin-theme] .pin-btn:hover,
+html[data-sparkle-plugin-theme] .pin-btn:focus-visible,
+html[data-sparkle-plugin-theme] body.notes-page .memo-card-actions .act-btn:hover,
+html[data-sparkle-plugin-theme] body.notes-page .memo-card-actions .act-btn:focus-visible {
+  color: var(--theme-action-button-hover-text, var(--theme-action-button-text, var(--theme-home-action-text, var(--text))));
+  border-color: var(--theme-action-button-hover-border, var(--theme-action-button-border, var(--border-strong)));
+  background: var(--theme-action-button-hover-background, var(--surface-hover));
+}
+
+html[data-sparkle-plugin-theme] .act-btn .icon-btn,
+html[data-sparkle-plugin-theme] .fav-btn .icon-btn,
+html[data-sparkle-plugin-theme] .pin-btn:not(.on) .icon-btn {
+  filter: var(--action-icon-filter, brightness(0) invert(1)) !important;
+}
+
+html[data-sparkle-plugin-theme] .fav-btn.on .icon-btn,
+html[data-sparkle-plugin-theme] .pin-btn.on .icon-btn {
+  filter: var(--action-active-icon-filter, var(--action-icon-filter, brightness(0) invert(1))) !important;
+}
+
+html[data-sparkle-plugin-theme] .icon-inline {
+  filter: var(--inline-icon-filter, brightness(0) invert(1)) !important;
+}
+
+html[data-sparkle-plugin-theme] .projects-page .project-card-check input[type="checkbox"],
+html[data-sparkle-plugin-theme] .projects-page .project-done-toggle input[type="checkbox"],
+html[data-sparkle-plugin-theme] .projects-page #detailView .task-check input[type="checkbox"],
+html[data-sparkle-plugin-theme] .notes-page .task-check input[type="checkbox"] {
+  --app-check-accent: var(--theme-checkbox-accent, var(--accent));
+  border-color: var(--theme-checkbox-border, var(--border-strong));
+  background-color: var(--theme-checkbox-background, var(--surface));
+}
+
+html[data-sparkle-plugin-theme] .projects-page .project-card-check input[type="checkbox"]:checked,
+html[data-sparkle-plugin-theme] .projects-page .project-done-toggle input[type="checkbox"]:checked,
+html[data-sparkle-plugin-theme] .projects-page #detailView .task-check input[type="checkbox"]:checked,
+html[data-sparkle-plugin-theme] .notes-page .task-check input[type="checkbox"]:checked {
+  border-color: var(--app-check-accent);
+  background-color: var(--app-check-accent);
+}
+
+/* Index-style sidebars have legacy selectors that are more specific than the
+   shared theme rules above. Keep every navigation item, including plugin
+   contributions, on the theme's sidebar text and icon tokens. */
+html[data-sparkle-plugin-theme] .sidebar.sidebar--index .side-btn {
+  color: var(--theme-sidebar-text, var(--text));
+}
+
+html[data-sparkle-plugin-theme] .sidebar.sidebar--index .side-btn:hover,
+html[data-sparkle-plugin-theme] .sidebar.sidebar--index .side-btn:focus-visible {
+  color: var(--theme-sidebar-text, var(--text));
+  background: var(--theme-sidebar-hover, var(--surface-hover));
+}
+
+html[data-sparkle-plugin-theme] .sidebar.sidebar--index .side-btn.active,
+html[data-sparkle-plugin-theme] .sidebar.sidebar--index .side-btn.active:hover,
+html[data-sparkle-plugin-theme] .sidebar.sidebar--index .side-btn.active:focus-visible {
+  color: var(--theme-sidebar-text-active, var(--theme-sidebar-text, var(--accent)));
+  background: var(--theme-sidebar-active, var(--surface-active));
+}
+
+html[data-sparkle-plugin-theme] .sidebar.sidebar--index .side-btn .icon-nav,
+html[data-sparkle-plugin-theme] .sidebar.sidebar--index .side-btn .sidebar-page-icon {
+  filter: var(--sidebar-icon-filter, brightness(0) invert(1)) !important;
+}
+
+html[data-sparkle-plugin-theme] .sidebar.sidebar--index .side-btn.active .icon-nav,
+html[data-sparkle-plugin-theme] .sidebar.sidebar--index .side-btn.active .sidebar-page-icon {
+  filter: var(--sidebar-active-icon-filter, var(--sidebar-icon-filter, brightness(0) invert(1))) !important;
+}
+
+/* The home page has its own category controls and dark-mode action-button
+   rules. Use the same plugin tokens as the other page filters and buttons. */
+html[data-sparkle-plugin-theme] .home-page .cat-btn {
+  border-color: transparent;
+  color: var(--theme-home-tag-text, var(--theme-control-text, var(--text)));
+  background: transparent;
+}
+
+html[data-sparkle-plugin-theme] .home-page .cat-btn:hover,
+html[data-sparkle-plugin-theme] .home-page .cat-btn:focus-visible {
+  border-color: var(--theme-home-tag-border, var(--border));
+  color: var(--theme-control-hover-text, var(--theme-home-tag-text, var(--text)));
+  background: var(--theme-control-hover-background, var(--surface-hover));
+}
+
+html[data-sparkle-plugin-theme] .home-page .cat-btn.active,
+html[data-sparkle-plugin-theme] .home-page .cat-btn.active:hover,
+html[data-sparkle-plugin-theme] .home-page .cat-btn.active:focus-visible {
+  border-color: var(--theme-home-tag-active-text, var(--theme-control-active-text, var(--border-strong)));
+  color: var(--theme-home-tag-active-text, var(--theme-control-active-text, var(--text)));
+  background: var(--theme-home-tag-active, var(--theme-control-active-background, var(--surface-active)));
+}
+
+html[data-sparkle-plugin-theme] .home-page .cat-btn:focus-visible {
+  outline-color: var(--theme-home-tag-active-text, var(--accent));
+}
+
+html[data-sparkle-plugin-theme] .home-page .act-btn,
+html[data-sparkle-plugin-theme] .home-page .fav-btn {
+  color: var(--theme-action-button-text, var(--theme-home-action-text, var(--text)));
+  border-color: var(--theme-action-button-border, var(--border));
+  background: var(--theme-action-button-background, var(--theme-home-action-surface, var(--surface-raised)));
+}
+
+html[data-sparkle-plugin-theme] .home-page .act-btn:hover,
+html[data-sparkle-plugin-theme] .home-page .act-btn:focus-visible,
+html[data-sparkle-plugin-theme] .home-page .fav-btn:hover,
+html[data-sparkle-plugin-theme] .home-page .fav-btn:focus-visible {
+  color: var(--theme-action-button-hover-text, var(--theme-action-button-text, var(--text)));
+  border-color: var(--theme-action-button-hover-border, var(--theme-action-button-border, var(--border-strong)));
+  background: var(--theme-action-button-hover-background, var(--surface-hover));
+}
+
+html[data-sparkle-plugin-theme] .home-page .act-btn:hover .icon-btn,
+html[data-sparkle-plugin-theme] .home-page .act-btn:focus-visible .icon-btn,
+html[data-sparkle-plugin-theme] .home-page .fav-btn:hover .icon-btn,
+html[data-sparkle-plugin-theme] .home-page .fav-btn:focus-visible .icon-btn {
+  filter: var(--action-active-icon-filter, var(--action-icon-filter, brightness(0) invert(1))) !important;
 }

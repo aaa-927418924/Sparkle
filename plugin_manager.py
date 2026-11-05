@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import io
 import os
 import re
@@ -30,12 +31,21 @@ MAX_FILE_COUNT = 256
 MAX_MANIFEST_BYTES = 128 * 1024
 MAX_PANEL_BYTES = 2 * 1024 * 1024
 MAX_STORAGE_BYTES = 2 * 1024 * 1024
+PLUGIN_THEME_PAGE_STYLESHEET = "plugin-pages.css"
+MAX_PLUGIN_THEME_PAGE_STYLESHEET_BYTES = 256 * 1024
+ALLOWED_PANEL_DISPLAYS = {"dialog", "page"}
 PLUGIN_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
 COLOR_PATTERN = re.compile(
     r"^(?:#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?|"
     r"rgba?\(\s*(?:\d{1,3}%?\s*,\s*){2}\d{1,3}%?"
     r"(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\))$"
+)
+UNSAFE_PLUGIN_THEME_CSS_PATTERN = re.compile(
+    r"@(?:import|font-face|namespace|document|charset)\b|"
+    r"url\s*\(|expression\s*\(|javascript\s*:|"
+    r"(?:^|[;{}])\s*behavior\s*:|-moz-binding",
+    re.IGNORECASE,
 )
 
 THEME_COLOR_PROPERTIES = {
@@ -51,6 +61,73 @@ THEME_COLOR_PROPERTIES = {
     "muted": "--muted",
     "accent": "--accent",
     "accentSoft": "--accent-soft",
+    # Optional component tokens let theme packages choose contrast for pages
+    # whose legacy layouts do not use the global palette directly.
+    "sidebarText": "--theme-sidebar-text",
+    "sidebarTextActive": "--theme-sidebar-text-active",
+    "sidebarHover": "--theme-sidebar-hover",
+    "sidebarActive": "--theme-sidebar-active",
+    "projectCard": "--theme-project-card",
+    "projectCardText": "--theme-project-card-text",
+    "projectCardMuted": "--theme-project-card-muted",
+    "projectDetailText": "--theme-project-detail-text",
+    "taskPanel": "--theme-task-panel",
+    "taskText": "--theme-task-text",
+    "taskMuted": "--theme-task-muted",
+    "taskAccent": "--theme-task-accent",
+    "memoCard": "--theme-memo-card",
+    "memoText": "--theme-memo-text",
+    "memoMuted": "--theme-memo-muted",
+    "notesBackground": "--theme-notes-background",
+    "notesSidebar": "--theme-notes-sidebar",
+    "notesPanel": "--theme-notes-panel",
+    "notesCard": "--theme-notes-card",
+    "notesText": "--theme-notes-text",
+    "notesMuted": "--theme-notes-muted",
+    "notesBorder": "--theme-notes-border",
+    "notesAccent": "--theme-notes-accent",
+    "homeBackground": "--theme-home-background",
+    "homeSidebar": "--theme-home-sidebar",
+    "homeSurface": "--theme-home-surface",
+    "homeText": "--theme-home-text",
+    "homeMuted": "--theme-home-muted",
+    "homeBorder": "--theme-home-border",
+    "homeAccent": "--theme-home-accent",
+    "homeCard": "--theme-home-card",
+    "homeActive": "--theme-home-active",
+    "homeActionSurface": "--theme-home-action-surface",
+    "homeActionText": "--theme-home-action-text",
+    "homeTagText": "--theme-home-tag-text",
+    "homeTagBorder": "--theme-home-tag-border",
+    "homeTagActive": "--theme-home-tag-active",
+    "homeTagActiveText": "--theme-home-tag-active-text",
+    "controlBackground": "--theme-control-background",
+    "controlText": "--theme-control-text",
+    "controlHoverBackground": "--theme-control-hover-background",
+    "controlHoverText": "--theme-control-hover-text",
+    "controlActiveBackground": "--theme-control-active-background",
+    "controlActiveText": "--theme-control-active-text",
+    "actionButtonBackground": "--theme-action-button-background",
+    "actionButtonText": "--theme-action-button-text",
+    "actionButtonBorder": "--theme-action-button-border",
+    "actionButtonHoverBackground": "--theme-action-button-hover-background",
+    "actionButtonHoverText": "--theme-action-button-hover-text",
+    "actionButtonHoverBorder": "--theme-action-button-hover-border",
+    "checkboxBackground": "--theme-checkbox-background",
+    "checkboxBorder": "--theme-checkbox-border",
+    "checkboxAccent": "--theme-checkbox-accent",
+}
+THEME_ICON_MODES = {
+    "source": "none",
+    "dark": "brightness(0) saturate(100%)",
+    "light": "brightness(0) saturate(100%) invert(1)",
+}
+THEME_ICON_PROPERTIES = {
+    "sidebar": "--sidebar-icon-filter",
+    "sidebarActive": "--sidebar-active-icon-filter",
+    "action": "--action-icon-filter",
+    "actionActive": "--action-active-icon-filter",
+    "inline": "--inline-icon-filter",
 }
 ALLOWED_PLUGIN_TYPES = {"theme", "feature"}
 CLIP_PROJECT_DATA_PERMISSIONS = {
@@ -143,7 +220,7 @@ UI_NUMBER_PATTERN = re.compile(r"^(?:0|1|0?\.\d+)$")
 RESERVED_PLUGIN_IDS = {"manager-state", "manager-state-json"}
 STATE_FILENAME = "manager-state.json"
 SKILL_ID = "sparkle-plugin-author"
-SKILL_VERSION = "2.3.0"
+SKILL_VERSION = "2.5.0"
 SKILL_MARKER = ".sparkle-managed.json"
 PLUGIN_LOCK = RLock()
 ENVIRONMENT_PATH_PATTERN = re.compile(r"%([^%]+)%|\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
@@ -243,6 +320,26 @@ def _read_json(path: Path, max_bytes: int) -> Any:
         raise PluginError("プラグインのJSONファイルを読み込めません。") from exc
 
 
+def _read_plugin_theme_page_stylesheet(package_dir: Path) -> str | None:
+    path = package_dir / PLUGIN_THEME_PAGE_STYLESHEET
+    if path.is_symlink():
+        raise PluginError("テーマのプラグイン画面スタイルはシンボリックリンクにできません。")
+    if not path.exists():
+        return None
+    if not path.is_file() or path.stat().st_size > MAX_PLUGIN_THEME_PAGE_STYLESHEET_BYTES:
+        raise PluginError("plugin-pages.cssの形式またはサイズが上限を超えています。")
+    try:
+        stylesheet = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise PluginError("plugin-pages.cssをUTF-8として読み込めません。") from exc
+    inspected = re.sub(r"/\*.*?\*/", "", stylesheet, flags=re.DOTALL)
+    if "\\" in inspected or UNSAFE_PLUGIN_THEME_CSS_PATTERN.search(inspected):
+        raise PluginError(
+            "plugin-pages.cssでは外部リソース、CSSエスケープ、実行可能なCSS機能を使えません。"
+        )
+    return stylesheet
+
+
 def _validate_theme_file(package_dir: Path) -> dict[str, Any]:
     theme = _read_json(package_dir / "theme.json", MAX_MANIFEST_BYTES)
     if not isinstance(theme, dict) or not isinstance(theme.get("colors"), dict):
@@ -257,7 +354,20 @@ def _validate_theme_file(package_dir: Path) -> dict[str, Any]:
         if len(value) > 40 or COLOR_PATTERN.fullmatch(value.strip()) is None:
             raise PluginError(f"テーマ色 {key} の値が不正です。HEXまたはRGB形式を使ってください。")
         normalized[key] = value.strip()
-    return {"colors": normalized}
+    icons = theme.get("icons", {})
+    if not isinstance(icons, dict) or set(icons) - set(THEME_ICON_PROPERTIES):
+        raise PluginError("theme.json の icons には sidebar / sidebarActive / action / actionActive / inline のみ指定できます。")
+    normalized_icons: dict[str, str] = {}
+    for key, mode in icons.items():
+        if not isinstance(mode, str) or mode not in THEME_ICON_MODES:
+            raise PluginError(f"theme.json の icons.{key} は source / dark / light のいずれかを指定してください。")
+        normalized_icons[key] = mode
+    result: dict[str, Any] = {"colors": normalized}
+    if normalized_icons:
+        result["icons"] = normalized_icons
+    if _read_plugin_theme_page_stylesheet(package_dir) is not None:
+        result["plugin_pages_stylesheet"] = True
+    return result
 
 
 def _validate_ui_contributions(manifest: dict[str, Any], plugin_type: str) -> dict[str, Any]:
@@ -403,6 +513,12 @@ def _validate_package_dir(
         raise PluginError("typeはthemeまたはfeatureを指定してください。")
     if type(api_version) is not int or api_version < 1:
         raise PluginError("プラグインのAPIバージョンが不正です。")
+    panel_display = manifest.get("panel_display", "dialog")
+    if plugin_type == "feature":
+        if not isinstance(panel_display, str) or panel_display not in ALLOWED_PANEL_DISPLAYS:
+            raise PluginError("panel_displayはdialogまたはpageを指定してください。")
+    elif "panel_display" in manifest:
+        raise PluginError("panel_displayは機能プラグインでのみ指定できます。")
     api_compatible = api_version in SUPPORTED_PLUGIN_API_VERSIONS
     if not allow_incompatible_api and not api_compatible:
         raise PluginError(f"このSparkleはプラグインAPI {PLUGIN_API_VERSION} に対応しています。")
@@ -433,6 +549,8 @@ def _validate_package_dir(
         "api_version": api_version,
         "permissions": sorted(permissions),
     }
+    if plugin_type == "feature":
+        result["panel_display"] = panel_display
     if not api_compatible:
         result["permissions"] = []
         result["entry"] = "panel.html" if plugin_type == "feature" else None
@@ -825,12 +943,40 @@ def get_active_theme(directory: Path | None = None) -> dict[str, Any] | None:
         return None
     if manifest["type"] != "theme":
         return None
-    return {
+    active_theme = {
         "id": plugin_id,
         "name": manifest["name"],
         "colors": manifest["theme"]["colors"],
         "properties": THEME_COLOR_PROPERTIES,
     }
+    if manifest["theme"].get("icons"):
+        active_theme["icons"] = manifest["theme"]["icons"]
+    return active_theme
+
+
+@_serialized
+def get_active_theme_page_stylesheet(
+    plugin_id: str,
+    directory: Path | None = None,
+) -> str:
+    root = _resolve_plugins_dir(directory)
+    state = _read_state(root)
+    if state.get("active_theme") != plugin_id:
+        return ""
+    plugin_state = state["plugins"].get(plugin_id, {})
+    if not isinstance(plugin_state, dict) or not bool(plugin_state.get("enabled")):
+        return ""
+    try:
+        plugin_dir = _plugin_dir(plugin_id, root)
+        manifest = _validate_package_dir(plugin_dir)
+    except PluginError:
+        return ""
+    if manifest["type"] != "theme":
+        return ""
+    try:
+        return _read_plugin_theme_page_stylesheet(plugin_dir) or ""
+    except PluginError:
+        return ""
 
 
 @_serialized
@@ -997,6 +1143,22 @@ def _skill_source_dir(source_dir: Path | None = None) -> Path:
     return source
 
 
+def _skill_fingerprint(source: Path) -> str:
+    """Hash the complete bundled skill so content edits trigger an update."""
+    digest = hashlib.sha256()
+    for path in sorted(source.rglob("*"), key=lambda item: item.relative_to(source).as_posix()):
+        if path.name == SKILL_MARKER or not path.is_file():
+            continue
+        relative = path.relative_to(source).as_posix().encode("utf-8")
+        digest.update(len(relative).to_bytes(4, "big"))
+        digest.update(relative)
+        digest.update(path.stat().st_size.to_bytes(8, "big"))
+        with path.open("rb") as skill_file:
+            for chunk in iter(lambda: skill_file.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
 def get_agent_skill_targets(
     *,
     home: Path | None = None,
@@ -1037,7 +1199,8 @@ def get_authoring_skill_status(
     environ: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Read the three managed skill locations without creating or changing files."""
-    _skill_source_dir()
+    source = _skill_source_dir()
+    fingerprint = _skill_fingerprint(source)
     results: list[dict[str, str]] = []
     for agent, target in get_agent_skill_targets(home=home, environ=environ).items():
         status = "missing"
@@ -1054,7 +1217,16 @@ def get_authoring_skill_status(
                     and marker_value.get("owner") == "Sparkle"
                     and marker_value.get("skill") == SKILL_ID
                 ):
-                    status = "installed" if marker_value.get("version") == SKILL_VERSION else "outdated"
+                    try:
+                        installed_fingerprint = _skill_fingerprint(target)
+                    except OSError:
+                        installed_fingerprint = ""
+                    current = (
+                        marker_value.get("version") == SKILL_VERSION
+                        and marker_value.get("fingerprint") == fingerprint
+                        and installed_fingerprint == fingerprint
+                    )
+                    status = "installed" if current else "outdated"
                 else:
                     status = "conflict"
             except (OSError, ValueError, AttributeError):
@@ -1089,7 +1261,12 @@ def _install_skill_for_target(source: Path, target: Path) -> str:
     try:
         shutil.copytree(source, stage)
         (stage / SKILL_MARKER).write_text(
-            json.dumps({"owner": "Sparkle", "skill": SKILL_ID, "version": SKILL_VERSION}),
+            json.dumps({
+                "owner": "Sparkle",
+                "skill": SKILL_ID,
+                "version": SKILL_VERSION,
+                "fingerprint": _skill_fingerprint(source),
+            }),
             encoding="utf-8",
         )
         if managed:

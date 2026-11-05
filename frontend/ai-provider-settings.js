@@ -9,6 +9,9 @@
   const activeSelect = $("aiActiveProvider");
   const activeStatus = $("aiActiveProviderStatus");
   const actionPermissions = $("aiActionPermissions");
+  const providerSettings = document.querySelector(".settings-ai-provider-col");
+  const actionPermissionSection = providerSettings?.querySelector(".ai-action-permissions");
+  let loadGeneration = 0;
 
   async function readResponse(response) {
     let data = {};
@@ -105,13 +108,47 @@
     }
   }
 
+  async function isProjectAssistantEnabled() {
+    try {
+      const response = await fetch(`${API}/settings/project_assistant_enabled`, {
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) return false;
+      const data = await response.json();
+      const enabled = String(data.value).toLowerCase() === "true";
+      try { localStorage.setItem("sparkle.projectAssistantEnabled", enabled ? "true" : "false"); } catch {}
+      return enabled;
+    } catch {
+      try { localStorage.setItem("sparkle.projectAssistantEnabled", "false"); } catch {}
+      return false;
+    }
+  }
+
+  function setProjectAssistantVisibility(enabled) {
+    if (providerSettings) {
+      providerSettings.dataset.legacyFeatureEnabled = enabled ? "true" : "false";
+      const selectedCategory = document.querySelector("[data-settings-category-button][aria-pressed='true']")?.dataset.settingsCategoryButton;
+      providerSettings.hidden = !enabled || Boolean(selectedCategory && selectedCategory !== "ai");
+    }
+    if (actionPermissionSection) actionPermissionSection.hidden = !enabled;
+  }
+
   async function load() {
+    const generation = ++loadGeneration;
+    const enabled = await isProjectAssistantEnabled();
+    if (generation !== loadGeneration) return;
+    setProjectAssistantVisibility(enabled);
+    if (!enabled) {
+      state = null;
+      return;
+    }
     try {
       const response = await fetch(`${API}/ai/providers`, { headers: { Accept: "application/json" } });
       state = await readResponse(response);
     } catch (error) {
       state = { available: false, availability_message: "AIプロバイダーの状態を確認できません。", providers: [] };
     }
+    if (generation !== loadGeneration) return;
     render();
     void loadActionPermissions();
   }
@@ -217,5 +254,9 @@
     if (button) deleteActionPermission(button.dataset.aiPermissionDelete);
   });
   activeSelect?.addEventListener("change", changeActiveProvider);
+  window.addEventListener("sparkle-project-assistant-enabled-changed", () => void load());
+  window.addEventListener("storage", (event) => {
+    if (event.key === "sparkle.projectAssistantEnabled") void load();
+  });
   load();
 })();

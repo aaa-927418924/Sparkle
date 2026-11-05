@@ -1,0 +1,218 @@
+﻿/* Custom wallpaper sits beneath the existing Catppuccin-style surfaces. */
+html[data-custom-wallpaper="active"] {
+  --bg: rgba(36, 39, 58, 0.42);
+  --sidebar-bg: rgba(32, 34, 49, 0.62);
+  --surface: rgba(32, 34, 49, 0.74);
+  --surface-raised: rgba(32, 34, 49, 0.74);
+  --surface-hover: rgba(42, 45, 64, 0.8);
+  --surface-active: rgba(54, 58, 79, 0.84);
+}
+
+html[data-custom-wallpaper="active"] body {
+  position: relative;
+  isolation: isolate;
+  background: transparent !important;
+}
+
+html[data-custom-wallpaper="active"] body::before,
+html[data-custom-wallpaper="active"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+html[data-custom-wallpaper="active"] body::before {
+  z-index: -2;
+  background: #24273a;
+}
+
+html[data-custom-wallpaper="active"] body::after {
+  z-index: -1;
+  inset: -32px;
+  background-image: var(--sparkle-wallpaper-image);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: blur(var(--sparkle-wallpaper-blur, 8px));
+  opacity: var(--sparkle-wallpaper-opacity, 0.85);
+  transform: scale(1.04);
+}
+
+html[data-custom-wallpaper="active"] body,
+html[data-custom-wallpaper="active"] .layout,
+html[data-custom-wallpaper="active"] body.home-page,
+html[data-custom-wallpaper="active"] body.home-page .layout {
+  background: transparent !important;
+}
+
+html[data-custom-wallpaper="active"] .main,
+html[data-custom-wallpaper="active"] .home-page .main,
+html[data-custom-wallpaper="active"] .notes-page .main.notes-main,
+html[data-custom-wallpaper="active"] .editor-main {
+  /* Let the wall image show through the single rounded surface layer. */
+  background: transparent !important;
+}
+
+html[data-custom-wallpaper="active"] .main::before,
+html[data-custom-wallpaper="active"] .home-page .main::before,
+html[data-custom-wallpaper="active"] .notes-page .main.notes-main::before,
+html[data-custom-wallpaper="active"] .editor-main::before,
+html[data-custom-wallpaper="active"] .plugin-page-shell .plugin-feature-page::before {
+  background: var(--bg) !important;
+}
+
+/* Fill only the cut-out behind the main surface's rounded corner. This makes
+   the sidebar, titlebar, and corner remainder share one exact glass token. */
+html[data-custom-wallpaper="active"] .main::after,
+html[data-custom-wallpaper="active"] .home-page .main::after,
+html[data-custom-wallpaper="active"] .notes-page .main.notes-main::after,
+html[data-custom-wallpaper="active"] .editor-main::after {
+  content: "";
+  position: fixed;
+  z-index: -2;
+  top: var(--app-titlebar-height);
+  left: var(--shell-sidebar-edge);
+  width: var(--shell-main-corner-radius);
+  height: var(--shell-main-corner-radius);
+  background: var(--sidebar-bg);
+  -webkit-mask-image: radial-gradient(
+    circle at bottom right,
+    transparent calc(var(--shell-main-corner-radius) - 1px),
+    #000 var(--shell-main-corner-radius)
+  );
+  mask-image: radial-gradient(
+    circle at bottom right,
+    transparent calc(var(--shell-main-corner-radius) - 1px),
+    #000 var(--shell-main-corner-radius)
+  );
+  pointer-events: none;
+}
+
+html.native-titlebar[data-custom-wallpaper="active"] .main::after {
+  top: 0;
+}
+
+html[data-custom-wallpaper="active"] body.note-editor-page .editor-main::after {
+  top: 0;
+  left: 0;
+}
+
+html[data-custom-wallpaper="active"] .sidebar,
+html[data-custom-wallpaper="active"] .home-page .sidebar,
+html[data-custom-wallpaper="active"] .notes-page .sidebar,
+html[data-custom-wallpaper="active"] .sidebar.sidebar--index {
+  background: var(--sidebar-bg) !important;
+}
+
+html[data-custom-wallpaper="active"] .app-titlebar {
+  background: var(--sidebar-bg) !important;
+}
+
+html[data-custom-wallpaper="active"] .app-titlebar .window-control:not(:hover):not(:focus-visible) {
+  /* Transparent controls reveal the same titlebar overlay as their neighbors. */
+  background: transparent !important;
+}
+
+html[data-custom-wallpaper="active"] .settings-page-card,
+html[data-custom-wallpaper="active"] .profile-card,
+html[data-custom-wallpaper="active"] .setup-card,
+html[data-custom-wallpaper="active"] .tutorial-card,
+html[data-custom-wallpaper="active"] .migration-card,
+html[data-custom-wallpaper="active"] .extension-guide-card {
+  background-color: var(--surface-raised) !important;
+}
+
+.settings-ai-provider-col[hidden],
+.settings-ai-provider-col .ai-action-permissions[hidden],
+.project-assistant-trigger[hidden] {
+  display: none !important;
+}
+
+.appearance-settings-col .setting-row.column {
+  align-items: stretch;
+  gap: 7px;
+}
+
+.appearance-theme-fields[hidden] {
+  display: none !important;
+}
+
+.appearance-settings-col .file-save-desc {
+  line-height: 1.5;
+}
+
+.appearance-theme-file-control {
+  position: relative;
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.appearance-theme-file-control > span {
+  pointer-events: none;
+}
+
+.appearance-theme-file {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.appearance-theme-file:disabled {
+  cursor: not-allowed;
+}
+
+.appearance-theme-file-control:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.appearance-theme-range:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.appearance-theme-range-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.appearance-theme-range {
+  flex: 1;
+  min-width: 90px;
+  accent-color: var(--accent);
+}
+
+.appearance-theme-range-value {
+  min-width: 42px;
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.appearance-theme-status {
+  min-height: 1.4em;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-custom-wallpaper="active"] body::after {
+    transition: none;
+  }
+}

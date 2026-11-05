@@ -7,6 +7,7 @@ authenticated requests only to the API origin declared for that connection.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
 import logging
@@ -35,6 +36,9 @@ from plugin_network import (
 LOGGER = logging.getLogger(__name__)
 MAX_PROFILE_BYTES = 128 * 1024
 MAX_OAUTH_RESPONSE_BYTES = 1024 * 1024
+# Keep each Credential Manager blob below its size limit, including UTF-16 storage.
+MAX_SECRET_CHUNK_CHARS = 1000
+MAX_SECRET_CHUNKS = 20
 CALLBACK_TIMEOUT_SECONDS = 300
 TOKEN_REFRESH_MARGIN_SECONDS = 90
 CONNECTION_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -200,19 +204,75 @@ def _key(plugin_id: str, connection_id: str, part: str) -> str:
     return f"plugin-oauth-{plugin_id}-{connection_id}-{part}"
 
 
+def _secret_chunk_count_key(key: str) -> str:
+    return f"{key}-chunks"
+
+
+def _secret_chunk_key(key: str, index: int) -> str:
+    return key if index == 0 else f"{key}-chunk-{index}"
+
+
 def _get_secret(plugin_id: str, connection_id: str, part: str, store: Any | None = None) -> str | None:
-    value = (store or _secret_store()).get(_key(plugin_id, connection_id, part))
-    return value if isinstance(value, str) and value else None
+    credential_store = store or _secret_store()
+    key = _key(plugin_id, connection_id, part)
+    raw_count = credential_store.get(_secret_chunk_count_key(key))
+    if raw_count is None:
+        value = credential_store.get(key)
+        return value if isinstance(value, str) and value else None
+    try:
+        count = int(raw_count)
+    except (TypeError, ValueError) as exc:
+        raise PluginOAuthError(500, "保存されたOAuth資格情報の形式が正しくありません。") from exc
+    if not 2 <= count <= MAX_SECRET_CHUNKS:
+        raise PluginOAuthError(500, "保存されたOAuth資格情報の形式が正しくありません。")
+    chunks = [credential_store.get(_secret_chunk_key(key, index)) for index in range(count)]
+    if any(not isinstance(chunk, str) or not chunk for chunk in chunks):
+        raise PluginOAuthError(500, "保存されたOAuth資格情報を完全に読み出せませんでした。")
+    return "".join(chunks)
+
+
+def _delete_secret(key: str, store: Any) -> None:
+    raw_count = store.get(_secret_chunk_count_key(key))
+    if raw_count is None:
+        chunk_count = 1
+    else:
+        try:
+            chunk_count = int(raw_count)
+        except (TypeError, ValueError):
+            chunk_count = MAX_SECRET_CHUNKS
+        if not 2 <= chunk_count <= MAX_SECRET_CHUNKS:
+            chunk_count = MAX_SECRET_CHUNKS
+    store.delete(_secret_chunk_count_key(key))
+    for index in range(chunk_count):
+        store.delete(_secret_chunk_key(key, index))
 
 
 def _set_secret(plugin_id: str, connection_id: str, part: str, value: str, store: Any | None = None) -> None:
-    (store or _secret_store()).set(_key(plugin_id, connection_id, part), value)
+    credential_store = store or _secret_store()
+    key = _key(plugin_id, connection_id, part)
+    raw_previous_count = credential_store.get(_secret_chunk_count_key(key))
+    try:
+        previous_count = int(raw_previous_count) if raw_previous_count is not None else 1
+    except (TypeError, ValueError):
+        previous_count = MAX_SECRET_CHUNKS
+    previous_count = max(1, min(previous_count, MAX_SECRET_CHUNKS))
+    chunks = [value[index:index + MAX_SECRET_CHUNK_CHARS] for index in range(0, len(value), MAX_SECRET_CHUNK_CHARS)] or [""]
+    if len(chunks) > MAX_SECRET_CHUNKS:
+        raise PluginOAuthError(413, "OAuth資格情報が保存上限を超えています。")
+    for index, chunk in enumerate(chunks):
+        credential_store.set(_secret_chunk_key(key, index), chunk)
+    if len(chunks) > 1:
+        credential_store.set(_secret_chunk_count_key(key), str(len(chunks)))
+    else:
+        credential_store.delete(_secret_chunk_count_key(key))
+    for index in range(len(chunks), previous_count):
+        credential_store.delete(_secret_chunk_key(key, index))
 
 
 def _delete_secrets(plugin_id: str, connection_id: str, store: Any | None = None) -> None:
     credential_store = store or _secret_store()
     for part in ("access", "refresh", "expires", "scopes"):
-        credential_store.delete(_key(plugin_id, connection_id, part))
+        _delete_secret(_key(plugin_id, connection_id, part), credential_store)
 
 
 def _validate_https_url(value: Any, *, allow_path: bool = True, check_public: bool = True) -> str:
@@ -368,6 +428,50 @@ def _same_auth_config(existing: dict[str, Any], requested: dict[str, Any]) -> bo
 
 def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _chatgpt_account_id_from_access_token(access_token: str) -> str | None:
+    """Read the optional ChatGPT account claim without returning token data to plugins."""
+    if not isinstance(access_token, str) or len(access_token) > 16_384:
+        return None
+    parts = access_token.split(".")
+    if len(parts) != 3 or not parts[1]:
+        return None
+    try:
+        payload = base64.b64decode(
+            parts[1] + "=" * (-len(parts[1]) % 4),
+            altchars=b"-_",
+            validate=True,
+        )
+        claims = json.loads(payload.decode("utf-8"))
+    except (binascii.Error, UnicodeDecodeError, ValueError, TypeError):
+        return None
+    if not isinstance(claims, dict):
+        return None
+    auth_claim = claims.get("https://api.openai.com/auth")
+    account_id = auth_claim.get("chatgpt_account_id") if isinstance(auth_claim, dict) else None
+    if not isinstance(account_id, str):
+        account_id = claims.get("chatgpt_account_id")
+    if (
+        not isinstance(account_id, str)
+        or not account_id
+        or len(account_id) > 256
+        or not account_id.isascii()
+        or any(ord(char) < 33 or ord(char) > 126 for char in account_id)
+    ):
+        return None
+    return account_id
+
+
+def _apply_access_token_headers(headers: dict[str, Any], access_token: str, origin: str) -> None:
+    for header in list(headers):
+        if isinstance(header, str) and header.lower() in {"authorization", "chatgpt-account-id"}:
+            del headers[header]
+    headers["Authorization"] = f"Bearer {access_token}"
+    if origin == "https://chatgpt.com":
+        account_id = _chatgpt_account_id_from_access_token(access_token)
+        if account_id:
+            headers["ChatGPT-Account-ID"] = account_id
 
 
 def _status_value(plugin_id: str, connection_id: str, profile: dict[str, Any]) -> dict[str, Any]:
@@ -714,14 +818,14 @@ def _save_tokens(
             if value:
                 _set_secret(plugin_id, connection_id, part, value, store)
             else:
-                store.delete(_key(plugin_id, connection_id, part))
+                _delete_secret(_key(plugin_id, connection_id, part), store)
     except Exception:
         for part, value in previous.items():
             try:
                 if value:
                     _set_secret(plugin_id, connection_id, part, value, store)
                 else:
-                    store.delete(_key(plugin_id, connection_id, part))
+                    _delete_secret(_key(plugin_id, connection_id, part), store)
             except Exception:
                 LOGGER.error("Plugin OAuth token rollback failed")
         raise
@@ -743,6 +847,7 @@ def _complete_authorization(pending: _PendingAuthorization, code: str, client_id
     }
     if profile.get("resource"):
         fields["resource"] = profile["resource"]
+    stage = "トークン交換"
     try:
         with _lock:
             if _pending.get(key) is not pending:
@@ -751,7 +856,9 @@ def _complete_authorization(pending: _PendingAuthorization, code: str, client_id
         with _lock:
             if _pending.get(key) is not pending:
                 return
+            stage = "安全な資格情報保存"
             _save_tokens(plugin_id, connection_id, token_data, profile, client_id, pending.nonce)
+            stage = "接続プロフィール保存"
             profiles = _read_profiles(plugin_id, directory)
             profiles[connection_id] = profile
             _write_profiles(plugin_id, profiles, directory)
@@ -763,10 +870,18 @@ def _complete_authorization(pending: _PendingAuthorization, code: str, client_id
                 _set_flow_status(key, pending=False, message=exc.message)
         return
     except Exception as exc:
-        LOGGER.warning("Plugin OAuth exchange failed: %s", type(exc).__name__)
+        LOGGER.warning("Plugin OAuth authorization failed during %s: %s", stage, type(exc).__name__)
+        message = "OAuth接続を保存できませんでした。"
+        try:
+            from project_assistant import ProjectAssistantError
+
+            if isinstance(exc, ProjectAssistantError):
+                message = exc.message
+        except ImportError:
+            pass
         with _lock:
             if _pending.get(key) is pending:
-                _set_flow_status(key, pending=False, message="OAuth接続を保存できませんでした。")
+                _set_flow_status(key, pending=False, message=message)
         return
 
 
@@ -827,10 +942,7 @@ def authenticated_request(
         raise PluginOAuthError(403, "OAuth接続は登録済みのAPIホストにだけ使用できます。")
     token = _refresh(plugin_id, connection_id, profile, directory=directory)
     safe_headers = dict(headers) if isinstance(headers, dict) else {}
-    for header in list(safe_headers):
-        if isinstance(header, str) and header.lower() == "authorization":
-            del safe_headers[header]
-    safe_headers["Authorization"] = f"Bearer {token}"
+    _apply_access_token_headers(safe_headers, token, origin)
     try:
         response = perform_plugin_network_request(
             url=url,
@@ -841,7 +953,7 @@ def authenticated_request(
         )
         if int(response.get("status", 0)) == 401 and _get_secret(plugin_id, connection_id, "refresh"):
             token = _refresh(plugin_id, connection_id, profile, force=True, directory=directory)
-            safe_headers["Authorization"] = f"Bearer {token}"
+            _apply_access_token_headers(safe_headers, token, origin)
             response = perform_plugin_network_request(
                 url=url,
                 method=method,

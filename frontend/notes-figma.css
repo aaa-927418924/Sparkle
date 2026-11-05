@@ -1,14 +1,14 @@
 /* Figma: AIリファレンス保存アプリ / ノート・タスク */
 
 .notes-page {
-  --notes-bg: #f4f3ee;
-  --notes-sidebar: #fff;
-  --notes-panel: #f4f3ee;
-  --notes-card: transparent;
-  --notes-border: #474747;
-  --notes-text: #5b5b5b;
-  --notes-muted: #77736d;
-  --notes-accent: #cc6d48;
+  --notes-bg: var(--theme-notes-background, #f4f3ee);
+  --notes-sidebar: var(--theme-notes-sidebar, #fff);
+  --notes-panel: var(--theme-notes-panel, #f4f3ee);
+  --notes-card: var(--theme-notes-card, transparent);
+  --notes-border: var(--theme-notes-border, #474747);
+  --notes-text: var(--theme-notes-text, #5b5b5b);
+  --notes-muted: var(--theme-notes-muted, #77736d);
+  --notes-accent: var(--theme-notes-accent, #cc6d48);
   min-height: 100vh;
   overflow: hidden;
   background: var(--notes-bg);
@@ -16,14 +16,14 @@
 }
 
 html[data-theme="dark"] .notes-page {
-  --notes-bg: #24273a;
-  --notes-sidebar: #202231;
-  --notes-panel: #f4f3ee;
-  --notes-card: transparent;
-  --notes-border: #ffffff;
-  --notes-text: #ffffff;
-  --notes-muted: #c8c5bd;
-  --notes-accent: #d77a50;
+  --notes-bg: var(--theme-notes-background, #24273a);
+  --notes-sidebar: var(--theme-notes-sidebar, #202231);
+  --notes-panel: var(--theme-notes-panel, #f4f3ee);
+  --notes-card: var(--theme-notes-card, transparent);
+  --notes-border: var(--theme-notes-border, #ffffff);
+  --notes-text: var(--theme-notes-text, #ffffff);
+  --notes-muted: var(--theme-notes-muted, #c8c5bd);
+  --notes-accent: var(--theme-notes-accent, #d77a50);
 }
 
 .notes-page .layout {
@@ -174,7 +174,7 @@ html[data-theme="dark"] .notes-page {
   border: 1px solid var(--notes-border);
   border-radius: 19px;
   background: transparent;
-  color: #5b5b5b;
+  color: var(--theme-task-text, var(--notes-text));
   box-shadow: none;
   position: relative;
   top: auto;
@@ -184,7 +184,7 @@ html[data-theme="dark"] .notes-page {
 .notes-page .panel-title {
   flex: 0 0 auto;
   margin: 0 0 22px;
-  color: #fff;
+  color: var(--theme-task-text, var(--notes-text));
   font-size: 18px;
   font-weight: 400;
   letter-spacing: -0.02em;
@@ -205,7 +205,7 @@ html[data-theme="dark"] .notes-page {
   padding: 7px 0;
   border: 0;
   border-radius: 0;
-  color: #5b5b5b;
+  color: var(--theme-task-text, var(--notes-text));
 }
 
 .notes-page .task-item:hover,
@@ -272,13 +272,13 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
 }
 
 .notes-page .task-title {
-  color: #fff;
+  color: var(--theme-task-text, var(--notes-text));
   font-size: 16px;
   line-height: 1.35;
 }
 
 .notes-page .task-item.done .task-title {
-  color: #92908a;
+  color: var(--theme-task-muted, var(--notes-muted));
 }
 
 .notes-page .task-priority {
@@ -289,7 +289,7 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
 .notes-page .task-due,
 .notes-page .task-clip,
 .notes-page .task-project {
-  color: #fff;
+  color: var(--theme-task-text, var(--notes-text));
 }
 
 .notes-page .task-actions {
@@ -298,7 +298,7 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
 
 .notes-page .task-edit,
 .notes-page .task-del {
-  color: #77736d;
+  color: var(--theme-task-muted, var(--notes-muted));
   padding: 2px;
 }
 
@@ -322,12 +322,12 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
   border: 1px solid #b1ada1;
   border-radius: 8px;
   background: transparent;
-  color: #fff;
+  color: var(--theme-task-text, var(--notes-text));
   font-size: 13px;
 }
 
 .notes-page .task-add input::placeholder {
-  color: #77736d;
+  color: var(--theme-task-muted, var(--notes-muted));
 }
 
 .notes-page .task-add input:focus {
@@ -337,7 +337,7 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
 
 .notes-page .task-empty {
   flex: 1 1 auto;
-  color: #77736d;
+  color: var(--theme-task-muted, var(--notes-muted));
   font-size: 13px;
 }
 
@@ -367,8 +367,8 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
   padding: 14px 14px 12px;
   border: 1px solid var(--notes-border);
   border-radius: 19px;
-  background: var(--notes-card);
-  color: var(--notes-text);
+  background: var(--theme-memo-card, var(--notes-card));
+  color: var(--theme-memo-text, var(--notes-text));
   box-shadow: none;
   overflow: hidden;
   transition: none;
@@ -382,7 +382,7 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
 
 .notes-page .memo-title {
   margin: 0 0 8px;
-  color: var(--notes-text);
+  color: var(--theme-memo-text, var(--notes-text));
   font-size: 14px;
   font-weight: 400;
   line-height: 1.3;
@@ -403,7 +403,7 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
 }
 
 .notes-page .memo-preview {
-  color: var(--notes-text);
+  color: var(--theme-memo-text, var(--notes-text));
   font-size: 12px;
   line-height: 1.45;
 }
@@ -419,7 +419,7 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
 }
 
 .notes-page .memo-card .pin-btn {
-  color: var(--notes-text);
+  color: var(--theme-memo-text, var(--notes-text));
 }
 
 .notes-page .memo-card-actions {
@@ -472,7 +472,7 @@ html[data-theme="dark"] .notes-page .task-check input:checked {
 
 .notes-page .empty {
   height: 100%;
-  color: var(--notes-muted);
+  color: var(--theme-memo-muted, var(--notes-muted));
 }
 
 .notes-page .modal {

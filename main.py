@@ -31,6 +31,7 @@ from setup import (
 from remote_auth import get_auth_store, get_client_auth_store, get_mcp_auth_store
 from remote_client import RemoteClientError, get_remote_client
 from remote_proxy import RemoteClientProxy
+from plugin_manager import get_authoring_skill_status
 from plugin_api import router as plugin_router
 
 UPLOADS_DIR = get_uploads_dir()
@@ -421,6 +422,15 @@ def home_page():
     return _frontend_page("index.html")
 
 
+@app.get("/Plugin/{plugin_id}", include_in_schema=False)
+def plugin_feature_page(plugin_id: str):
+    if get_migration_status().get("required"):
+        return RedirectResponse(url="/Migration")
+    if get_setup_status().get("required"):
+        return RedirectResponse(url="/Setup")
+    return _frontend_page("plugin-page.html")
+
+
 @app.get("/Migration", include_in_schema=False)
 def migration_page():
     return _frontend_page("migration.html")
@@ -472,6 +482,17 @@ app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="fronte
 
 @app.on_event("startup")
 def _startup() -> None:
+    # Inspect each AI's managed skill folder on every application launch.
+    # This is read-only; the plugin settings page performs its own fresh check
+    # before deciding whether the installation control should be hidden.
+    try:
+        app.state.authoring_skill_status = get_authoring_skill_status()
+        app.state.authoring_skill_status_error = None
+    except Exception as error:
+        # Missing bundled skill data must not prevent the core app from starting.
+        app.state.authoring_skill_status = None
+        app.state.authoring_skill_status_error = str(error)
+
     if get_migration_status().get("required") or get_setup_status().get("required"):
         app.state.data_initialized = False
         return

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import mimetypes
+import re
 from pathlib import Path
 from contextlib import ExitStack, contextmanager
 from typing import Iterator, Literal
@@ -63,6 +65,7 @@ from plugin_manager import (
     PluginPermissionRequired,
     export_plugin_archive,
     get_active_theme,
+    get_active_theme_page_stylesheet,
     get_authoring_skill_status,
     get_plugin_ui_state,
     install_authoring_skill,
@@ -95,6 +98,162 @@ PANEL_CONTENT_SECURITY_POLICY = (
     "object-src 'none'; "
     "sandbox allow-scripts"
 )
+
+PLUGIN_PANEL_THEME_BASE_CSS = """
+html[data-sparkle-plugin-theme] {
+  color-scheme: var(--sparkle-theme-color-scheme, light dark);
+  color: var(--sparkle-theme-text, CanvasText);
+  background-color: var(--sparkle-theme-background, transparent);
+}
+html[data-sparkle-plugin-theme] body {
+  color: var(--sparkle-theme-text, CanvasText);
+  background-color: var(--sparkle-theme-background, transparent);
+}
+html[data-sparkle-plugin-theme] :where(a) {
+  color: var(--sparkle-theme-accent, currentColor);
+}
+html[data-sparkle-plugin-theme] :where(button, [role="button"]) {
+  color: var(--sparkle-theme-action-button-text, var(--sparkle-theme-text, inherit));
+  background-color: var(--sparkle-theme-action-button-background, var(--sparkle-theme-surface, transparent));
+  border-color: var(--sparkle-theme-action-button-border, var(--sparkle-theme-border, currentColor));
+}
+html[data-sparkle-plugin-theme] :where(button, [role="button"]):hover {
+  color: var(--sparkle-theme-action-button-hover-text, var(--sparkle-theme-action-button-text, var(--sparkle-theme-text, inherit)));
+  background-color: var(--sparkle-theme-action-button-hover-background, var(--sparkle-theme-surface-hover, transparent));
+  border-color: var(--sparkle-theme-action-button-hover-border, var(--sparkle-theme-border-strong, currentColor));
+}
+html[data-sparkle-plugin-theme] :where(button[aria-pressed="true"], button[aria-selected="true"], [role="button"][aria-pressed="true"], [role="tab"][aria-selected="true"]) {
+  color: var(--sparkle-theme-control-active-text, var(--sparkle-theme-text, inherit));
+  background-color: var(--sparkle-theme-control-active-background, var(--sparkle-theme-surface-active, var(--sparkle-theme-surface, transparent)));
+}
+html[data-sparkle-plugin-theme] :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  color: var(--sparkle-theme-control-text, var(--sparkle-theme-text, inherit));
+  background-color: var(--sparkle-theme-control-background, var(--sparkle-theme-surface, transparent));
+  border-color: var(--sparkle-theme-border, currentColor);
+}
+html[data-sparkle-plugin-theme] :where(input[type="checkbox"], input[type="radio"]) {
+  accent-color: var(--sparkle-theme-checkbox-accent, var(--sparkle-theme-accent, auto));
+}
+"""
+
+PLUGIN_PANEL_THEME_RUNTIME = r"""
+(() => {
+  "use strict";
+  const idPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+  const keyPattern = /^[a-z][A-Za-z0-9]{0,63}$/;
+  const colorPattern = /^(?:#[\da-f]{6}(?:[\da-f]{2})?|rgba?\(\s*(?:\d{1,3}%?\s*,\s*){2}\d{1,3}%?(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\))$/i;
+  const iconFilters = {
+    source: "none",
+    dark: "brightness(0) saturate(100%)",
+    light: "brightness(0) saturate(100%) invert(1)",
+  };
+  const appliedProperties = new Set();
+  const root = document.documentElement;
+
+  function colorScheme(value) {
+    const match = /^#([\da-f]{6})/i.exec(value || "");
+    if (!match) return "light dark";
+    const rgb = [0, 2, 4].map((index) => parseInt(match[1].slice(index, index + 2), 16) / 255)
+      .map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+    const luminance = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+    return luminance > 0.45 ? "light" : "dark";
+  }
+
+  function stylesheetFor(theme) {
+    let link = document.getElementById("sparkle-plugin-theme-pages");
+    if (!theme) {
+      link?.remove();
+      return;
+    }
+    if (!document.body) {
+      document.addEventListener("DOMContentLoaded", () => stylesheetFor(theme), { once: true });
+      return;
+    }
+    if (!link) {
+      link = document.createElement("link");
+      link.id = "sparkle-plugin-theme-pages";
+      link.rel = "stylesheet";
+      link.setAttribute("itemprop", "theme-stylesheet");
+    }
+    link.href = `/plugins/${encodeURIComponent(theme.id)}/plugin-pages.css`;
+    document.body.append(link);
+  }
+
+  function apply(theme) {
+    for (const property of appliedProperties) root.style.removeProperty(property);
+    appliedProperties.clear();
+    root.removeAttribute("data-sparkle-plugin-theme");
+
+    if (!theme || typeof theme !== "object" || !idPattern.test(theme.id || "")) {
+      stylesheetFor(null);
+      return;
+    }
+
+    const colors = theme.colors && typeof theme.colors === "object" ? theme.colors : {};
+    for (const [key, value] of Object.entries(colors)) {
+      if (!keyPattern.test(key) || typeof value !== "string" || !colorPattern.test(value.trim())) continue;
+      const property = `--sparkle-theme-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+      root.style.setProperty(property, value.trim());
+      appliedProperties.add(property);
+    }
+    const icons = theme.icons && typeof theme.icons === "object" ? theme.icons : {};
+    for (const [key, mode] of Object.entries(icons)) {
+      if (!Object.prototype.hasOwnProperty.call(iconFilters, mode)) continue;
+      const property = `--sparkle-theme-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}-icon-filter`;
+      root.style.setProperty(property, iconFilters[mode]);
+      appliedProperties.add(property);
+    }
+    root.style.setProperty("--sparkle-theme-color-scheme", colorScheme(colors.background));
+    appliedProperties.add("--sparkle-theme-color-scheme");
+    root.dataset.sparklePluginTheme = theme.id;
+    stylesheetFor(theme);
+  }
+
+  apply(window.__SPARKLE_PLUGIN_THEME_BOOTSTRAP__ || null);
+  window.addEventListener("message", (event) => {
+    if (event.source !== window.parent || event.data?.type !== "sparkle-plugin-theme") return;
+    apply(event.data.theme || null);
+  });
+})();
+"""
+
+
+def _safe_panel_theme_payload(theme: dict | None) -> str:
+    if not isinstance(theme, dict):
+        return "null"
+    payload = {
+        "id": theme.get("id"),
+        "colors": theme.get("colors", {}),
+        "icons": theme.get("icons", {}),
+    }
+    return (
+        json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+    )
+
+
+def _inject_panel_theme_runtime(html: str, theme: dict | None) -> str:
+    payload = _safe_panel_theme_payload(theme)
+    script = (
+        f"window.__SPARKLE_PLUGIN_THEME_BOOTSTRAP__={payload};\n"
+        + PLUGIN_PANEL_THEME_RUNTIME
+    )
+    injection = (
+        f"<style id=\"sparkle-plugin-theme-base\">{PLUGIN_PANEL_THEME_BASE_CSS}</style>"
+        f"<script>{script}</script>"
+    )
+    closing_head = re.search(r"</head\s*>", html, flags=re.IGNORECASE)
+    if closing_head:
+        return html[:closing_head.start()] + injection + html[closing_head.start():]
+    opening_head = re.search(r"<head\b[^>]*>", html, flags=re.IGNORECASE)
+    if opening_head:
+        return html[:opening_head.end()] + injection + html[opening_head.end():]
+    opening_html = re.search(r"<html\b[^>]*>", html, flags=re.IGNORECASE)
+    if opening_html:
+        return html[:opening_html.end()] + f"<head>{injection}</head>" + html[opening_html.end():]
+    return f"<head>{injection}</head>" + html
 
 
 class PluginEnabledRequest(BaseModel):
@@ -599,11 +758,30 @@ def get_plugin_panel(plugin_id: str):
         raise _plugin_http_error(exc) from exc
     if path.stat().st_size > 2 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="プラグイン画面のサイズが上限を超えています。")
-    return FileResponse(
-        path,
+    try:
+        panel_html = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise HTTPException(status_code=415, detail="panel.htmlはUTF-8で作成してください。") from exc
+    theme = get_active_theme()
+    return Response(
+        content=_inject_panel_theme_runtime(panel_html, theme),
         media_type="text/html; charset=utf-8",
         headers={
             "Content-Security-Policy": PANEL_CONTENT_SECURITY_POLICY,
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer",
+        },
+    )
+
+
+@router.get("/{plugin_id}/plugin-pages.css")
+def get_active_theme_plugin_page_stylesheet(plugin_id: str):
+    stylesheet = get_active_theme_page_stylesheet(plugin_id)
+    return Response(
+        content=stylesheet,
+        media_type="text/css; charset=utf-8",
+        headers={
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
             "Referrer-Policy": "no-referrer",

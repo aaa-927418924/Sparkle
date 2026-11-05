@@ -44,6 +44,7 @@ Files:
 ~~~~text
 manifest.json
 theme.json
+plugin-pages.css (optional; theme plugins only)
 ~~~~
 
 manifest.json:
@@ -79,14 +80,77 @@ theme.json:
     "text": "#EEF2FF",
     "muted": "#AAB4CF",
     "accent": "#88C0D0",
-    "accentSoft": "#314A5D"
+    "accentSoft": "#314A5D",
+    "sidebarText": "#EEF2FF",
+    "sidebarTextActive": "#88C0D0",
+    "projectCard": "#2B3550",
+    "projectCardText": "#EEF2FF",
+    "projectCardMuted": "#AAB4CF",
+    "homeText": "#EEF2FF",
+    "homeMuted": "#AAB4CF",
+    "homeCard": "#2B3550"
+  },
+  "icons": {
+    "sidebar": "light",
+    "sidebarActive": "light"
   }
 }
 ~~~~
 
 Every color property is optional, but at least one is required. Values must be
-hex colors or simple rgb() / rgba() values. Do not add CSS or executable code
-to a theme package.
+hex colors or simple rgb() / rgba() values. Keep `theme.json` declarative. A
+theme may optionally include a root-level `plugin-pages.css` to customize the
+appearance of feature-plugin pages. Sparkle loads this stylesheet into every
+feature panel while that theme is active; feature plugins do not need to add
+theme-specific code. The stylesheet affects only the sandboxed panel document,
+not Sparkle's host UI or other plugins.
+
+`plugin-pages.css` may use normal selectors and the theme variables listed
+below. It must not contain JavaScript, CSS escapes, `@import`, `url()`,
+`@font-face`, or other external resources. Keep it at or below 256 KiB. Sparkle's
+panel Content Security Policy also blocks outbound connections and external
+images/fonts. Theme packages never receive data permissions through this file.
+
+Global color keys are `background`, `surface`, `surfaceRaised`, `surfaceHover`,
+`surfaceActive`, `sidebar`, `border`, `borderStrong`, `text`, `muted`, `accent`,
+and `accentSoft`. The following optional component keys let a theme choose
+colors for legacy page layouts independently:
+
+| Area | Keys |
+| --- | --- |
+| Sidebar | `sidebarText`, `sidebarTextActive`, `sidebarHover`, `sidebarActive` |
+| Project cards and details | `projectCard`, `projectCardText`, `projectCardMuted`, `projectDetailText` |
+| Task panel | `taskPanel`, `taskText`, `taskMuted`, `taskAccent` |
+| Memo cards | `memoCard`, `memoText`, `memoMuted` |
+| Notes and tasks page | `notesBackground`, `notesSidebar`, `notesPanel`, `notesCard`, `notesText`, `notesMuted`, `notesBorder`, `notesAccent` |
+| Home page | `homeBackground`, `homeSidebar`, `homeSurface`, `homeText`, `homeMuted`, `homeBorder`, `homeAccent`, `homeCard`, `homeActive`, `homeActionSurface`, `homeActionText`, `homeTagText`, `homeTagBorder`, `homeTagActive`, `homeTagActiveText` |
+| Filter and category controls | `controlBackground`, `controlText`, `controlHoverBackground`, `controlHoverText`, `controlActiveBackground`, `controlActiveText` |
+| Action buttons | `actionButtonBackground`, `actionButtonText`, `actionButtonBorder`, `actionButtonHoverBackground`, `actionButtonHoverText`, `actionButtonHoverBorder` |
+| Checkboxes | `checkboxBackground`, `checkboxBorder`, `checkboxAccent` |
+
+In `plugin-pages.css`, a color key such as `surfaceRaised` is available as
+`var(--sparkle-theme-surface-raised)`. All color keys use the same
+camelCase-to-kebab-case mapping. Icon modes are available as
+`--sparkle-theme-sidebar-icon-filter`, `--sparkle-theme-sidebar-active-icon-filter`,
+`--sparkle-theme-action-icon-filter`, `--sparkle-theme-action-active-icon-filter`,
+and `--sparkle-theme-inline-icon-filter`. Sparkle also applies the theme's
+background/text tokens to the panel body and its control tokens to common
+buttons, pressed tabs, inputs, selects, textareas, and checkboxes automatically.
+Theme CSS is loaded after the panel content so it can provide broader or more
+specific rules for plugins that use custom components.
+
+Every component key is optional. When omitted, that component keeps its normal
+palette behavior. For light themes, set dark foreground colors for home cards,
+project cards, task text, and sidebar labels wherever needed. Check the actual
+foreground/background pairs and active states before exporting the ZIP.
+
+The optional `icons` object supports `sidebar`, `sidebarActive`, `action`,
+`actionActive`, and `inline` keys. Each accepts `source` (use the SVG's original
+color), `dark` (black), or `light` (white). `sidebar` and `sidebarActive`
+control navigation icons; `action` and `actionActive` control card/action
+buttons; `inline` controls small metadata icons such as project counts. Set
+these explicitly when the source color would disappear on the chosen surface.
+Other values and fields are rejected.
 
 ## Feature panel plugin
 
@@ -101,6 +165,13 @@ assets/...
 Set type to feature, include panel.html at the package root, and list only the
 permissions the panel uses. Data and capability permissions are opt-in and
 independent:
+
+`panel_display` is optional for feature plugins. Omit it or set it to `dialog`
+to open the panel in the existing modal. Set it to `page` to open the same
+sandboxed `panel.html` in Sparkle's main content area, with a host-provided
+Back button. The sidebar and window title bar remain available. This choice
+does not require `ui.customize` and does not change the panel's permissions or
+message bridge. Theme plugins must not set `panel_display`.
 
 | Permission | Allows |
 | --- | --- |
@@ -291,10 +362,24 @@ window.addEventListener("message", (event) => {
     // context is { view: "list" | "detail", project_id?: number }
     return;
   }
+  if (event.data?.type === "sparkle-plugin-theme") {
+    // theme is null or { id, name?, colors, icons? }; values are allowlisted.
+    // Apply the colors and icon modes to this panel's own elements.
+    return;
+  }
   if (event.data?.type !== "sparkle-plugin-response") return;
   // event.data contains requestId, ok, and (for storage.get) value.
 });
 ~~~~
+
+Sparkle sends `sparkle-plugin-theme` after the panel loads and whenever the
+active plugin theme changes. The payload contains only the active theme's ID,
+optional name, validated color tokens, and allowlisted icon modes; it never
+contains host markup or data permissions. A `null` theme means no plugin theme
+is active. Sparkle automatically applies the validated colors to common panel
+elements and loads the active theme's optional `plugin-pages.css`. The panel may
+still handle the message to style custom behavior in its own document, without
+querying the Sparkle page.
 
 The storage bridge works only when storage is declared, granted, and the plugin
 is enabled. Values are isolated by plugin ID and limited to 2 MB.
@@ -350,6 +435,7 @@ Example API v3 manifest:
   "api_version": 3,
   "type": "feature",
   "description": "Reviews web clips in an isolated panel.",
+  "panel_display": "page",
   "permissions": ["clips.read", "projects.read", "storage"]
 }
 ~~~~
@@ -373,6 +459,7 @@ Declare the UI permission and contributions in `manifest.json`:
   "api_version": 2,
   "type": "feature",
   "description": "A small game in a Sparkle panel and sidebar entry.",
+  "panel_display": "page",
   "permissions": ["ui.customize"],
   "priority": 100,
   "contributes": {

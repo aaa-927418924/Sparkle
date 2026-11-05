@@ -7,6 +7,112 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendInteractionTests(unittest.TestCase):
+    def test_plugin_theme_exposes_component_colors_controls_and_icon_modes(self):
+        css = (ROOT / "frontend" / "codex-shell.css").read_text(encoding="utf-8")
+        home = (ROOT / "frontend" / "home-figma.css").read_text(encoding="utf-8")
+        notes = (ROOT / "frontend" / "notes-figma.css").read_text(encoding="utf-8")
+        theme = (ROOT / "frontend" / "plugin-theme.js").read_text(encoding="utf-8")
+        plugin_ui = (ROOT / "frontend" / "plugin-ui.js").read_text(encoding="utf-8")
+
+        self.assertIn("color: var(--theme-sidebar-text, var(--text));", css)
+        self.assertIn("var(--sidebar-icon-filter, brightness(0) invert(1))", css)
+        self.assertIn("var(--sidebar-active-icon-filter", css)
+        self.assertIn("var(--theme-project-card-text, var(--text))", css)
+        self.assertIn("var(--theme-task-text, var(--notes-text))", css)
+        self.assertIn("var(--theme-memo-text, var(--notes-text))", notes)
+        self.assertIn("var(--theme-home-text, #f4f3ee)", home)
+        self.assertIn('sidebarActive: "--sidebar-active-icon-filter"', theme)
+        self.assertIn('controlActiveText: "--theme-control-active-text"', theme)
+        self.assertIn('checkboxAccent: "--theme-checkbox-accent"', theme)
+        self.assertIn('actionActive: "--action-active-icon-filter"', theme)
+        self.assertIn("--theme-checkbox-background", css)
+        self.assertIn("--theme-action-button-hover-background", css)
+        self.assertIn("html[data-sparkle-plugin-theme] .sidebar.sidebar--index .side-btn.active", css)
+        self.assertIn("html[data-sparkle-plugin-theme] .sidebar.sidebar--index .side-btn.active .icon-nav", css)
+        self.assertIn("var(--theme-sidebar-text-active, var(--theme-sidebar-text, var(--accent)))", css)
+        self.assertIn("html[data-sparkle-plugin-theme] .home-page .cat-btn.active", css)
+        self.assertIn("var(--theme-home-tag-active-text, var(--theme-control-active-text, var(--text)))", css)
+        self.assertIn("html[data-sparkle-plugin-theme] .home-page .act-btn:hover", css)
+        self.assertIn("var(--theme-action-button-hover-background, var(--surface-hover))", css)
+        self.assertIn('type: "sparkle-plugin-theme"', plugin_ui)
+        self.assertIn('"sparkle-plugin-theme-changed"', plugin_ui)
+
+    def test_plugin_bridge_exposes_namespaced_session_storage(self):
+        source = (ROOT / "frontend" / "plugin-ui.js").read_text(encoding="utf-8")
+
+        self.assertIn('data.method === "session.get"', source)
+        self.assertIn('data.method === "session.set"', source)
+        self.assertIn('data.method === "session.remove"', source)
+        self.assertIn('window.sessionStorage.getItem(key)', source)
+        self.assertIn('window.sessionStorage.setItem(key, serialized)', source)
+        self.assertIn('sparkle.plugin-session.${encodeURIComponent(plugin.id)}.${data.key}', source)
+
+    def test_plugin_feature_page_uses_a_real_route_and_marks_its_sidebar_item_active(self):
+        main = (ROOT / "main.py").read_text(encoding="utf-8")
+        source = (ROOT / "frontend" / "plugin-ui.js").read_text(encoding="utf-8")
+        page = (ROOT / "frontend" / "plugin-page.html").read_text(encoding="utf-8")
+        css = (ROOT / "frontend" / "plugin-ui.css").read_text(encoding="utf-8")
+
+        self.assertIn('@app.get("/Plugin/{plugin_id}"', main)
+        self.assertIn('_frontend_page("plugin-page.html")', main)
+        self.assertIn('window.location.assign(pluginPageHref(plugin.id))', source)
+        self.assertIn('button.classList.add("active")', source)
+        self.assertIn('button.setAttribute("aria-current", "page")', source)
+        self.assertIn("window.history.back()", source)
+        self.assertIn('id="pluginFeaturePage" class="main plugin-feature-page"', page)
+        self.assertIn('aria-label="プラグインページ"', page)
+        self.assertIn('sandbox="allow-scripts"', page)
+        self.assertNotIn("plugin-feature-page-header", page)
+        self.assertNotIn("plugin-feature-page-title", page)
+        self.assertNotIn("plugin-feature-page-back", page)
+        self.assertNotIn("plugin-feature-page-header", source)
+        self.assertNotIn("plugin-feature-page-title", source)
+        self.assertNotIn("plugin-feature-page-back", source)
+        self.assertIn("if (!page || !frame || !status) return null;", source)
+        self.assertNotIn("previousMainHidden", source)
+        self.assertIn(".plugin-page-shell .plugin-feature-page {\n  background: transparent;", css)
+        self.assertIn("background: transparent;", css[css.index(".plugin-feature-page-frame {"):])
+
+    def test_ai_chat_page_allows_clip_link_popups_only_for_ai_chat(self):
+        source = (ROOT / "frontend" / "plugin-ui.js").read_text(encoding="utf-8")
+        page = (ROOT / "frontend" / "plugin-page.html").read_text(encoding="utf-8")
+
+        self.assertIn('sandbox="allow-scripts"', page)
+        self.assertIn('parts.frame.setAttribute("sandbox", plugin.id === "ai-chat"', source)
+        self.assertIn('"allow-scripts allow-popups allow-popups-to-escape-sandbox"', source)
+        self.assertIn(': "allow-scripts");', source)
+
+    def test_ai_chat_external_link_bridge_validates_frame_and_web_url(self):
+        source = (ROOT / "frontend" / "plugin-ui.js").read_text(encoding="utf-8")
+        page = (ROOT / "frontend" / "plugin-page.html").read_text(encoding="utf-8")
+
+        self.assertIn('data?.type === "sparkle-plugin-open-link"', source)
+        self.assertIn('activePanelId !== "ai-chat" || activePanelDisplay !== "page"', source)
+        self.assertIn('url.protocol !== "http:" && url.protocol !== "https:"', source)
+        self.assertIn('window.open(url.href, "_blank", "noopener,noreferrer")', source)
+        self.assertIn("plugin-ui-v7-ai-chat-fixed-viewport", page)
+        self.assertIn("external-link-bridge", page)
+
+    def test_plugin_page_viewport_clips_main_scrollbar_and_bottom_gap(self):
+        css = (ROOT / "frontend" / "plugin-ui.css").read_text(encoding="utf-8")
+
+        self.assertIn("padding-bottom: 0;", css[css.index(".plugin-feature-page {"):])
+        self.assertIn("overflow: hidden !important;", css)
+        self.assertIn("scrollbar-width: none !important;", css)
+        self.assertIn(".main.plugin-feature-page::-webkit-scrollbar", css)
+        self.assertIn("100dvh - var(--app-titlebar-height)", css)
+        self.assertIn("body.plugin-page-shell", css)
+
+    def test_plugin_sidebar_items_restore_from_session_cache_before_network_refresh(self):
+        source = (ROOT / "frontend" / "plugin-ui.js").read_text(encoding="utf-8")
+        refresh = source[source.index("async function refresh()") : source.index('window.addEventListener("message"')]
+
+        self.assertIn('const SIDEBAR_CACHE_KEY = "sparkle.plugin-ui.sidebar-items.v1";', source)
+        self.assertIn("function restoreCachedSidebarItems()", source)
+        self.assertIn("restoreCachedSidebarItems();", source)
+        self.assertLess(source.index("restoreCachedSidebarItems();"), source.index("void refresh();"))
+        self.assertNotIn("sidebar_items: [],", refresh)
+
     def test_home_tag_filters_render_as_individual_removable_buttons(self):
         home = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
         source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")

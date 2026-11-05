@@ -1,4 +1,7 @@
+import base64
+import json
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -183,6 +186,37 @@ class PluginOAuthTests(unittest.TestCase):
                     directory=self.plugins,
                 )
 
+    def test_chatgpt_account_header_is_derived_from_the_private_access_token(self):
+        config = self.config()
+        config["api_origin"] = "https://chatgpt.com"
+        with patch("plugin_oauth._public_address", return_value="93.184.216.34"):
+            profile = plugin_oauth._validate_config(config, "test-plugin")
+        profile["registered_client_id"] = profile["client_id"]
+        plugin_oauth._write_profiles("test-plugin", {"codex-plan": profile}, self.plugins)
+        payload = base64.urlsafe_b64encode(json.dumps({
+            "https://api.openai.com/auth": {"chatgpt_account_id": "account-123"},
+        }).encode("utf-8")).decode("ascii").rstrip("=")
+        access_token = "header." + payload + ".signature"
+        self.store.values.update({
+            plugin_oauth._key("test-plugin", "codex-plan", "access"): access_token,
+            plugin_oauth._key("test-plugin", "codex-plan", "expires"): "4102444800",
+        })
+        with patch("plugin_oauth._secret_store", return_value=self.store), patch(
+            "plugin_oauth.perform_plugin_network_request",
+            return_value={"status": 200, "headers": {}, "body": "{}"},
+        ) as request:
+            plugin_oauth.authenticated_request(
+                "test-plugin",
+                "codex-plan",
+                url="https://chatgpt.com/backend-api/codex/models?client_version=0.166.0",
+                headers={"ChatGPT-Account-ID": "plugin-controlled", "Authorization": "Bearer plugin-controlled"},
+                directory=self.plugins,
+            )
+
+        headers = request.call_args.kwargs["headers"]
+        self.assertEqual(headers["ChatGPT-Account-ID"], "account-123")
+        self.assertEqual(headers["Authorization"], "Bearer " + access_token)
+
     def test_disconnect_and_permission_cleanup_remove_plugin_tokens_and_profiles(self):
         with patch("plugin_oauth._public_address", return_value="93.184.216.34"):
             profile = plugin_oauth._validate_config(self.config(), "test-plugin")
@@ -195,6 +229,67 @@ class PluginOAuthTests(unittest.TestCase):
             plugin_oauth.clear_plugin_connections("test-plugin", self.plugins)
         self.assertFalse(self.store.values)
         self.assertFalse((self.plugins.parent / "plugin-data" / "test-plugin" / "oauth-connections.json").exists())
+
+    def test_large_oauth_tokens_are_chunked_for_credential_manager_storage(self):
+        token = "codex-token-" + ("x" * 10_000)
+        with patch("plugin_oauth._secret_store", return_value=self.store):
+            plugin_oauth._save_tokens(
+                "test-plugin",
+                "codex-plan",
+                {"access_token": token, "expires_in": 3600},
+                {"scopes": []},
+                "public-client-id",
+                "",
+                validate_id_token=False,
+            )
+            self.assertEqual(plugin_oauth._get_secret("test-plugin", "codex-plan", "access", self.store), token)
+            self.assertLessEqual(
+                max(len(value) for value in self.store.values.values()),
+                plugin_oauth.MAX_SECRET_CHUNK_CHARS,
+            )
+
+            plugin_oauth._set_secret("test-plugin", "codex-plan", "access", "short-token", self.store)
+            self.assertEqual(plugin_oauth._get_secret("test-plugin", "codex-plan", "access", self.store), "short-token")
+            self.assertFalse(any("-chunk-" in key for key in self.store.values))
+            plugin_oauth._delete_secrets("test-plugin", "codex-plan", self.store)
+        self.assertFalse(self.store.values)
+
+    def test_safe_credential_store_error_is_reported_after_oauth_callback(self):
+        class SafeCredentialStoreError(Exception):
+            def __init__(self, message):
+                super().__init__(message)
+                self.message = message
+
+        assistant_module = types.ModuleType("project_assistant")
+        assistant_module.ProjectAssistantError = SafeCredentialStoreError
+
+        class FailingSecretStore(FakeSecretStore):
+            def set(self, key, value):
+                raise SafeCredentialStoreError("秘密情報を保存できませんでした。")
+
+        pending = plugin_oauth._PendingAuthorization(
+            plugin_id="test-plugin",
+            connection_id="codex-plan",
+            profile={"scopes": []},
+            state="state",
+            nonce="nonce",
+            verifier="verifier",
+            redirect_uri="http://127.0.0.1:43123/auth/callback",
+            client_id="public-client-id",
+            server=FakeHttpServer(None, None),
+        )
+        key = ("test-plugin", "codex-plan")
+        plugin_oauth._pending[key] = pending
+        with patch.dict("sys.modules", {"project_assistant": assistant_module}), patch(
+            "plugin_oauth._secret_store", return_value=FailingSecretStore()
+        ), patch(
+            "plugin_oauth._post_token_form", return_value={"access_token": "secret-token", "expires_in": 3600}
+        ):
+            plugin_oauth._complete_authorization(pending, "authorization-code", "public-client-id", self.plugins)
+
+        self.assertEqual(plugin_oauth._flow_status[key]["message"], "秘密情報を保存できませんでした。")
+        plugin_oauth._pending.pop(key, None)
+        plugin_oauth._flow_status.pop(key, None)
 
     def test_permission_revoke_during_token_exchange_cannot_restore_credentials(self):
         with patch("plugin_oauth._public_address", return_value="93.184.216.34"):

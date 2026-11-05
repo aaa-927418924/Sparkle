@@ -2,6 +2,7 @@
   "use strict";
 
   const apiRoot = "/plugins";
+  const REQUIRED_SKILL_AGENTS = ["OpenCode", "Codex", "Claude Code"];
   const elements = {
     skillCard: document.getElementById("pluginSkillCard"),
     skillButton: document.getElementById("pluginSkillInstall"),
@@ -17,7 +18,6 @@
     categoryPanels: Array.from(document.querySelectorAll("[data-settings-category-panel]")),
     generalPanel: document.getElementById("generalSettingsPanel"),
     pluginThemeSelect: document.getElementById("pluginThemeSelect"),
-    pluginThemeStatus: document.getElementById("pluginThemeStatus"),
   };
   if (!elements.list || !elements.skillButton) return;
 
@@ -72,42 +72,46 @@
     }
     if (elements.generalPanel) elements.generalPanel.hidden = category === "plugins";
     for (const panel of elements.categoryPanels) {
-      panel.hidden = panel.dataset.settingsCategoryPanel !== category;
+      const categoryMismatch = panel.dataset.settingsCategoryPanel !== category;
+      const legacyFeatureDisabled = panel.dataset.legacyFeatureEnabled === "false";
+      panel.hidden = categoryMismatch || legacyFeatureDisabled;
     }
     document.querySelector(".settings-main")?.scrollTo({ top: 0, behavior: "auto" });
   }
 
-  function populateThemeSelect(activeTheme) {
+  function populateThemeSelect(activeTheme, appearanceTheme) {
     const select = elements.pluginThemeSelect;
     if (!select) return;
 
-    const options = [new Option("Sparkle標準テーマ", "")];
+    const options = [
+      new Option("Catppuccin - Macchiato", "catppuccin"),
+      new Option("カスタムテーマ", "custom"),
+    ];
     const enabledThemes = plugins.filter((plugin) => plugin.type === "theme" && plugin.enabled);
     for (const plugin of enabledThemes) {
-      options.push(new Option(plugin.name || plugin.id, plugin.id));
+      options.push(new Option(plugin.name || plugin.id, `plugin:${plugin.id}`));
     }
     select.replaceChildren(...options);
 
     const activeId = typeof activeTheme?.id === "string" && enabledThemes.some((plugin) => plugin.id === activeTheme.id)
-      ? activeTheme.id
-      : "";
-    select.value = activeId;
-    setText(
-      elements.pluginThemeStatus,
-      activeId
-        ? (enabledThemes.find((plugin) => plugin.id === activeId)?.name || activeId) + "を適用中です。"
-        : "Sparkle標準テーマを使用中です。",
-    );
+      ? `plugin:${activeTheme.id}`
+      : appearanceTheme === "custom" ? "custom" : "catppuccin";
+    select.value = options.some((option) => option.value === activeId) ? activeId : "catppuccin";
   }
 
   async function refreshThemeSettings() {
     if (!elements.pluginThemeSelect) return;
     try {
+      if (!window.SparkleAppearanceTheme && document.readyState === "loading") {
+        await new Promise((resolve) => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
+      }
+      await window.SparkleAppearanceTheme?.ready;
       const body = await request("/active-theme", { cache: "no-store" });
-      populateThemeSelect(body.theme || null);
+      if (body.theme) await window.SparkleAppearanceTheme?.selectTheme?.("catppuccin");
+      populateThemeSelect(body.theme || null, window.SparkleAppearanceTheme?.getTheme?.());
       window.SparklePluginTheme?.setPluginTheme(body.theme || null);
     } catch {
-      setText(elements.pluginThemeStatus, "テーマの状態を読み込めませんでした。");
+      elements.pluginThemeSelect.value = "catppuccin";
     }
   }
 
@@ -223,15 +227,6 @@
       actions.append(
         makeToggle(plugin),
       );
-      if (plugin.type === "theme") {
-        actions.append(
-          makeButton(
-            plugin.active_theme ? "適用中" : "テーマに適用",
-            () => void activateTheme(plugin.id),
-            !plugin.enabled || plugin.active_theme,
-          ),
-        );
-      }
       if (plugin.type === "feature") {
         actions.append(
           makeButton(
@@ -272,7 +267,6 @@
       plugins = Array.isArray(body.plugins) ? body.plugins : [];
       render();
       await refreshThemeSettings();
-      await refreshAuthoringSkillStatus();
       await window.SparklePluginUI?.refreshUI?.();
       return true;
     } catch (error) {
@@ -331,17 +325,25 @@
     }
   }
 
-  async function activateTheme(pluginId) {
+  async function activateTheme(selection) {
     try {
+      const isPluginTheme = selection.startsWith("plugin:");
+      const pluginId = isPluginTheme ? selection.slice("plugin:".length) : null;
+      if (isPluginTheme && !plugins.some((plugin) => plugin.id === pluginId && plugin.enabled && plugin.type === "theme")) {
+        throw new Error("有効なテーマプラグインを選択してください。");
+      }
       const body = await request("/active-theme", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plugin_id: pluginId }),
       });
+      await window.SparkleAppearanceTheme?.selectTheme?.(
+        isPluginTheme ? "catppuccin" : selection === "custom" ? "custom" : "catppuccin",
+      );
       window.SparklePluginTheme?.setPluginTheme(body.theme || null);
-      setText(elements.importStatus, "テーマを適用しました。");
       await refresh();
     } catch (error) {
+      await refreshThemeSettings();
       setText(elements.importStatus, error.message);
     }
   }
@@ -393,6 +395,9 @@
 
   function statusLabel(status) {
     return {
+      missing: "未導入",
+      outdated: "更新が必要",
+      unknown: "未確認",
       installed: "導入済み",
       updated: "更新済み",
       conflict: "同名スキルがあるため変更していません",
@@ -404,11 +409,41 @@
     if (!elements.skillCard) return;
     try {
       const result = await request("/authoring-skill/status", { cache: "no-store" });
-      elements.skillCard.hidden = result.all_installed !== true;
+      const statuses = new Map(
+        (Array.isArray(result.results) ? result.results : [])
+          .filter((entry) => entry && typeof entry.agent === "string")
+          .map((entry) => [entry.agent, entry.status || "unknown"]),
+      );
+      const allInstalled = REQUIRED_SKILL_AGENTS.every(
+        (agent) => statuses.get(agent) === "installed",
+      );
+      const hasOutdated = REQUIRED_SKILL_AGENTS.some(
+        (agent) => statuses.get(agent) === "outdated",
+      );
+      const hasMissing = REQUIRED_SKILL_AGENTS.some(
+        (agent) => statuses.get(agent) === "missing",
+      );
+      elements.skillButton.textContent = hasOutdated
+        ? hasMissing
+          ? "作成スキルを更新して未導入のAIにも導入"
+          : "作成スキルを更新"
+        : hasMissing
+          ? "作成スキルをAIへ導入"
+          : "作成スキルを3つのAIへ導入";
+      elements.skillCard.hidden = allInstalled;
+      elements.skillAgents?.replaceChildren(
+        ...REQUIRED_SKILL_AGENTS.map((agent) =>
+          node("li", "", `${agent}: ${statusLabel(statuses.get(agent) || "missing")}`),
+        ),
+      );
+      setText(elements.skillStatus, "");
     } catch {
       // Older Sparkle builds do not expose the status endpoint. Keep the
       // installation control visible so the user can still install the skill.
       elements.skillCard.hidden = false;
+      elements.skillButton.textContent = "作成スキルを3つのAIへ導入";
+      elements.skillAgents?.replaceChildren();
+      setText(elements.skillStatus, "各AIの導入状況を確認できません。導入ボタンは表示しています。");
     }
   }
 
@@ -471,7 +506,7 @@
   }
   selectCategory("general");
   elements.pluginThemeSelect?.addEventListener("change", () => {
-    void activateTheme(elements.pluginThemeSelect.value || null);
+    void activateTheme(elements.pluginThemeSelect.value || "catppuccin");
   });
   document.querySelectorAll("[data-open-settings-category]").forEach((button) => {
     button.addEventListener("click", () => selectCategory(button.dataset.openSettingsCategory));
@@ -487,5 +522,6 @@
     refresh,
     refreshAuthoringSkillStatus,
   });
+  void refreshAuthoringSkillStatus();
   void refresh();
 })();
